@@ -1,0 +1,824 @@
+{
+  "kind": "actual",
+  "source": "evidence",
+  "collected_at": "2026-03-14T09:26:53Z",
+  "cluster": {
+    "name": "pg",
+    "namespace": "databases"
+  },
+  "status": "fail",
+  "violations": [
+    "rule 2: billing has a stored password",
+    "rule 2: a password login reaches billing in billing",
+    "rule 3: orders can create databases",
+    "rule 4: role app exists",
+    "rule 1: certificate CN=other-ca can sign client certificates",
+    "rule 1: pg-2 accepts TLSv1.2",
+    "rule 5: everyone can connect to pg-3 on 8000, 9187",
+    "rule 6: pod pg-3 shares host uids",
+    "rule 7: the operator can read Secrets in kube-system",
+    "rule 8: mallory can create pods in databases (allowed by RoleBinding \"mallory/databases\" of ClusterRole \"edit\" to User \"mallory\")",
+    "rule 8: mallory can read secret client-ca in databases (allowed by RoleBinding \"mallory/databases\" of ClusterRole \"edit\" to User \"mallory\")",
+    "rule 8: pod monitoring/node-agent-7xk2p runs on the host network and can bind a port below 1024"
+  ],
+  "postgres": {
+    "superusers": [
+      "postgres"
+    ],
+    "can_create_roles": [
+      "postgres"
+    ],
+    "can_create_databases": [
+      "orders",
+      "postgres"
+    ],
+    "can_replicate": [
+      "postgres",
+      "streaming_replica"
+    ],
+    "can_bypass_row_security": [
+      "postgres"
+    ],
+    "can_run_server_programs": [
+      "postgres"
+    ],
+    "can_read_server_files": [
+      "postgres",
+      "streaming_replica"
+    ],
+    "can_write_server_files": [
+      "postgres"
+    ],
+    "can_read_all_data": [
+      "postgres"
+    ],
+    "can_write_all_data": [
+      "postgres"
+    ],
+    "have_password": [
+      "billing"
+    ],
+    "can_log_in": [
+      "billing",
+      "cnpg_metrics_exporter",
+      "orders",
+      "postgres",
+      "streaming_replica"
+    ],
+    "roles": [
+      "app",
+      "billing",
+      "cnpg_metrics_exporter",
+      "orders",
+      "postgres",
+      "streaming_replica"
+    ]
+  },
+  "databases": {
+    "postgres": {
+      "owner": "postgres",
+      "connect": [
+        "PUBLIC",
+        "postgres"
+      ],
+      "logins": {
+        "postgres": {
+          "os_users": [
+            "postgres"
+          ]
+        },
+        "cnpg_metrics_exporter": {
+          "os_users": [
+            "postgres"
+          ]
+        },
+        "streaming_replica": {
+          "common_names": [
+            "pg-replication",
+            "streaming_replica"
+          ]
+        }
+      }
+    },
+    "template0": {
+      "owner": "postgres",
+      "allows_connections": false
+    },
+    "template1": {
+      "owner": "postgres",
+      "connect": [
+        "PUBLIC",
+        "postgres"
+      ],
+      "logins": {
+        "postgres": {
+          "os_users": [
+            "postgres"
+          ]
+        },
+        "cnpg_metrics_exporter": {
+          "os_users": [
+            "postgres"
+          ]
+        }
+      }
+    },
+    "replication": {
+      "logins": {
+        "streaming_replica": {
+          "common_names": [
+            "pg-replication",
+            "streaming_replica"
+          ]
+        }
+      }
+    },
+    "orders": {
+      "owner": "orders",
+      "connect": [
+        "PUBLIC",
+        "orders"
+      ],
+      "logins": {
+        "postgres": {
+          "os_users": [
+            "postgres"
+          ]
+        },
+        "cnpg_metrics_exporter": {
+          "os_users": [
+            "postgres"
+          ]
+        },
+        "orders": {
+          "common_names": [
+            "orders-app.test"
+          ]
+        }
+      }
+    },
+    "billing": {
+      "owner": "billing",
+      "connect": [
+        "PUBLIC",
+        "billing"
+      ],
+      "logins": {
+        "postgres": {
+          "os_users": [
+            "postgres"
+          ]
+        },
+        "cnpg_metrics_exporter": {
+          "os_users": [
+            "postgres"
+          ]
+        },
+        "billing": {
+          "common_names": [
+            "billing-app.test",
+            "billing-report.test"
+          ],
+          "password": true
+        }
+      }
+    }
+  },
+  "client_ca": {
+    "secret": "client-ca",
+    "certificates": [
+      {
+        "name": "CN=example-ca",
+        "sha256_fingerprint": "93:95:89:07:E0:F8:9E:07:0E:12:96:7F:B9:C7:F3:C9:54:B3:8B:06:41:C9:BE:27:BF:E5:40:DB:C7:6C:16:30"
+      },
+      {
+        "name": "CN=other-ca",
+        "sha256_fingerprint": "4F:0A:93:C2:7E:15:B8:D4:61:2C:A9:3E:F0:57:8B:12:DD:C4:39:A6:0E:72:5F:B3:94:18:CE:6D:21:8A:F5:07"
+      }
+    ]
+  },
+  "tls": {
+    "pg-1": {
+      "postgresql": "TLSv1.3",
+      "metrics": "TLSv1.3"
+    },
+    "pg-2": {
+      "postgresql": "TLSv1.2",
+      "metrics": "TLSv1.3"
+    },
+    "pg-3": {
+      "postgresql": "TLSv1.3",
+      "metrics": "TLSv1.3"
+    }
+  },
+  "network_policy": {
+    "pg-1": {
+      "outside": [
+        5432
+      ],
+      "other nodes": [
+        5432
+      ],
+      "own node": [
+        "all"
+      ],
+      "loadbalancer": [
+        5432
+      ],
+      "pg pods": [
+        5432,
+        8000
+      ],
+      "cnpg-system operator": [
+        8000
+      ],
+      "otel": [
+        9187
+      ],
+      "other namespaces": []
+    },
+    "pg-2": {
+      "outside": [
+        5432
+      ],
+      "other nodes": [
+        5432
+      ],
+      "own node": [
+        "all"
+      ],
+      "loadbalancer": [
+        5432
+      ],
+      "pg pods": [
+        5432,
+        8000
+      ],
+      "cnpg-system operator": [
+        8000
+      ],
+      "otel": [
+        9187
+      ],
+      "other namespaces": []
+    },
+    "pg-3": {
+      "outside": [
+        5432
+      ],
+      "other nodes": [
+        5432
+      ],
+      "own node": [
+        "all"
+      ],
+      "loadbalancer": [
+        5432
+      ],
+      "pg pods": [
+        5432,
+        8000
+      ],
+      "cnpg-system operator": [
+        8000
+      ],
+      "otel": [
+        9187
+      ],
+      "other namespaces": [],
+      "everyone": [
+        8000,
+        9187
+      ]
+    }
+  },
+  "kubernetes": {
+    "namespaces": {
+      "cert-manager": {
+        "exec_into_pods": [
+          "group:system:masters",
+          "system:serviceaccount:kube-system:generic-garbage-collector",
+          "system:serviceaccount:kube-system:namespace-controller"
+        ],
+        "change_pods": [
+          "group:system:masters",
+          "system:serviceaccount:kube-system:generic-garbage-collector",
+          "system:serviceaccount:kube-system:cronjob-controller",
+          "system:serviceaccount:kube-system:daemon-set-controller",
+          "system:serviceaccount:kube-system:deployment-controller",
+          "system:serviceaccount:kube-system:job-controller",
+          "system:serviceaccount:kube-system:replicaset-controller",
+          "system:serviceaccount:kube-system:replication-controller",
+          "system:serviceaccount:kube-system:statefulset-controller",
+          "system:serviceaccount:kube-system:local-path-provisioner-service-account"
+        ],
+        "run_pods": [
+          "group:system:masters",
+          "k3s-cloud-controller-manager",
+          "system:serviceaccount:kube-system:generic-garbage-collector",
+          "system:serviceaccount:kube-system:persistent-volume-binder",
+          "system:serviceaccount:kube-system:local-path-provisioner-service-account",
+          "system:serviceaccount:kube-system:cronjob-controller",
+          "system:serviceaccount:kube-system:daemon-set-controller",
+          "system:serviceaccount:kube-system:deployment-controller",
+          "system:serviceaccount:kube-system:job-controller",
+          "system:serviceaccount:kube-system:replicaset-controller",
+          "system:serviceaccount:kube-system:replication-controller",
+          "system:serviceaccount:kube-system:statefulset-controller",
+          "system:serviceaccount:cert-manager:cert-manager"
+        ],
+        "read_secret": {
+          "all (list)": [
+            "group:system:masters",
+            "system:kube-controller-manager",
+            "system:serviceaccount:cert-manager:cert-manager",
+            "system:serviceaccount:cert-manager:cert-manager-cainjector",
+            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
+            "system:serviceaccount:kube-system:generic-garbage-collector",
+            "system:serviceaccount:kube-system:namespace-controller",
+            "system:serviceaccount:kube-system:resourcequota-controller"
+          ],
+          "all (watch)": [
+            "group:system:masters",
+            "system:kube-controller-manager",
+            "system:serviceaccount:cert-manager:cert-manager",
+            "system:serviceaccount:cert-manager:cert-manager-cainjector",
+            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
+            "system:serviceaccount:kube-system:generic-garbage-collector",
+            "system:serviceaccount:kube-system:namespace-controller",
+            "system:serviceaccount:kube-system:resourcequota-controller"
+          ],
+          "cert-manager-webhook-ca": [
+            "group:system:masters",
+            "system:kube-controller-manager",
+            "system:serviceaccount:cert-manager:cert-manager",
+            "system:serviceaccount:cert-manager:cert-manager-cainjector",
+            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
+            "system:serviceaccount:kube-system:generic-garbage-collector",
+            "system:serviceaccount:kube-system:namespace-controller",
+            "system:serviceaccount:kube-system:resourcequota-controller",
+            "system:serviceaccount:cert-manager:cert-manager-webhook"
+          ],
+          "example-ca-key": [
+            "group:system:masters",
+            "system:kube-controller-manager",
+            "system:serviceaccount:cert-manager:cert-manager",
+            "system:serviceaccount:cert-manager:cert-manager-cainjector",
+            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
+            "system:serviceaccount:kube-system:generic-garbage-collector",
+            "system:serviceaccount:kube-system:namespace-controller",
+            "system:serviceaccount:kube-system:resourcequota-controller"
+          ]
+        },
+        "write_secret": {
+          "all (create)": [
+            "group:system:masters",
+            "system:kube-controller-manager",
+            "system:serviceaccount:cert-manager:cert-manager",
+            "system:serviceaccount:kube-system:generic-garbage-collector"
+          ],
+          "cert-manager-webhook-ca": [
+            "group:system:masters",
+            "system:kube-controller-manager",
+            "system:serviceaccount:cert-manager:cert-manager",
+            "system:serviceaccount:kube-system:generic-garbage-collector"
+          ],
+          "example-ca-key": [
+            "group:system:masters",
+            "system:kube-controller-manager",
+            "system:serviceaccount:cert-manager:cert-manager",
+            "system:serviceaccount:kube-system:generic-garbage-collector"
+          ]
+        }
+      },
+      "cnpg-system": {
+        "exec_into_pods": [
+          "group:system:masters",
+          "system:serviceaccount:kube-system:generic-garbage-collector",
+          "system:serviceaccount:kube-system:namespace-controller",
+          "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg"
+        ],
+        "change_pods": [
+          "group:system:masters",
+          "system:serviceaccount:kube-system:generic-garbage-collector",
+          "system:serviceaccount:kube-system:cronjob-controller",
+          "system:serviceaccount:kube-system:daemon-set-controller",
+          "system:serviceaccount:kube-system:deployment-controller",
+          "system:serviceaccount:kube-system:job-controller",
+          "system:serviceaccount:kube-system:replicaset-controller",
+          "system:serviceaccount:kube-system:replication-controller",
+          "system:serviceaccount:kube-system:statefulset-controller",
+          "system:serviceaccount:kube-system:local-path-provisioner-service-account",
+          "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg"
+        ],
+        "run_pods": [
+          "group:system:masters",
+          "k3s-cloud-controller-manager",
+          "system:serviceaccount:kube-system:generic-garbage-collector",
+          "system:serviceaccount:kube-system:persistent-volume-binder",
+          "system:serviceaccount:kube-system:local-path-provisioner-service-account",
+          "system:serviceaccount:kube-system:cronjob-controller",
+          "system:serviceaccount:kube-system:daemon-set-controller",
+          "system:serviceaccount:kube-system:deployment-controller",
+          "system:serviceaccount:kube-system:job-controller",
+          "system:serviceaccount:kube-system:replicaset-controller",
+          "system:serviceaccount:kube-system:replication-controller",
+          "system:serviceaccount:kube-system:statefulset-controller",
+          "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg"
+        ],
+        "read_secret": {
+          "all (list)": [
+            "group:system:masters",
+            "system:kube-controller-manager",
+            "system:serviceaccount:cert-manager:cert-manager",
+            "system:serviceaccount:cert-manager:cert-manager-cainjector",
+            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
+            "system:serviceaccount:kube-system:generic-garbage-collector",
+            "system:serviceaccount:kube-system:namespace-controller",
+            "system:serviceaccount:kube-system:resourcequota-controller"
+          ],
+          "all (watch)": [
+            "group:system:masters",
+            "system:kube-controller-manager",
+            "system:serviceaccount:cert-manager:cert-manager",
+            "system:serviceaccount:cert-manager:cert-manager-cainjector",
+            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
+            "system:serviceaccount:kube-system:generic-garbage-collector",
+            "system:serviceaccount:kube-system:namespace-controller",
+            "system:serviceaccount:kube-system:resourcequota-controller"
+          ],
+          "cnpg-webhook-cert": [
+            "group:system:masters",
+            "system:kube-controller-manager",
+            "system:serviceaccount:cert-manager:cert-manager",
+            "system:serviceaccount:cert-manager:cert-manager-cainjector",
+            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
+            "system:serviceaccount:kube-system:generic-garbage-collector",
+            "system:serviceaccount:kube-system:namespace-controller",
+            "system:serviceaccount:kube-system:resourcequota-controller"
+          ]
+        },
+        "write_secret": {
+          "all (create)": [
+            "group:system:masters",
+            "system:kube-controller-manager",
+            "system:serviceaccount:cert-manager:cert-manager",
+            "system:serviceaccount:kube-system:generic-garbage-collector",
+            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg"
+          ],
+          "cnpg-webhook-cert": [
+            "group:system:masters",
+            "system:kube-controller-manager",
+            "system:serviceaccount:cert-manager:cert-manager",
+            "system:serviceaccount:kube-system:generic-garbage-collector",
+            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg"
+          ]
+        }
+      },
+      "databases": {
+        "exec_into_pods": [
+          "group:system:masters",
+          "system:serviceaccount:kube-system:generic-garbage-collector",
+          "system:serviceaccount:kube-system:namespace-controller",
+          "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg"
+        ],
+        "change_pods": [
+          "group:system:masters",
+          "system:serviceaccount:kube-system:generic-garbage-collector",
+          "system:serviceaccount:kube-system:cronjob-controller",
+          "system:serviceaccount:kube-system:daemon-set-controller",
+          "system:serviceaccount:kube-system:deployment-controller",
+          "system:serviceaccount:kube-system:job-controller",
+          "system:serviceaccount:kube-system:replicaset-controller",
+          "system:serviceaccount:kube-system:replication-controller",
+          "system:serviceaccount:kube-system:statefulset-controller",
+          "system:serviceaccount:kube-system:local-path-provisioner-service-account",
+          "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg"
+        ],
+        "run_pods": [
+          "group:system:masters",
+          "k3s-cloud-controller-manager",
+          "system:serviceaccount:kube-system:generic-garbage-collector",
+          "system:serviceaccount:kube-system:persistent-volume-binder",
+          "system:serviceaccount:kube-system:local-path-provisioner-service-account",
+          "system:serviceaccount:kube-system:cronjob-controller",
+          "system:serviceaccount:kube-system:daemon-set-controller",
+          "system:serviceaccount:kube-system:deployment-controller",
+          "system:serviceaccount:kube-system:job-controller",
+          "system:serviceaccount:kube-system:replicaset-controller",
+          "system:serviceaccount:kube-system:replication-controller",
+          "system:serviceaccount:kube-system:statefulset-controller",
+          "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
+          "mallory"
+        ],
+        "read_secret": {
+          "all (list)": [
+            "group:system:masters",
+            "system:kube-controller-manager",
+            "system:serviceaccount:cert-manager:cert-manager",
+            "system:serviceaccount:cert-manager:cert-manager-cainjector",
+            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
+            "system:serviceaccount:kube-system:generic-garbage-collector",
+            "system:serviceaccount:kube-system:namespace-controller",
+            "system:serviceaccount:kube-system:resourcequota-controller",
+            "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud"
+          ],
+          "all (watch)": [
+            "group:system:masters",
+            "system:kube-controller-manager",
+            "system:serviceaccount:cert-manager:cert-manager",
+            "system:serviceaccount:cert-manager:cert-manager-cainjector",
+            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
+            "system:serviceaccount:kube-system:generic-garbage-collector",
+            "system:serviceaccount:kube-system:namespace-controller",
+            "system:serviceaccount:kube-system:resourcequota-controller",
+            "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud"
+          ],
+          "client-ca": [
+            "group:system:masters",
+            "system:kube-controller-manager",
+            "system:serviceaccount:cert-manager:cert-manager",
+            "system:serviceaccount:cert-manager:cert-manager-cainjector",
+            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
+            "system:serviceaccount:kube-system:generic-garbage-collector",
+            "system:serviceaccount:kube-system:namespace-controller",
+            "system:serviceaccount:kube-system:resourcequota-controller",
+            "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
+            "system:serviceaccount:databases:pg",
+            "mallory"
+          ],
+          "pg-replication": [
+            "group:system:masters",
+            "system:kube-controller-manager",
+            "system:serviceaccount:cert-manager:cert-manager",
+            "system:serviceaccount:cert-manager:cert-manager-cainjector",
+            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
+            "system:serviceaccount:kube-system:generic-garbage-collector",
+            "system:serviceaccount:kube-system:namespace-controller",
+            "system:serviceaccount:kube-system:resourcequota-controller",
+            "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
+            "system:serviceaccount:databases:pg"
+          ],
+          "pg-server": [
+            "group:system:masters",
+            "system:kube-controller-manager",
+            "system:serviceaccount:cert-manager:cert-manager",
+            "system:serviceaccount:cert-manager:cert-manager-cainjector",
+            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
+            "system:serviceaccount:kube-system:generic-garbage-collector",
+            "system:serviceaccount:kube-system:namespace-controller",
+            "system:serviceaccount:kube-system:resourcequota-controller",
+            "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
+            "system:serviceaccount:databases:pg"
+          ],
+          "backup-credentials": [
+            "group:system:masters",
+            "system:kube-controller-manager",
+            "system:serviceaccount:cert-manager:cert-manager",
+            "system:serviceaccount:cert-manager:cert-manager-cainjector",
+            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
+            "system:serviceaccount:kube-system:generic-garbage-collector",
+            "system:serviceaccount:kube-system:namespace-controller",
+            "system:serviceaccount:kube-system:resourcequota-controller",
+            "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
+            "system:serviceaccount:databases:pg"
+          ]
+        },
+        "write_secret": {
+          "all (create)": [
+            "group:system:masters",
+            "system:kube-controller-manager",
+            "system:serviceaccount:cert-manager:cert-manager",
+            "system:serviceaccount:kube-system:generic-garbage-collector",
+            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg"
+          ],
+          "client-ca": [
+            "group:system:masters",
+            "system:kube-controller-manager",
+            "system:serviceaccount:cert-manager:cert-manager",
+            "system:serviceaccount:kube-system:generic-garbage-collector",
+            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg"
+          ],
+          "pg-replication": [
+            "group:system:masters",
+            "system:kube-controller-manager",
+            "system:serviceaccount:cert-manager:cert-manager",
+            "system:serviceaccount:kube-system:generic-garbage-collector",
+            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg"
+          ],
+          "pg-server": [
+            "group:system:masters",
+            "system:kube-controller-manager",
+            "system:serviceaccount:cert-manager:cert-manager",
+            "system:serviceaccount:kube-system:generic-garbage-collector",
+            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg"
+          ],
+          "backup-credentials": [
+            "group:system:masters",
+            "system:kube-controller-manager",
+            "system:serviceaccount:cert-manager:cert-manager",
+            "system:serviceaccount:kube-system:generic-garbage-collector",
+            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg"
+          ]
+        },
+        "create_pg_tokens": [
+          "group:system:masters",
+          "system:kube-controller-manager",
+          "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg"
+        ],
+        "change": {
+          "clusters": [
+            "group:system:masters",
+            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg"
+          ],
+          "databases": [
+            "group:system:masters",
+            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg"
+          ],
+          "databaseroles": [
+            "group:system:masters",
+            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg"
+          ],
+          "subscriptions": [
+            "group:system:masters",
+            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg"
+          ],
+          "poolers": [
+            "group:system:masters",
+            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg"
+          ],
+          "objectstores": [
+            "group:system:masters",
+            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg"
+          ],
+          "endpoints": [
+            "group:system:masters",
+            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
+            "system:kube-controller-manager"
+          ],
+          "endpointslices": [
+            "group:system:masters",
+            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
+            "system:kube-controller-manager"
+          ],
+          "networkpolicies": [
+            "group:system:masters",
+            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg"
+          ]
+        }
+      }
+    },
+    "request_certificates": [
+      "group:system:masters",
+      "k3s-cloud-controller-manager",
+      "system:serviceaccount:cert-manager:cert-manager",
+      "system:serviceaccount:kube-system:generic-garbage-collector",
+      "system:serviceaccount:kube-system:persistent-volume-binder",
+      "system:serviceaccount:kube-system:local-path-provisioner-service-account",
+      "system:serviceaccount:kube-system:cronjob-controller",
+      "system:serviceaccount:kube-system:daemon-set-controller",
+      "system:serviceaccount:kube-system:deployment-controller",
+      "system:serviceaccount:kube-system:job-controller",
+      "system:serviceaccount:kube-system:replicaset-controller",
+      "system:serviceaccount:kube-system:replication-controller",
+      "system:serviceaccount:kube-system:statefulset-controller"
+    ],
+    "proxy_to_nodes": [
+      "group:system:masters",
+      "kube-apiserver"
+    ],
+    "impersonate": [
+      "group:system:masters"
+    ],
+    "bind_or_escalate_roles": [
+      "group:system:masters",
+      "system:serviceaccount:kube-system:clusterrole-aggregation-controller"
+    ],
+    "change_webhooks": [
+      "group:system:masters",
+      "system:serviceaccount:cert-manager:cert-manager-cainjector",
+      "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg"
+    ],
+    "can_open_node_ports": [
+      "group:system:masters",
+      "k3s-cloud-controller-manager",
+      "system:serviceaccount:kube-system:generic-garbage-collector",
+      "system:serviceaccount:kube-system:persistent-volume-binder",
+      "system:serviceaccount:kube-system:local-path-provisioner-service-account",
+      "system:serviceaccount:kube-system:cronjob-controller",
+      "system:serviceaccount:kube-system:daemon-set-controller",
+      "system:serviceaccount:kube-system:deployment-controller",
+      "system:serviceaccount:kube-system:job-controller",
+      "system:serviceaccount:kube-system:replicaset-controller",
+      "system:serviceaccount:kube-system:replication-controller",
+      "system:serviceaccount:kube-system:statefulset-controller",
+      "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
+      "system:serviceaccount:cert-manager:cert-manager"
+    ],
+    "operator_reads_secrets_in": [
+      "cnpg-system",
+      "databases",
+      "kube-system"
+    ],
+    "plugin_reads_secrets_in": [
+      "databases"
+    ],
+    "not_served": [
+      "ingressroutes.traefik.io"
+    ]
+  },
+  "pods_sharing_host_uids": [
+    "pg-3"
+  ],
+  "host_network_pods_that_can_bind_low_ports": [
+    "monitoring/node-agent-7xk2p"
+  ],
+  "details": {
+    "primary": "pg-1",
+    "instances": [
+      "pg-1",
+      "pg-2",
+      "pg-3"
+    ],
+    "pg_hba": [
+      {
+        "number": 1,
+        "line": "local all cnpg_metrics_exporter peer map=cnpg_metrics_exporter"
+      },
+      {
+        "number": 2,
+        "line": "local all all peer map=local"
+      },
+      {
+        "number": 3,
+        "line": "hostssl postgres streaming_replica all cert map=cnpg_streaming_replica clientcert=verify-full"
+      },
+      {
+        "number": 4,
+        "line": "hostssl replication streaming_replica all cert map=cnpg_streaming_replica clientcert=verify-full"
+      },
+      {
+        "number": 5,
+        "line": "hostssl all cnpg_pooler_pgbouncer all cert map=cnpg_pooler_pgbouncer clientcert=verify-full"
+      },
+      {
+        "number": 6,
+        "line": "hostssl orders orders all cert map=clients clientcert=verify-full"
+      },
+      {
+        "number": 7,
+        "line": "hostssl billing billing all cert map=clients clientcert=verify-full"
+      },
+      {
+        "number": 8,
+        "line": "host all all all scram-sha-256"
+      },
+      {
+        "number": 9,
+        "line": "host all all all reject"
+      }
+    ],
+    "pg_ident": [
+      {
+        "number": 1,
+        "line": "local postgres postgres"
+      },
+      {
+        "number": 2,
+        "line": "cnpg_streaming_replica streaming_replica streaming_replica"
+      },
+      {
+        "number": 3,
+        "line": "cnpg_pooler_pgbouncer cnpg_pooler_pgbouncer cnpg_pooler_pgbouncer"
+      },
+      {
+        "number": 4,
+        "line": "cnpg_metrics_exporter postgres cnpg_metrics_exporter"
+      },
+      {
+        "number": 5,
+        "line": "cnpg_streaming_replica pg-replication streaming_replica"
+      },
+      {
+        "number": 6,
+        "line": "clients orders-app.test orders"
+      },
+      {
+        "number": 7,
+        "line": "clients billing-app.test billing"
+      },
+      {
+        "number": 8,
+        "line": "clients billing-report.test billing"
+      }
+    ],
+    "pg_hba_not_understood": [],
+    "pg_ident_not_understood": []
+  },
+  "software": {
+    "kubernetes": "v1.33.4+k3s1",
+    "cnpg_operator": "1.30.1",
+    "barman_cloud_plugin": "v0.15.0",
+    "postgresql": "18.1"
+  }
+}
