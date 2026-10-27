@@ -13,7 +13,7 @@ source "$here/../lib.sh"
 lines=$(jq -r '[.k3s_config[][] | select(test("disable-network-policy"))] | join("; ")')
 
 if [[ -z $lines ]]; then
-  add_check k3s-network-policy true "no disable-network-policy flag"
+  add_check k3s-network-policy true none "no disable-network-policy flag"
 else
-  add_check k3s-network-policy false "$lines"
+  add_check k3s-network-policy false "$lines" "$lines"
 fi

@@ -12,15 +12,15 @@ source "$here/../lib.sh"
 
 path=${2:-/sys/fs/selinux/enforce}
 if [[ ! -e $path ]]; then
-  mode=disabled
-elif [[ $(< "$path") == 1 ]]; then
-  mode=enforcing
+  mode=disabled raw="$path missing"
 else
-  mode=permissive
+  enforce=$(< "$path")
+  raw="$path = $enforce"
+  if [[ $enforce == 1 ]]; then mode=enforcing; else mode=permissive; fi
 fi
 
 if [[ ${1:-} == mode ]]; then
   echo "$mode"
 else
-  add_check selinux-enforcing "$([[ $mode == enforcing ]] && echo true || echo false)" "SELinux is $mode"
+  add_check selinux-enforcing "$([[ $mode == enforcing ]] && echo true || echo false)" "$mode" "$raw"
 fi

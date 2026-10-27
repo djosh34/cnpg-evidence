@@ -10,11 +10,13 @@ here=$(dirname "${BASH_SOURCE[0]}")
 # shellcheck source-path=SCRIPTDIR
 source "$here/../../lib/test.sh"
 
-same "low ports protected" '{"id":"unprivileged-port-start","ok":true,"detail":"ip_unprivileged_port_start = 1024, want 1024 or higher"}' \
+same "low ports protected" '{"id":"unprivileged-port-start","ok":true,"value":"1024 or higher","raw":"ip_unprivileged_port_start = 1024"}' \
   "$(bash "$here/unprivileged-port-start.sh" /dev/stdin <<<1024)"
-same "higher boundary" true "$(bash "$here/unprivileged-port-start.sh" /dev/stdin <<<2048 | jq .ok)"
+same "a higher threshold has the same value" '{"id":"unprivileged-port-start","ok":true,"value":"1024 or higher","raw":"ip_unprivileged_port_start = 2048"}' \
+  "$(bash "$here/unprivileged-port-start.sh" /dev/stdin <<<2048)"
 same "every port open" false "$(bash "$here/unprivileged-port-start.sh" /dev/stdin <<<0 | jq .ok)"
-same "below boundary" false "$(bash "$here/unprivileged-port-start.sh" /dev/stdin <<<1023 | jq .ok)"
+same "below boundary" '{"id":"unprivileged-port-start","ok":false,"value":"1023","raw":"ip_unprivileged_port_start = 1023"}' \
+  "$(bash "$here/unprivileged-port-start.sh" /dev/stdin <<<1023)"
 status=0
 output=$(bash "$here/unprivileged-port-start.sh" /dev/stdin <<<invalid 2>/dev/null) || status=$?
 same_text "invalid value exits 2" 2 "$status"

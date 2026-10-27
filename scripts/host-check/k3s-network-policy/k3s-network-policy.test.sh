@@ -10,7 +10,7 @@ here=$(dirname "${BASH_SOURCE[0]}")
 # shellcheck source-path=SCRIPTDIR
 source "$here/../../lib/test.sh"
 
-same "no disable flag" '{"id":"k3s-network-policy","ok":true,"detail":"no disable-network-policy flag"}' "$(bash "$here/k3s-network-policy.sh" <<<'{"k3s_config":{}}')"
-same "even false flagged" '{"id":"k3s-network-policy","ok":false,"detail":"disable-network-policy: false"}' "$(bash "$here/k3s-network-policy.sh" <<<'{"k3s_config":{"config":["disable-network-policy: false"]}}')"
+same "no disable flag" '{"id":"k3s-network-policy","ok":true,"value":"none","raw":"no disable-network-policy flag"}' "$(bash "$here/k3s-network-policy.sh" <<<'{"k3s_config":{}}')"
+same "even false flagged" '{"id":"k3s-network-policy","ok":false,"value":"disable-network-policy: false","raw":"disable-network-policy: false"}' "$(bash "$here/k3s-network-policy.sh" <<<'{"k3s_config":{"config":["disable-network-policy: false"]}}')"
 
 finish

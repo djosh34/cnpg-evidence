@@ -15,9 +15,9 @@ ls() { echo 'drwx------ 1 root root'; }
 export -f stat ls
 actual=$(bash "$here/storage-dir-mode.sh" /usr)
 if [[ -e /usr ]]; then
-  expected='{"id":"storage-dir-mode","ok":true,"detail":"/usr 700 root:root, want 700 or tighter, root:root, no ACL"}'
+  expected='{"id":"storage-dir-mode","ok":true,"value":"700 or tighter, root:root, no ACL","raw":"/usr 700 root:root"}'
 else
-  expected='{"id":"storage-dir-mode","ok":false,"detail":"/usr missing"}'
+  expected='{"id":"storage-dir-mode","ok":false,"value":"missing","raw":"/usr missing"}'
 fi
 same "check path and ceiling" "$expected" "$actual"
 

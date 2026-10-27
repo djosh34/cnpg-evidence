@@ -33,20 +33,20 @@ targets=$(kjson "$namespace" service "$lb_service" | jq -r -f "$here/targets.jq"
 
 while read -r target; do
   connection="host=${target%:*} port=${target##*:}"
-  deny "password-tls $target" "refused by pg_hba reject" 'pg_hba\.conf rejects connection' \
+  deny password-tls "$target" "refused by pg_hba reject" 'pg_hba\.conf rejects connection' \
     "${psql_command[@]}" "$connection dbname=postgres user=postgres password=prove-sh sslmode=require"
-  deny "password-no-tls $target" "refused by pg_hba reject" 'pg_hba\.conf rejects connection' \
+  deny password-no-tls "$target" "refused by pg_hba reject" 'pg_hba\.conf rejects connection' \
     "${psql_command[@]}" "$connection dbname=postgres user=postgres password=prove-sh sslmode=disable"
-  deny "tls-no-client-cert $target" "refused, $role to $database needs a client certificate" \
+  deny tls-no-client-cert "$target" "refused, $role to $database needs a client certificate" \
     'connection requires a valid client certificate' \
     "${psql_command[@]}" "$connection dbname=$database user=$role sslmode=require"
-  deny "replication-cert-as-$role $target" "refused, the certificate CN does not map to $role" \
+  deny "replication-cert-as-$role" "$target" "refused, the certificate CN does not map to $role" \
     "certificate authentication failed for user \"$role\"" \
     with_key "${psql_command[@]}" "$connection dbname=$database user=$role sslmode=require"
-  deny "replication-cert-as-streaming_replica $target" "refused by pg_hba reject for database $database" \
+  deny replication-cert-as-streaming_replica "$target" "refused by pg_hba reject for database $database" \
     'pg_hba\.conf rejects connection' \
     with_key "${psql_command[@]}" "$connection dbname=$database user=streaming_replica sslmode=require"
-  allow "control-replication-cert $target" "logs in as streaming_replica to postgres (CNPG's fixed line)" \
+  allow control-replication-cert "$target" "logs in as streaming_replica to postgres (CNPG's fixed line)" \
     '^streaming_replica$' \
     with_key "${psql_command[@]}" "$connection dbname=postgres user=streaming_replica sslmode=require"
 done <<<"$targets"

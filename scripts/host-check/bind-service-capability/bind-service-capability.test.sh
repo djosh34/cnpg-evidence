@@ -15,18 +15,18 @@ getcap() {
   echo '/usr/bin/ping cap_net_raw=ep'
 }
 export -f getcap
-same "unrelated capability" '{"id":"bind-service-capability","ok":true,"detail":"no cap_net_bind_service under /usr or /opt"}' "$(bash "$here/bind-service-capability.sh")"
+same "unrelated capability" '{"id":"bind-service-capability","ok":true,"value":"none","raw":"no cap_net_bind_service under /usr or /opt"}' "$(bash "$here/bind-service-capability.sh")"
 getcap() {
   echo '/opt/server cap_net_raw,cap_net_bind_service=ep'
   echo '/usr/bin/server cap_net_bind_service,cap_net_raw=ep'
 }
 export -f getcap
-same "file capabilities listed" '{"id":"bind-service-capability","ok":false,"detail":"/opt/server cap_net_raw,cap_net_bind_service=ep; /usr/bin/server cap_net_bind_service,cap_net_raw=ep"}' "$(bash "$here/bind-service-capability.sh")"
+same "file capabilities listed" '{"id":"bind-service-capability","ok":false,"value":"/opt/server cap_net_raw,cap_net_bind_service=ep; /usr/bin/server cap_net_bind_service,cap_net_raw=ep","raw":"/opt/server cap_net_raw,cap_net_bind_service=ep; /usr/bin/server cap_net_bind_service,cap_net_raw=ep"}' "$(bash "$here/bind-service-capability.sh")"
 command() {
   [[ $* != '-v getcap' ]] || return 1
   builtin command "$@"
 }
 export -f command
-same "missing getcap" '{"id":"bind-service-capability","ok":false,"detail":"getcap not found"}' "$(bash "$here/bind-service-capability.sh")"
+same "missing getcap" '{"id":"bind-service-capability","ok":false,"value":"getcap not found","raw":"getcap not found"}' "$(bash "$here/bind-service-capability.sh")"
 
 finish

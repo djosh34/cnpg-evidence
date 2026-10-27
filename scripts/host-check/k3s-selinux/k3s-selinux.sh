@@ -16,5 +16,5 @@ lines=$(jq -r '[.k3s_config[][] | select(test("selinux"))] | join("; ")' <<<"$fa
 ok=false
 [[ $enabled != true ]] || ok=true
 
-add_check k3s-selinux "$ok" \
+add_check k3s-selinux "$ok" "${enabled:-unset}" \
   "enable_selinux = ${enabled:-unset} in the k3s containerd config; config: ${lines:-no selinux setting}"

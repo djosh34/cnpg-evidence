@@ -12,15 +12,15 @@ source "$here/../../lib/test.sh"
 
 rpm() { echo 'postgresql-server-18'; }
 export -f rpm
-same "server package" '{"id":"postgresql-server-absent","ok":false,"detail":"installed: postgresql-server-18"}' "$(bash "$here/postgresql-server-absent.sh")"
+same "server package" '{"id":"postgresql-server-absent","ok":false,"value":"postgresql-server-18","raw":"installed: postgresql-server-18"}' "$(bash "$here/postgresql-server-absent.sh")"
 rpm() { :; }
 export -f rpm
-same "no server package" '{"id":"postgresql-server-absent","ok":true,"detail":"no postgresql*-server package installed"}' "$(bash "$here/postgresql-server-absent.sh")"
+same "no server package" '{"id":"postgresql-server-absent","ok":true,"value":"none","raw":"no postgresql*-server package installed"}' "$(bash "$here/postgresql-server-absent.sh")"
 command() {
   [[ $* != '-v rpm' ]] || return 1
   builtin command "$@"
 }
 export -f command
-same "missing rpm" '{"id":"postgresql-server-absent","ok":false,"detail":"rpm not found"}' "$(bash "$here/postgresql-server-absent.sh")"
+same "missing rpm" '{"id":"postgresql-server-absent","ok":false,"value":"rpm not found","raw":"rpm not found"}' "$(bash "$here/postgresql-server-absent.sh")"
 
 finish

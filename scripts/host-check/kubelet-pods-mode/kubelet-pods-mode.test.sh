@@ -15,9 +15,9 @@ ls() { echo 'drwx------ 1 root root'; }
 export -f stat ls
 actual=$(bash "$here/kubelet-pods-mode.sh" /usr)
 if [[ -e /var/lib/kubelet/pods ]]; then
-  expected='{"id":"kubelet-pods-mode","ok":true,"detail":"/var/lib/kubelet/pods 750 root:root, want 750 or tighter, root:root, no ACL"}'
+  expected='{"id":"kubelet-pods-mode","ok":true,"value":"750 or tighter, root:root, no ACL","raw":"/var/lib/kubelet/pods 750 root:root"}'
 else
-  expected='{"id":"kubelet-pods-mode","ok":false,"detail":"/var/lib/kubelet/pods missing"}'
+  expected='{"id":"kubelet-pods-mode","ok":false,"value":"missing","raw":"/var/lib/kubelet/pods missing"}'
 fi
 same "check path and ceiling" "$expected" "$actual"
 

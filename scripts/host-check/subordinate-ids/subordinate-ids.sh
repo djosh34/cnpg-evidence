@@ -51,7 +51,8 @@ for file in "$subuid" "$subgid"; do
   fi
 done
 if ((${#hits[@]})); then
-  add_check subordinate-ids false "malformed or overlapping entries, kubelet range ($(joined "${ranges[@]}")): $(joined "${hits[@]}")"
+  add_check subordinate-ids false "$(joined "${hits[@]}")" \
+    "malformed or overlapping entries, kubelet range ($(joined "${ranges[@]}")): $(joined "${hits[@]}")"
 else
-  add_check subordinate-ids true "no entry other than kubelet overlaps kubelet range ($(joined "${ranges[@]}"))"
+  add_check subordinate-ids true none "no entry other than kubelet overlaps kubelet range ($(joined "${ranges[@]}"))"
 fi

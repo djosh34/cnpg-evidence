@@ -12,7 +12,7 @@ source "$here/../../lib/test.sh"
 
 same_text "enforcing" enforcing "$(bash "$here/selinux-enforcing.sh" mode /dev/stdin <<<1)"
 same_text "permissive" permissive "$(bash "$here/selinux-enforcing.sh" mode /dev/stdin <<<0)"
-same "disabled" '{"id":"selinux-enforcing","ok":false,"detail":"SELinux is disabled"}' "$(bash "$here/selinux-enforcing.sh" check /no-such-selinux-path)"
-same "enforcing check" '{"id":"selinux-enforcing","ok":true,"detail":"SELinux is enforcing"}' "$(bash "$here/selinux-enforcing.sh" check /dev/stdin <<<1)"
+same "disabled" '{"id":"selinux-enforcing","ok":false,"value":"disabled","raw":"/no-such-selinux-path missing"}' "$(bash "$here/selinux-enforcing.sh" check /no-such-selinux-path)"
+same "enforcing check" '{"id":"selinux-enforcing","ok":true,"value":"enforcing","raw":"/dev/stdin = 1"}' "$(bash "$here/selinux-enforcing.sh" check /dev/stdin <<<1)"
 
 finish

@@ -51,5 +51,10 @@ export -f kubectl psql python3
 result=$(bash "$here/login.sh" databases pg pg-rw-lb | jq -s .)
 same_text 'six probes per target' 12 "$(jq length <<<"$result")"
 same_text 'logins and controls match' true "$(jq 'all(.ok)' <<<"$result")"
-same_text 'hostname retained' 'control-replication-cert pg.test:5432' "$(jq -r 'last.probe' <<<"$result")"
+same_text 'names without addresses' \
+  'password-tls password-no-tls tls-no-client-cert replication-cert-as-orders replication-cert-as-streaming_replica control-replication-cert' \
+  "$(jq -r '[.[0:6][].probe] | join(" ")' <<<"$result")"
+same_text 'denials denied, the control allowed' 'denied denied denied denied denied allowed' \
+  "$(jq -r '[.[0:6][].value] | join(" ")' <<<"$result")"
+same_text 'hostname retained as the target' 'pg.test:5432' "$(jq -r 'last.target' <<<"$result")"
 finish

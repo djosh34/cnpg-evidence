@@ -13,14 +13,20 @@ source "$here/../../lib/test.sh"
 stat() { echo '700 root:root'; }
 ls() { echo 'drwx------ 1 root root'; }
 export -f stat ls
-same "tight root directory" '{"id":"example","ok":true,"detail":"/usr 700 root:root, want 700 or tighter, root:root, no ACL"}' "$(bash "$here/mode.sh" example /usr 700)"
+same "tight root directory" '{"id":"example","ok":true,"value":"700 or tighter, root:root, no ACL","raw":"/usr 700 root:root"}' "$(bash "$here/mode.sh" example /usr 700)"
 stat() { echo '755 root:root'; }
 export -f stat
-same "loose mode" false "$(bash "$here/mode.sh" example /usr 700 | jq .ok)"
+same "loose mode" '{"id":"example","ok":false,"value":"755, root:root, no ACL","raw":"/usr 755 root:root"}' "$(bash "$here/mode.sh" example /usr 700)"
+stat() { echo '500 root:root'; }
+export -f stat
+same "a tighter mode has the same value" '{"id":"example","ok":true,"value":"700 or tighter, root:root, no ACL","raw":"/usr 500 root:root"}' "$(bash "$here/mode.sh" example /usr 700)"
+stat() { echo '700 root:postgres'; }
+export -f stat
+same_text "another group" "700 or tighter, root:postgres, no ACL" "$(bash "$here/mode.sh" example /usr 700 | jq -r .value)"
 stat() { echo '700 root:root'; }
 ls() { echo 'drwx------+ 1 root root'; }
 export -f stat ls
-same "ACL fails" false "$(bash "$here/mode.sh" example /usr 700 | jq .ok)"
-same "missing path" '{"id":"example","ok":false,"detail":"/no-such-cnpg-path missing"}' "$(bash "$here/mode.sh" example /no-such-cnpg-path 700)"
+same "ACL fails" '{"id":"example","ok":false,"value":"700 or tighter, root:root, ACL","raw":"/usr 700 root:root with ACL"}' "$(bash "$here/mode.sh" example /usr 700)"
+same "missing path" '{"id":"example","ok":false,"value":"missing","raw":"/no-such-cnpg-path missing"}' "$(bash "$here/mode.sh" example /no-such-cnpg-path 700)"
 
 finish

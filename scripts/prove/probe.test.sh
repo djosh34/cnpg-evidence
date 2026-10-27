@@ -14,16 +14,16 @@ connected() { echo connected; }
 broken() { echo 'command missing' >&2; return 127; }
 export -f refused connected broken
 
-result=$(bash -c 'source "$1"; deny test denied refused refused' probe "$here/probe.sh")
-same 'matching denial' '{"probe":"test","expected":"denied","actual":"Connection refused","ok":true}' "$result"
-result=$(bash -c 'source "$1"; deny test denied refused connected' probe "$here/probe.sh")
-same_text 'successful denial fails' false "$(jq -r .ok <<<"$result")"
-result=$(bash -c 'source "$1"; deny test denied refused broken' probe "$here/probe.sh")
-same_text 'unrelated failure fails' false "$(jq -r .ok <<<"$result")"
-result=$(bash -c 'source "$1"; allow test allowed "^connected$" connected' probe "$here/probe.sh")
-same_text 'working control' true "$(jq -r .ok <<<"$result")"
-result=$(bash -c 'source "$1"; allow test allowed "^connected$" refused' probe "$here/probe.sh")
-same_text 'broken control fails' false "$(jq -r .ok <<<"$result")"
+result=$(bash -c 'source "$1"; deny test 192.0.2.1:5432 "refused" refused refused' probe "$here/probe.sh")
+same 'matching denial' '{"probe":"test","target":"192.0.2.1:5432","expected":"refused","value":"denied","ok":true,"actual":"Connection refused"}' "$result"
+result=$(bash -c 'source "$1"; deny test 192.0.2.1:5432 "refused" refused connected' probe "$here/probe.sh")
+same 'successful denial fails' '{"value":"allowed","ok":false,"actual":"succeeded: connected"}' "$(jq -c '{value, ok, actual}' <<<"$result")"
+result=$(bash -c 'source "$1"; deny test 192.0.2.1:5432 "refused" refused broken' probe "$here/probe.sh")
+same 'unrelated failure fails' '{"value":"error","ok":false}' "$(jq -c '{value, ok}' <<<"$result")"
+result=$(bash -c 'source "$1"; allow test 10.43.0.1:443 "connects" "^connected$" connected' probe "$here/probe.sh")
+same 'working control' '{"value":"allowed","ok":true}' "$(jq -c '{value, ok}' <<<"$result")"
+result=$(bash -c 'source "$1"; allow test 10.43.0.1:443 "connects" "^connected$" refused' probe "$here/probe.sh")
+same 'broken control fails' '{"value":"error","ok":false}' "$(jq -c '{value, ok}' <<<"$result")"
 
 setpriv() { printf '%s\n' "$@"; }
 export -f setpriv

@@ -14,11 +14,12 @@ source "$here/../accounts/accounts.sh"
 
 postgres_gid=$2
 id=postgres-gid-group
-ok=true
 details=()
+# Members that are not locked with a nologin shell.
+open=()
 
 if ! have getent; then
-  add_check "$id" false "getent not found"
+  add_check "$id" false "getent not found" "getent not found"
   exit 0
 fi
 groups=$(postgres_groups "$postgres_gid") || exit 2
@@ -26,9 +27,11 @@ for group in $groups; do
   members=${group##*:}
   details+=("group ${group%%:*} gid=$postgres_gid members=${members:-none}")
   for name in ${members//,/ }; do
-    line=$(account_state "$name") || ok=false
+    line=$(account_state "$name") || open+=("$name")
     details+=("member $line")
   done
 done
 ((${#details[@]})) || details=("no group with gid $postgres_gid")
-add_check "$id" "$ok" "$(joined "${details[@]}")"
+ok=true
+((${#open[@]} == 0)) || ok=false
+add_check "$id" "$ok" "$(listed "not locked with nologin" "${open[@]}")" "$(joined "${details[@]}")"

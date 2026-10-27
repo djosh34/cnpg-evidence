@@ -11,7 +11,7 @@ here=$(dirname "${BASH_SOURCE[0]}")
 source "$here/../../lib/test.sh"
 
 bash() {
-  echo '{"id":"stub","ok":true,"detail":"fixture"}'
+  echo '{"id":"stub","ok":true,"value":"none","raw":"fixture"}'
 }
 export -f bash
 actual=$(/bin/bash "$here/checks.sh" 26 26 /storage <<<'{}' | jq -s 'length')
