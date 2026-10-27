@@ -7,6 +7,8 @@
 # Reads PAYLOAD_DIR/chrome; writes PAYLOAD_DIR/lib, PAYLOAD_DIR/chrome/<loader>,
 # PAYLOAD_DIR/licenses/rpm/<RPM>/ and PAYLOAD_DIR/licenses/rpms.txt.
 set -euo pipefail
+# A failure inside $(...) stops the script too, as in upstream_tarball.
+shopt -s inherit_errexit
 
 payload=$1
 loader=/lib64/ld-linux-x86-64.so.2
@@ -123,9 +125,9 @@ libdrm_notice() {
 # Each RPM's texts go into licenses/rpm/<RPM>/. Some RPMs keep them in a
 # sibling RPM of the same source RPM, such as libX11 in libX11-common, so the
 # siblings' texts count too. An RPM with no text gets those of its upstream
-# source, from the UBI9 source RPM. licenses/rpms.txt names the licence and
-# the project URL of every RPM, and the RPMs that still have no text: their
-# source has no licence file either.
+# source, from the UBI9 source RPM, and libdrm the notice in its sources.
+# licenses/rpms.txt names the licence and the project URL of every RPM, and
+# the RPMs that still have no text: their source has no licence file either.
 "${dnf[@]}" install cpio bzip2 xz >&2
 no_text=()
 for rpm in "${rpms[@]}"; do
