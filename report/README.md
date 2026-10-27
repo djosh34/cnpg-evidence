@@ -92,7 +92,7 @@ The network images cover ports 8000 and 9187 and say so; logins on 5432 are in t
 
 ## The comparison
 
-`page/compare.js` follows the rule of `scripts/desired/compare.jq`, described in [desired.md](../docs/desired.md#the-comparison): skipped top-level keys and `raw`, allowed sets, `"*"` maps, and rows compared by identity, so an extra row is red, a missing row is struck through, and a moved pg_hba or pg_ident line shows as one missing and one extra row. The tests check that it finds the same differences as `compare.sh` on every sample and on each test case.
+`page/compare.js` follows the rule of `scripts/desired/compare.jq`, described in [desired.md](../docs/desired.md#the-comparison): skipped top-level keys and `raw`, allowed sets, `"*"` maps, and rows compared by identity, so an extra row is red, a missing row is struck through, and a moved pg_hba or pg_ident line shows as one missing and one extra row for each line whose number changed. The tests check that it finds the same differences as `compare.sh` on every sample and on each test case.
 
 ## Tests
 
