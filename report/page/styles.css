@@ -20,7 +20,6 @@ body {
   background: var(--paper);
   color: var(--ink);
   font: 400 22px/1.45 'Sofia Sans', sans-serif;
-  font-variant-numeric: tabular-nums;
 }
 
 /* One sheet is one image. */
