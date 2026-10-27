@@ -1,0 +1,12 @@
+{
+  "name": "cnpg-report-page",
+  "private": true,
+  "license": "Apache-2.0",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "render": "node dev/render.js"
+  },
+  "devDependencies": {
+    "playwright-core": "1.64.1"
+  }
+}

@@ -68,8 +68,9 @@ bash scripts/test.sh
 | `scripts/host-check/host-check.sh` | Accounts, modes, SELinux, subordinate ids and low ports on one node | [host-check.md](docs/host-check.md) |
 | `scripts/prove/prove.sh` | Login, connection and host-uid attempts that must fail | [prove.md](docs/prove.md) |
 | `scripts/desired/` | The desired documents of the three scripts, and the comparison with an actual document | [desired.md](docs/desired.md) |
+| `report/` | The page that draws a desired and an actual image for each piece of evidence | [report/README.md](report/README.md) |
 | `scripts/lib/` | Logging and exit helpers shared by the scripts | |
 | `scripts/test.sh` | Runs the `*.test.sh` next to every part of the three scripts | |
-| `.github/workflows/ci.yml` | Runs `scripts/test.sh` on every pull request and push to `main` | |
+| `.github/workflows/ci.yml` | Runs `scripts/test.sh` and the page tests on every pull request and push to `main` | |
 | `.shellcheckrc` | ShellCheck settings for the scripts | |
 | `LICENSE` | Apache License 2.0 | |

@@ -1,0 +1,120 @@
+@font-face { font-family: 'Sofia Sans'; src: url('fonts/SofiaSans.ttf'); font-weight: 1 1000; }
+@font-face { font-family: 'Sofia Sans Semi'; src: url('fonts/SofiaSansSemiCondensed.ttf'); font-weight: 1 1000; }
+@font-face { font-family: 'Sofia Sans Condensed'; src: url('fonts/SofiaSansCondensed.ttf'); font-weight: 1 1000; }
+
+:root {
+  --paper: #f6f7f3;
+  --ink: #1d2b4f;
+  --muted: #56617b;
+  --rule: #c9cfdb;
+  --red: #a92f2a;
+  --pad: 88px;
+  --line: 34px;
+  --gap: 8px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  width: max-content;
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 22px/1.45 'Sofia Sans', sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+/* One sheet is one image. */
+.sheet {
+  width: max-content;
+  min-width: calc(1080px + 2 * var(--pad));
+  padding: var(--pad);
+  background: var(--paper);
+}
+
+/* Header: title, control and statement on the left, Desired or Actual and the collection time on the right, context below. */
+header {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: 64px;
+  align-content: start;
+  padding-bottom: 56px;
+}
+.intro { grid-column: 1; }
+.intro p { max-width: 44em; text-wrap: pretty; }
+.intro .control { font-weight: 600; margin-bottom: 8px; }
+
+.side {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+}
+.time-label { margin-top: 28px; color: var(--muted); }
+.time { font: 700 40px/1.1 'Sofia Sans Condensed', sans-serif; white-space: nowrap; }
+
+.tag {
+  padding: 8px 36px 12px;
+  border: 4px solid var(--ink);
+  font: 700 84px/1 'Sofia Sans Condensed', sans-serif;
+}
+.desired .tag { border-style: dotted; }
+
+h1 {
+  max-width: 22em;
+  text-wrap: balance;
+  margin-bottom: 20px;
+  font: 700 56px/1.02 'Sofia Sans Condensed', sans-serif;
+  letter-spacing: -0.005em;
+}
+
+.context {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 60em);
+  gap: 6px 28px;
+  margin-top: 32px;
+  font-size: 20px;
+}
+.context dt { color: var(--muted); }
+.context dd { overflow-wrap: anywhere; }
+
+/* Table: one row per thing, one value per line. */
+table { border-collapse: collapse; }
+th, td {
+  padding: 0 32px 0 0;
+  text-align: left;
+  vertical-align: top;
+}
+th:last-child, td:last-child { padding-right: 0; }
+th {
+  padding-bottom: 14px;
+  border-bottom: 3px solid var(--ink);
+  font: 600 20px/1.3 'Sofia Sans Semi', sans-serif;
+  color: var(--muted);
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+th:not(.name) { min-width: 180px; }
+td {
+  padding-top: 16px;
+  padding-bottom: calc(16px - var(--gap));
+  border-bottom: 1px solid var(--rule);
+}
+
+.v {
+  min-height: var(--line);
+  margin-bottom: var(--gap);
+  font: 500 22px/var(--line) 'Sofia Sans Semi', sans-serif;
+}
+.val { white-space: pre; }
+td.name .v { font-weight: 650; }
+td.name + td.name .v { font-weight: 400; }
+
+/* The actual sheet takes the desired column widths; a longer value wraps. */
+.aligned .val { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* A value only the actual side has is red; a desired value it lacks is red and struck through. */
+.val.extra, .val.missing { color: var(--red); font-weight: 700; }
+.val.missing { text-decoration: line-through; text-decoration-thickness: 2px; }
