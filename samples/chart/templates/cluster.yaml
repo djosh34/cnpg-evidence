@@ -1,0 +1,107 @@
+{{- $c := .Values.cluster }}
+{{- $replicationCN := required "replication.commonName is required" .Values.replication.commonName }}
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ $c.name }}
+  namespace: {{ $c.namespace }}
+  annotations:
+    # Runs postgres in a pod user namespace: uid 26 in the pod is another uid on the host.
+    cnpg.io/podPatch: '[{"op":"add","path":"/spec/hostUsers","value":false}]'
+spec:
+  instances: {{ $c.instances }}
+  imageName: {{ $c.imageName }}
+  storage:
+    size: {{ $c.storageSize }}
+
+  # One instance per node, so the synchronous copy is on another node.
+  affinity:
+    podAntiAffinityType: required
+
+  # No postgres password and no <cluster>-superuser Secret.
+  enableSuperuserAccess: false
+
+  bootstrap:
+    {{- if .Values.recovery.enabled }}
+    recovery:
+      source: origin
+    {{- else }}
+    initdb:
+    {{- end }}
+      database: postgres  # no app database
+      owner: postgres     # no app role
+      secret:
+        name: {{ $c.name }}-bootstrap  # placeholder, so CNPG creates no <cluster>-app Secret
+
+  certificates:
+    serverTLSSecret: {{ $c.name }}-server
+    serverCASecret: {{ .Values.caSecret }}
+    clientCASecret: {{ .Values.caSecret }}  # client certificates are checked against the CAs in this Secret
+    replicationTLSSecret: {{ $c.name }}-replication  # the replication certificate from certificates.yaml
+
+  postgresql:
+    synchronous:
+      method: any
+      number: 1  # every commit waits for one other instance
+    pg_hba:
+      # One line per database: only its own role, only with a certificate.
+      {{- range .Values.databases }}
+      - hostssl {{ .name }} {{ .role }} all cert map=clients
+      {{- end }}
+      # Rejects every other TCP connection before CNPG's final password line.
+      - host all all all reject
+    pg_ident:
+      # Maps the replication certificate's CN to streaming_replica.
+      - cnpg_streaming_replica {{ $replicationCN }} streaming_replica
+      # Exact CNs, each to one role.
+      {{- range .Values.databases }}
+      {{- $role := .role }}
+      {{- range .clientCNs }}
+      - clients {{ . }} {{ $role }}
+      {{- end }}
+      {{- end }}
+
+  managed:
+    # The application roles, one per database.
+    roles:
+      {{- range .Values.databases }}
+      - name: {{ .role }}
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        replication: false
+        bypassrls: false
+        disablePassword: true  # PASSWORD NULL
+      {{- end }}
+    {{- if .Values.rwLoadBalancer.create }}
+    services:
+      additional:
+        - selectorType: rw
+          serviceTemplate:
+            metadata:
+              name: {{ .Values.rwLoadBalancer.name }}
+            spec:
+              type: LoadBalancer
+    {{- end }}
+
+  monitoring:
+    tls:
+      enabled: true  # metrics on 9187 over TLS with the server certificate
+
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: {{ $c.name }}-store
+
+  {{- if .Values.recovery.enabled }}
+  externalClusters:
+    - name: origin
+      plugin:
+        name: barman-cloud.cloudnative-pg.io
+        parameters:
+          barmanObjectName: {{ $c.name }}-store
+          serverName: {{ .Values.recovery.sourceCluster }}
+  {{- end }}

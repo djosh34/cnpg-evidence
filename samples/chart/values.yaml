@@ -1,0 +1,35 @@
+# Chart-only settings. The cluster, CA Secret, LoadBalancer name, namespaces,
+# replication and databases come from desired.yaml. The values below are
+# examples.
+
+cluster:
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.6-standard-trixie
+  storageSize: 1Gi
+
+# Signs the server and replication certificates: an Issuer in the cluster's
+# namespace, or a ClusterIssuer.
+issuer:
+  kind: Issuer
+  name: example-ca
+
+# create: false when the service named in desired.yaml exists already.
+rwLoadBalancer:
+  create: true
+
+# The pod ranges and node tunnel addresses in the NetworkPolicy come from the
+# nodes' spec.podCIDR.
+
+# barman-cloud object store for WAL archive and backups.
+objectStore:
+  destinationPath: s3://example-bucket/
+  endpointURL: https://s3.example.com
+  credentialsSecret: backup-creds  # keys ACCESS_KEY_ID and ACCESS_SECRET_KEY
+
+# true: bootstrap by restoring the backups of sourceCluster instead of initdb.
+recovery:
+  enabled: false
+  sourceCluster: pg  # cluster name the backups were taken from
+
+# Set in desired.yaml.
+replication: {}
+databases: []

@@ -1,0 +1,32 @@
+{{- $c := .Values.cluster }}
+{{- $r := .Values.replication }}
+# Server certificate for 5432, 8000 and 9187, with the names from replication in
+# desired.yaml.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $c.name }}-server
+  namespace: {{ $c.namespace }}
+spec:
+  secretName: {{ $c.name }}-server
+  commonName: {{ $r.commonName }}
+  dnsNames: {{ toJson $r.dnsNames }}
+  usages: [server auth]
+  issuerRef:
+    kind: {{ .Values.issuer.kind }}
+    name: {{ .Values.issuer.name }}
+---
+# The one replication client certificate, mounted into every instance.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $c.name }}-replication
+  namespace: {{ $c.namespace }}
+spec:
+  secretName: {{ $c.name }}-replication
+  commonName: {{ $r.commonName }}
+  dnsNames: {{ toJson $r.dnsNames }}
+  usages: [client auth]  # CNPG requires clientAuth on this certificate
+  issuerRef:
+    kind: {{ .Values.issuer.kind }}
+    name: {{ .Values.issuer.name }}

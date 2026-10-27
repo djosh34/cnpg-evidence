@@ -1,0 +1,39 @@
+# The desired state of one CNPG cluster: what evidence.sh compares against,
+# and the values for samples/chart. The names below are examples.
+
+cluster:
+  name: pg
+  namespace: databases
+  instances: 3
+
+# Secret with ca.crt: the CAs that may sign client certificates, including the
+# CA of the chart's issuer, since the chart also uses it as the server CA.
+# Created outside the chart. No ca.key.
+caSecret: client-ca
+
+# rw LoadBalancer for clients. The NetworkPolicy admits the svclb pods that k3s servicelb runs on every node to forward its port.
+rwLoadBalancer:
+  name: pg-rw-lb
+
+# Who may reach the instance pods besides clients: the operator on 8000, the
+# OTel collectors on 9187.
+network:
+  operatorNamespace: cnpg-system
+  otelNamespace: otel
+
+# CN and dnsNames of the server certificate and of the one replication
+# certificate shared by all instances. Besides CNPG's fixed CN
+# streaming_replica, only this CN maps to streaming_replica.
+replication:
+  commonName: pg-replication
+  dnsNames: [pg-rw, pg-rw.databases.svc]
+
+# One database per entry, owned by one LOGIN role with no password. A client
+# certificate with one of clientCNs logs in as that role, to that database only.
+databases:
+  - name: orders
+    role: orders
+    clientCNs: [orders-app.test]
+  - name: billing
+    role: billing
+    clientCNs: [billing-app.test, billing-report.test]

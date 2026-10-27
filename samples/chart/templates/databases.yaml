@@ -1,0 +1,16 @@
+{{- $c := .Values.cluster }}
+{{- range .Values.databases }}
+---
+# One Database object per database, owned by its role.
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: {{ $c.name }}-{{ .name }}
+  namespace: {{ $c.namespace }}
+spec:
+  cluster:
+    name: {{ $c.name }}
+  name: {{ .name }}
+  owner: {{ .role }}
+  ensure: present
+{{- end }}

@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Checks pod controls, service results and collection errors with command fixtures.
+# Usage: bash pod.test.sh
+# Exit: 0 all assertions pass, 1 an assertion fails, nonzero on a test error.
+set -euo pipefail
+shopt -s inherit_errexit
+
+here=$(dirname "${BASH_SOURCE[0]}")
+# shellcheck source-path=SCRIPTDIR
+source "$here/../../lib/test.sh"
+
+kubectl() {
+  case $* in
+    *'get -o json cluster pg'*) echo '{"spec":{"imageName":"postgres:test"}}' ;;
+    *'get service kubernetes'*) printf 10.43.0.1 ;;
+    *'get -o json pods'*) echo '{"items":[{"status":{"podIP":"10.42.0.1"}}]}' ;;
+    *'get -o json service pg-rw-lb'*)
+      cat <<'JSON'
+{"spec":{"ports":[{"port":5432,"nodePort":30000}]},"status":{"loadBalancer":{"ingress":[{"ip":"192.0.2.1"}]}}}
+JSON
+      ;;
+    'get nodes -o json')
+      cat <<'JSON'
+{"items":[{"status":{"addresses":[{"type":"InternalIP","address":"192.0.2.2"}]}}]}
+JSON
+      ;;
+    'create namespace prove-'* | 'delete namespace prove-'*) return 0 ;;
+    *'run probe'*) [[ ${pod_failure:-} != run ]] ;;
+    *'wait pod/probe'*) [[ ${pod_failure:-} != wait ]] ;;
+    *'logs probe')
+      cat <<TEXT
+10.43.0.1:443 connected
+10.42.0.1:5432 timeout
+10.42.0.1:8000 Connection refused
+10.42.0.1:9187 timeout
+lb 192.0.2.1:5432 ${service_result:-FATAL: pg_hba.conf rejects connection}
+nodeport 192.0.2.2:30000 ${service_result:-FATAL: pg_hba.conf rejects connection}
+TEXT
+      ;;
+    *) return 2 ;;
+  esac
+}
+export -f kubectl
+result=$(bash "$here/pod.sh" databases pg pg-rw-lb | jq -s .)
+same_text 'pod controls and policy probes' true "$(jq 'length == 6 and all(.ok)' <<<"$result")"
+for refusal in 'psql: error: connection failed: Connection refused' \
+  'psql: error: connection failed: timeout expired'; do
+  result=$(service_result=$refusal bash "$here/pod.sh" databases pg pg-rw-lb | jq -s .)
+  same_text "$refusal is an accepted service denial" true "$(jq 'all(.ok)' <<<"$result")"
+done
+for failure in 'succeeded: 1' 'succeeded: pg_hba.conf rejects connection' \
+  'succeeded: Connection refused' 'psql: error: could not translate host name' \
+  'psql: error: certificate verify failed' 'timeout' 'no result, the pod did not finish'; do
+  result=$(service_result=$failure bash "$here/pod.sh" databases pg pg-rw-lb | jq -s .)
+  same_text "$failure never proves service denial" 2 \
+    "$(jq '[.[] | select(.ok == false)] | length' <<<"$result")"
+done
+for failure in run wait; do
+  status=0
+  result=$(pod_failure=$failure bash "$here/pod.sh" databases pg pg-rw-lb 2>/dev/null) || status=$?
+  same_text "$failure error exits 2" 2 "$status"
+  same_text "$failure error has no output" '' "$result"
+done
+finish

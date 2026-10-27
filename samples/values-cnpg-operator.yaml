@@ -1,0 +1,11 @@
+# Values for the cloudnative-pg chart 0.29.1, release "cnpg" in cnpg-system.
+# RBAC comes from rbac-cnpg-operator.yaml instead of the chart.
+config:
+  # true only so the chart does not write its own WATCH_NAMESPACE; RBAC is off below.
+  clusterWide: true
+rbac:
+  create: false  # the chart would grant secrets and pods/exec in every namespace
+additionalEnv:
+  # The operator watches only these namespaces.
+  - name: WATCH_NAMESPACE
+    value: cnpg-system,databases

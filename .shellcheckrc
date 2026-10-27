@@ -1,0 +1,2 @@
+# Siblings are sourced through $here, and test stubs run in child scripts.
+disable=SC1091,SC2317

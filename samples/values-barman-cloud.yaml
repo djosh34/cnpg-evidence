@@ -1,0 +1,4 @@
+# Values for the plugin-barman-cloud chart 0.8.1, release "barman-cloud" in cnpg-system.
+# RBAC comes from rbac-barman-cloud.yaml instead of the chart.
+rbac:
+  create: false  # the chart would grant secret create, delete and read in every namespace

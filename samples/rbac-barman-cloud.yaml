@@ -1,0 +1,64 @@
+# RBAC for the barman-cloud plugin, used with values-barman-cloud.yaml.
+# Subject: ServiceAccount barman-cloud-plugin-barman-cloud in cnpg-system (chart release "barman-cloud").
+# Rules copied from chart plugin-barman-cloud 0.8.1, secrets cut to read; compare with the chart's RBAC on upgrades.
+# The chart still renders its leader-election Role in cnpg-system.
+
+# The plugin's caches watch these at cluster scope, so list and watch are cluster-wide.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: barman-cloud-cluster
+rules:
+  - apiGroups: [barmancloud.cnpg.io]
+    resources: [objectstores]
+    verbs: [list, watch]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [roles, rolebindings]
+    verbs: [list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: barman-cloud-cluster
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: barman-cloud-cluster}
+subjects:
+  - {kind: ServiceAccount, name: barman-cloud-plugin-barman-cloud, namespace: cnpg-system}
+---
+# Namespaced rules, bound only in databases. A ClusterRole only so it can be reused per namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: barman-cloud-namespaced
+rules:
+  # Read only. The plugin grants each instance read on its object store Secret,
+  # and Kubernetes lets it grant only what it holds itself.
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get, list, watch]
+  - apiGroups: [barmancloud.cnpg.io]
+    resources: [objectstores]
+    verbs: [create, delete, get, list, patch, update, watch]
+  - apiGroups: [barmancloud.cnpg.io]
+    resources: [objectstores/finalizers]
+    verbs: [update]
+  - apiGroups: [barmancloud.cnpg.io]
+    resources: [objectstores/status]
+    verbs: [get, patch, update]
+  - apiGroups: [postgresql.cnpg.io]
+    resources: [backups]
+    verbs: [get, list, watch]
+  - apiGroups: [postgresql.cnpg.io]
+    resources: [clusters/finalizers]
+    verbs: [update]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [roles, rolebindings]
+    verbs: [create, get, list, patch, update, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: barman-cloud
+  namespace: databases
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: barman-cloud-namespaced}
+subjects:
+  - {kind: ServiceAccount, name: barman-cloud-plugin-barman-cloud, namespace: cnpg-system}

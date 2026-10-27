@@ -1,0 +1,20 @@
+{{- $c := .Values.cluster }}
+# Where barman-cloud writes WAL and base backups, under <destinationPath>/<cluster name>/.
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: {{ $c.name }}-store
+  namespace: {{ $c.namespace }}
+spec:
+  configuration:
+    destinationPath: {{ .Values.objectStore.destinationPath }}
+    endpointURL: {{ .Values.objectStore.endpointURL }}
+    s3Credentials:
+      accessKeyId:
+        name: {{ .Values.objectStore.credentialsSecret }}
+        key: ACCESS_KEY_ID
+      secretAccessKey:
+        name: {{ .Values.objectStore.credentialsSecret }}
+        key: ACCESS_SECRET_KEY
+    wal:
+      compression: gzip
