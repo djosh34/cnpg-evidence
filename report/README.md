@@ -2,6 +2,8 @@
 
 The page that draws the evidence images, and `cnpg-report`, the one static file that draws them with the Chrome it carries.
 
+How to get, run and read `cnpg-report` is in [report.md](../docs/report.md). This file is about the code.
+
 The page is plain HTML, one CSS file and plain JS, with no build step. A caller loads `page/index.html` in Chrome, passes it the documents of one script, and saves each sheet the page draws as one PNG.
 
 Each image is one table. A desired image shows the values of a desired document from `scripts/desired/desired.sh`; its actual image shows the values of the script's actual document in the same columns and row order. On the actual image, a value only the actual document has is red, and a desired value it lacks is red and struck through. A difference marks a value, not a failed check: the scripts' own checks stay the verdict, and no image says passed or failed.
@@ -24,29 +26,7 @@ Each image is one table. A desired image shows the values of a desired document 
 
 ## cnpg-report
 
-```
-cnpg-report [--desired <file.json>] --out <dir> <file.json>
-```
-
-One call draws the images of one document into `<dir>`, which it makes if needed. The source and kind come from the document. An actual document needs its desired document as `--desired`, and the call writes both images of every pair. A desired document of `evidence.sh` or `prove.sh` alone gives its desired images; a host-check desired document is drawn only with a node file.
-
-Exit 0 when every image is written. Exit 2 on unreadable JSON, a missing key, a render error or a wrong call, with no image left in `<dir>`.
-
-```bash
-cnpg-report --desired evidence.desired.json --out images/ evidence.json
-for node in node-a.json node-b.json; do
-  cnpg-report --desired host-check.desired.json --out images/ "$node"
-done
-```
-
-The file is a static x86_64 Linux executable of about 130 MB. It needs no network and no library or font from the OS; the test below shows this in a stock `ubi9-minimal` container. glibc still reads `/etc/nsswitch.conf` and `/etc/hosts` there. Each call unpacks about 300 MB into a new directory in `TMPDIR` (default `/tmp`), which must allow running files, and removes it after. Chrome runs without its sandbox, so give it only documents of the scripts.
-
-What it carries:
-
-- chrome-headless-shell of [Chrome for Testing](https://googlechromelabs.github.io/chrome-for-testing/), at the version pinned in `build.sh`;
-- the libraries Chrome links and opens at run time, glibc and its loader `ld-linux-x86-64.so.2`, all taken from UBI9 RPMs; Chrome starts through that loader, and so do the processes it starts, which run through `cnpg-report` again;
-- the page, with its Sofia Sans fonts and a `fonts.conf` that names only them;
-- the licence texts in `licenses/`: Chrome for Testing's `LICENSE.headless_shell`, `OFL.txt` of the fonts, Go's licence, and the texts of each RPM in `licenses/rpm/<RPM>/`. An RPM with no licence file of its own gets those at the top of its upstream source, from the UBI9 source RPM. `licenses/rpms.txt` lists every RPM with its version, licence and project URL, and names any RPM with a licence file in neither place. The texts are in the unpacked directory while a call runs.
+`cnpg-report` is a static x86_64 Linux file of about 130 MB. [report.md](../docs/report.md) describes its call, exit codes, space needs and the parts it carries with their licences. Chrome starts through the loader it carries, and so do the processes Chrome starts, which run through `cnpg-report` again. The page uses its Sofia Sans fonts through a `fonts.conf` that names only them, and the licence texts go into `licenses/` of the payload.
 
 ### Building
 
