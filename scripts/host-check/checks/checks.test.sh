@@ -10,12 +10,24 @@ here=$(dirname "${BASH_SOURCE[0]}")
 # shellcheck source-path=SCRIPTDIR
 source "$here/../../lib/test.sh"
 
+# The checks of the desired host-check document, in its order.
+desired=$(
+  jq -n '{cluster: {name: "pg", namespace: "databases", instances: 3}, caSecret: "client-ca",
+          rwLoadBalancer: {name: "pg-rw-lb"}, network: {operatorNamespace: "cnpg-system", otelNamespace: "otel"},
+          replication: {commonName: "pg-replication"}, databases: []}' |
+    bash "$here/../../desired/desired.sh" --source host-check |
+    jq -r '[.checks[].id] | join(" ")'
+)
+
+# Each stub check is named after its script.
 bash() {
-  echo '{"id":"stub","ok":true,"value":"none","raw":"fixture"}'
+  local id=${1##*/}
+  echo "{\"id\":\"${id%.sh}\",\"ok\":true,\"value\":\"none\",\"raw\":\"fixture\"}"
 }
 export -f bash
-actual=$(/bin/bash "$here/checks.sh" 26 26 /storage <<<'{}' | jq -s 'length')
-same_text "all checks invoked" 13 "$actual"
+actual=$(/bin/bash "$here/checks.sh" 26 26 /storage <<<'{}' | jq -s -r 'map(.id) | join(" ")')
+same_text "all checks invoked" 13 "$(wc -w <<<"$actual")"
+same_text "the checks of the desired document, in order" "$desired" "$actual"
 bash() { return 7; }
 export -f bash
 status=0

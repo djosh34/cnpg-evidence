@@ -5,21 +5,10 @@
 # Input: {facts, values}. Output: a list of sentences.
 
 include "common";
+include "expected";
 
-.values as $values
-| .facts as $facts
-| {os_users: ["postgres"]} as $over_socket
-| {postgres: $over_socket, cnpg_metrics_exporter: $over_socket} as $cnpg_local
-| {common_names: ([$values.replication.commonName, "streaming_replica"] | sort)} as $replica
-| ({
-     postgres: {owner: "postgres", logins: ($cnpg_local + {streaming_replica: $replica})},
-     template0: {owner: "postgres", allows_connections: false},
-     template1: {owner: "postgres", logins: $cnpg_local},
-     replication: {logins: {streaming_replica: $replica}}
-   }
-   + ([$values.databases[]
-       | {key: .name, value: {owner: .role, logins: ($cnpg_local + {(.role): {common_names: (.clientCNs | sort)}})}}]
-      | from_entries)) as $expected_databases
+.facts as $facts
+| (.values | expected_databases) as $expected_databases
 | [$facts.databases[].logins[]?.common_names[]?] as $all_common_names
 
 | def where($name): if $name == "replication" then "physical replication" else "database \($name)" end;

@@ -7,7 +7,7 @@ Sample manifests for a CloudNativePG (CNPG) cluster that accepts only certificat
 - k3s with its default flannel, servicelb, local-path provisioner and network policy controller.
 - Hosts with SELinux and rpm.
 - CNPG with the barman-cloud plugin.
-- [`desired.yaml`](desired.yaml) describes the cluster: its name and namespace, the client CA Secret, the LoadBalancer, the namespaces of the operator and the OTel collectors, the replication certificate and the databases. The sample chart and `evidence.sh` both read it.
+- [`desired.yaml`](desired.yaml) describes the cluster: its name and namespace, the client CA Secret, the LoadBalancer, the namespaces of the operator and the OTel collectors, the replication certificate and the databases. The sample chart, `evidence.sh` and `desired.sh` read it.
 
 ## Rules
 
@@ -39,6 +39,11 @@ bash scripts/host-check/host-check.sh > host-check.json
 # Real login and access attempts that must fail.
 bash scripts/prove/prove.sh > prove.json
 
+# Anywhere with bash, jq and openssl. The desired documents of the three scripts,
+# and the differences between a desired and an actual document.
+yq -o=json desired.yaml | bash scripts/desired/desired.sh --ca client-ca.pem > evidence.desired.json
+bash scripts/desired/compare.sh evidence.desired.json evidence.json
+
 # Anywhere with bash, jq, openssl and python3. The unit tests of all three scripts,
 # with kubectl and psql stubbed.
 bash scripts/test.sh
@@ -51,16 +56,18 @@ bash scripts/test.sh
 - `evidence.sh` reads the live state through the API server and PostgreSQL, and compares it with `desired.yaml`. It shows rules 1 to 5, 7 and 8, and the pod side of rule 6. It only reads.
 - `host-check.sh` reads one node: accounts with the postgres uid or gid, sudoers, directory modes, SELinux, subordinate ids and low ports. It shows the host side of rule 6. It only reads.
 - `prove.sh` tries what rules 1, 2, 5 and 6 forbid: password logins, certificate logins as the wrong role, connections from a pod in another namespace, and file and socket access as the host postgres uid. Each attempt must fail with the expected denial, and two control attempts must succeed.
+- `desired.sh` builds, from `desired.yaml` alone, a document of the same shape as each script's output that holds the desired values. `compare.sh` lists where an actual document differs from it. The scripts' own checks stay the verdict.
 
 ## Files
 
 | Path | What it is | Doc |
 |---|---|---|
-| `desired.yaml` | The desired state of the cluster, read by the chart and by `evidence.sh` | [samples.md](docs/samples.md) |
+| `desired.yaml` | The desired state of the cluster, read by the chart, `evidence.sh` and `desired.sh` | [samples.md](docs/samples.md) |
 | `samples/` | Helm chart rendered from `desired.yaml`, operator and plugin values, RBAC for both | [samples.md](docs/samples.md) |
 | `scripts/evidence/evidence.sh` | Who can do what in PostgreSQL and Kubernetes, and every rule the live state breaks | [evidence.md](docs/evidence.md) |
 | `scripts/host-check/host-check.sh` | Accounts, modes, SELinux, subordinate ids and low ports on one node | [host-check.md](docs/host-check.md) |
 | `scripts/prove/prove.sh` | Login, connection and host-uid attempts that must fail | [prove.md](docs/prove.md) |
+| `scripts/desired/` | The desired documents of the three scripts, and the comparison with an actual document | [desired.md](docs/desired.md) |
 | `scripts/lib/` | Logging and exit helpers shared by the scripts | |
 | `scripts/test.sh` | Runs the `*.test.sh` next to every part of the three scripts | |
 | `.github/workflows/ci.yml` | Runs `scripts/test.sh` on every pull request and push to `main` | |
