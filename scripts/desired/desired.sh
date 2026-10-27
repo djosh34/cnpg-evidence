@@ -23,7 +23,7 @@ usage() {
 
 source=evidence
 ca_file=
-postgres_uid=26
+postgres_uid=
 while (($#)); do
   (($# >= 2)) || usage
   case $1 in
@@ -35,11 +35,14 @@ while (($#)); do
   shift 2
 done
 case $source in
-  evidence) [[ -n $ca_file ]] || usage ;;
-  host-check | prove) [[ -z $ca_file ]] || usage ;;
+  evidence) [[ -n $ca_file && -z $postgres_uid ]] || usage ;;
+  host-check) [[ -z $ca_file && -z $postgres_uid ]] || usage ;;
+  prove)
+    postgres_uid=${postgres_uid:-26}
+    [[ -z $ca_file && $postgres_uid =~ ^[0-9]+$ ]] || usage
+    ;;
   *) usage ;;
 esac
-[[ $postgres_uid =~ ^[0-9]+$ ]] || usage
 
 for tool in jq openssl; do
   have "$tool" || die "$tool not found"

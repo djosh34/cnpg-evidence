@@ -19,7 +19,7 @@ bash scripts/desired/compare.sh evidence.desired.json evidence.actual.json
 - stdin: the desired values from `desired.yaml` as JSON, as for `evidence.sh`. They must have every key `evidence.sh` needs, for every source.
 - `--source`: `evidence` (default), `host-check` or `prove`.
 - `--ca`: for `evidence` only, and needed there: the same CA certificates as `evidence.sh --ca`.
-- `--postgres-uid`: for `prove`, PostgreSQL's uid in the CNPG image, as `prove.sh --postgres-uid`. Default 26.
+- `--postgres-uid`: for `prove` only, PostgreSQL's uid in the CNPG image, as `prove.sh --postgres-uid`. Default 26.
 
 `desired.sh` prints one JSON document; exit 0, or 2 on any error, with nothing on stdout. `compare.sh` prints one JSON list; exit 0, also when the list is not empty, or 2 on any error, such as two actual documents or documents of two sources.
 
@@ -73,7 +73,7 @@ Each difference is `{path, extra}` or `{path, missing}`. `path` names the keys d
  {"path": ["checks", "selinux-enforcing", "value"], "missing": "enforcing"}]
 ```
 
-An empty list means the actual document has every desired value and nothing else.
+An empty list means the actual document has every desired value and nothing else. A `"*"` map stands for the keys the actual map has, so an actual map with no keys shows no difference; `evidence.sh` checks the number of instance pods.
 
 ## Code
 
@@ -84,7 +84,7 @@ An empty list means the actual document has every desired value and nothing else
 | `host-check.jq`, `prove.jq` | The desired host-check and prove documents |
 | `compare.sh`, `compare.jq` | The comparison |
 
-Every file has a `*.test.sh` next to it; `scripts/test.sh` runs them all.
+`desired.test.sh` covers `desired.sh` and the three `.jq` documents, `compare.test.sh` covers the comparison; `scripts/test.sh` runs them all.
 
 ## Limits
 

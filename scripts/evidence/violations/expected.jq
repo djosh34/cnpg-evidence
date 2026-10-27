@@ -117,7 +117,9 @@ def controllers:
 
 # The subjects that may hold a right that equals PostgreSQL superuser:
 # system:masters, the operator, the plugin, the instances, the API server,
-# cert-manager and its cainjector, and the controllers.
+# cert-manager and its cainjector, and the controllers. The account names
+# are arguments so the violation tests can give their own; evidence.sh and
+# desired.sh give operator_account and plugin_account.
 def allowed_subjects($operator_account; $plugin_account):
   ["group:system:masters",
    "system:serviceaccount:\(.network.operatorNamespace):\($operator_account)",

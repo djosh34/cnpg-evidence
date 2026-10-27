@@ -39,6 +39,7 @@ exits() {
 exits "evidence without --ca" 2 "$values"
 exits "--ca for host-check" 2 "$values" --source host-check --ca <(echo "$ca")
 exits "an unknown source" 2 "$values" --source versions
+exits "--postgres-uid for host-check" 2 "$values" --source host-check --postgres-uid 26
 exits "a uid that is not a number" 2 "$values" --source prove --postgres-uid nope
 exits "values that are not JSON" 2 "cluster: pg" --source host-check
 exits "values without the cluster" 2 '{}' --source host-check
