@@ -30,6 +30,15 @@ grep() { [[ ${no_process:-} != true ]]; }
 setpriv() { echo 'Permission denied' >&2; return 2; }
 export -f kubectl pgrep grep setpriv
 export test_pid=$$
+# desired_rows RECORDS: the rows of the desired prove document, from
+# scripts/desired, for the probes in RECORDS, sorted by name.
+desired_rows() {
+  jq -n '{cluster: {name: "pg", namespace: "databases", instances: 3}, caSecret: "client-ca",
+          rwLoadBalancer: {name: "pg-rw-lb"}, network: {operatorNamespace: "cnpg-system", otelNamespace: "otel"},
+          replication: {commonName: "pg-replication"}, databases: [{name: "orders", role: "orders", clientCNs: []}]}' |
+    bash "$here/../../desired/desired.sh" --source prove |
+    jq -c --argjson records "$1" '[.probes[] | select(.probe as $name | any($records[]; .probe == $name))] | sort_by(.probe)'
+}
 result=$(bash "$here/uid.sh" databases pg node1 '' 26 | jq -s .)
 same_text 'seven uid paths' 7 "$(jq length <<<"$result")"
 same_text 'missing root paths cannot prove denial' 6 "$(jq '[.[] | select(.ok == false and .value == "error" and (.actual | contains("missing as root")))] | length' <<<"$result")"
@@ -38,6 +47,8 @@ same 'existing environ denial' '{"probe":"uid-26 environ","target":"pg-test","va
 same 'the mapped uid is in the target, not the name' '{"probe":"uid-mapped socket-host-path","target":"pg-test uid 26"}' \
   "$(jq -c '.[6] | {probe, target}' <<<"$result")"
 same_text 'the expected text names no path' 'Permission denied' "$(jq -r 'map(.expected) | unique | join(", ")' <<<"$result")"
+same 'names and texts as in the desired document' "$(desired_rows "$result" | jq -c 'map({probe, expected})')" \
+  "$(jq -c 'map({probe, expected}) | sort_by(.probe)' <<<"$result")"
 result=$(no_pods=true bash "$here/uid.sh" databases pg node1 '' 26 | jq -s .)
 same 'no local pods fail' '{"probe":"uid-probes","target":"node1","value":"not found","ok":false}' \
   "$(jq -c '.[0] | {probe, target, value, ok}' <<<"$result")"

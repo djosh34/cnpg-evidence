@@ -16,11 +16,9 @@ shopt -s inherit_errexit
 here=$(dirname "${BASH_SOURCE[0]}")
 source "$here/../lib/common.sh"
 
-# The release names in samples/values-*.yaml fix these ServiceAccount names;
-# cert-manager runs in its own namespace.
-operator_account=cnpg-cloudnative-pg
-plugin_account=barman-cloud-plugin-barman-cloud
-cert_manager_namespace=cert-manager
+# expected EXPRESSION: a value from violations/expected.jq, with the desired
+# values as input.
+expected() { jq -r -L "$here/violations" "include \"expected\"; $1" <<<"$values"; }
 
 usage() {
   echo "usage: yq -o=json desired.yaml | ${0##*/} --ca client-ca.pem" >&2
@@ -36,15 +34,10 @@ for tool in kubectl jq openssl base64; do
 done
 
 values=$(jq -c .) || die "the desired state on stdin is not JSON"
-jq -e '
-  all(.cluster.name, .cluster.namespace, .caSecret, .rwLoadBalancer.name,
-      .network.operatorNamespace, .network.otelNamespace, .replication.commonName;
-      type == "string" and . != "")
-  and (.cluster.instances | type == "number")
-  and (.databases | type == "array")
-  and all(.databases[]; (.name, .role | type == "string") and (.clientCNs | type == "array"))
-' <<<"$values" >/dev/null ||
-  die "the desired state needs cluster.name, cluster.namespace, cluster.instances, caSecret, rwLoadBalancer.name, network.operatorNamespace, network.otelNamespace, replication.commonName and databases with name, role and clientCNs"
+[[ $(expected valid_values) == true ]] || die "$(expected values_needed)"
+operator_account=$(expected operator_account) || exit 2
+plugin_account=$(expected plugin_account) || exit 2
+cert_manager_namespace=$(expected cert_manager_namespace) || exit 2
 
 value() { jq -r "$1" <<<"$values"; }
 namespace=$(value .cluster.namespace) || exit 2

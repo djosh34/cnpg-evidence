@@ -41,6 +41,15 @@ TEXT
   esac
 }
 export -f kubectl
+# desired_rows RECORDS: the rows of the desired prove document, from
+# scripts/desired, for the probes in RECORDS, sorted by name.
+desired_rows() {
+  jq -n '{cluster: {name: "pg", namespace: "databases", instances: 3}, caSecret: "client-ca",
+          rwLoadBalancer: {name: "pg-rw-lb"}, network: {operatorNamespace: "cnpg-system", otelNamespace: "otel"},
+          replication: {commonName: "pg-replication"}, databases: [{name: "orders", role: "orders", clientCNs: []}]}' |
+    bash "$here/../../desired/desired.sh" --source prove |
+    jq -c --argjson records "$1" '[.probes[] | select(.probe as $name | any($records[]; .probe == $name))] | sort_by(.probe)'
+}
 result=$(bash "$here/pod.sh" databases pg pg-rw-lb | jq -s .)
 same_text 'pod controls and policy probes' true "$(jq 'length == 6 and all(.ok)' <<<"$result")"
 same 'names without addresses, targets with them' \
@@ -48,6 +57,8 @@ same 'names without addresses, targets with them' \
     ["other-namespace-8000","10.42.0.1:8000","denied"],["other-namespace-9187","10.42.0.1:9187","denied"],
     ["other-namespace-lb","192.0.2.1:5432","denied"],["other-namespace-nodeport","192.0.2.2:30000","denied"]]' \
   "$(jq -c 'map([.probe, .target, .value])' <<<"$result")"
+same 'names, texts and values as in the desired document' "$(desired_rows "$result")" \
+  "$(jq -c 'map({probe, expected, value, ok}) | unique | sort_by(.probe)' <<<"$result")"
 for refusal in 'psql: error: connection failed: Connection refused' \
   'psql: error: connection failed: timeout expired'; do
   result=$(service_result=$refusal bash "$here/pod.sh" databases pg pg-rw-lb | jq -s .)

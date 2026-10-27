@@ -7,37 +7,17 @@
 # from kubernetes/kubernetes.jq and optional. Output: a list of sentences.
 
 include "common";
+include "expected";
 
-.values.cluster.namespace as $namespace
-| .values.cluster.name as $cluster
-| .values.network.operatorNamespace as $operator_namespace
+.values.cluster.name as $cluster
 | .facts.kubernetes as $k
-
-# The Kubernetes and k3s controllers, which create pods and other objects
-# from objects that other subjects write.
-| (["system:kube-controller-manager", "k3s-cloud-controller-manager"]
-   + (["clusterrole-aggregation-controller", "cronjob-controller", "daemon-set-controller", "deployment-controller",
-       "endpoint-controller", "endpointslice-controller", "endpointslicemirroring-controller",
-       "generic-garbage-collector", "job-controller", "legacy-service-account-token-cleaner",
-       "local-path-provisioner-service-account", "namespace-controller", "persistent-volume-binder",
-       "replicaset-controller", "replication-controller", "resourcequota-controller", "statefulset-controller"]
-      | map("system:serviceaccount:kube-system:\(.)"))) as $controllers
-# The subjects that may hold a right that equals PostgreSQL superuser:
-# system:masters, the operator, the plugin, the instances, the API server,
-# cert-manager and its cainjector, and the controllers.
-| (["group:system:masters",
-    "system:serviceaccount:\($operator_namespace):\(.operator_account)",
-    "system:serviceaccount:\($operator_namespace):\(.plugin_account)",
-    "system:serviceaccount:\($namespace):\($cluster)",
-    "kube-apiserver",
-    "system:serviceaccount:cert-manager:cert-manager",
-    "system:serviceaccount:cert-manager:cert-manager-cainjector"] + $controllers) as $allowed
-# The subjects that may request certificates.
-| (["group:system:masters", "system:serviceaccount:cert-manager:cert-manager"] + $controllers) as $certificate_allowed
-
-# In the cert-manager namespace its webhook may also read and write Secrets:
-# it keeps its serving CA there.
-| {"cert-manager": ["system:serviceaccount:cert-manager:cert-manager-webhook"]} as $allowed_in
+| .operator_account as $operator_account
+| .plugin_account as $plugin_account
+# The subjects that may hold these rights and that may request
+# certificates are in expected.jq.
+| (.values | allowed_subjects($operator_account; $plugin_account)) as $allowed
+| certificate_subjects as $certificate_allowed
+| (.values | secret_namespaces) as $secret_namespaces
 
 # Each sentence ends with the reasons the API server gave, which name the
 # bindings that allowed the right.
@@ -63,13 +43,13 @@ include "common";
        end);
 
   def reads_secrets($key; $who):
-    $k[$key] | extra([$operator_namespace, $namespace])
+    $k[$key] | extra($secret_namespaces)
     | "rule 7: \($who) can read secrets in \(.)\(because([$key]; .))";
 
   [
     ($k.namespaces | to_entries[]
      | .key as $in | .value as $rights
-     | ($allowed + ($allowed_in[$in] // [])) as $allowed_here
+     | ($allowed + allowed_in($in)) as $allowed_here
      | not_allowed(["namespaces", $in, "exec_into_pods"]; $allowed_here; "exec into pods in \($in)"),
        not_allowed(["namespaces", $in, "change_pods"]; $allowed_here; "change pods in \($in)"),
        not_allowed(["namespaces", $in, "run_pods"]; $allowed_here; "create or change pods or workloads in \($in)"),

@@ -10,7 +10,7 @@ Anywhere with a cluster-admin kubeconfig (on a k3s server node, `KUBECONFIG=/etc
 yq -o=json desired.yaml | bash scripts/evidence/evidence.sh --ca client-ca.pem > evidence.json
 ```
 
-- stdin: the desired values from [`desired.yaml`](../desired.yaml) as JSON. The example converts `desired.yaml` with `yq` (mikefarah v4); any YAML-to-JSON converter works. Every expected value comes from these values or from fixed CNPG facts in the code, never from the live `Cluster`.
+- stdin: the desired values from [`desired.yaml`](../desired.yaml) as JSON. The example converts `desired.yaml` with `yq` (mikefarah v4); any YAML-to-JSON converter works. Every expected value comes from these values or from fixed CNPG facts in `scripts/evidence/violations/expected.jq`, never from the live `Cluster`. [desired.sh](desired.md) builds the desired document from the same file.
 - `--ca`: the CA certificates in PEM that may sign client certificates, including the CA of the `issuer` in `samples/chart/values.yaml`: the same certificates as `ca.crt` in the client CA Secret.
 - Needs bash, `kubectl`, `jq`, `openssl` and `base64`, and the whole `scripts/` directory. The instance image needs `timeout` and `openssl` for the TLS handshake; without them `metrics` reads `none`.
 
@@ -31,7 +31,7 @@ Exit 0 when `violations` is empty, 1 when not, 2 on any error (bad input, a miss
    - Then the cluster's own pods, the operator, the OTel namespace and every namespace.
 8. **Read hostNetwork pods.** A pod with `hostNetwork: true` uses its node's network directly. Containers get `NET_BIND_SERVICE` unless it is dropped. A container that keeps it can bind a port below 1024 on the node if it is privileged, runs as root (also when neither `runAsUser` nor `runAsNonRoot: true` is set), or can regain the capability (no `allowPrivilegeEscalation: false`).
 9. **Ask the API server who holds which right.** Kubernetes permissions are Roles (in one namespace) and ClusterRoles, given to users, groups and ServiceAccounts by RoleBindings and ClusterRoleBindings. A ServiceAccount is the identity a pod runs as; whoever can run a pod in a namespace can use that namespace's ServiceAccounts. Every subject of every binding is asked with a SubjectAccessReview, one per subject, verb and resource. The API server answers a review as it would answer the subject itself and stores nothing. A review names the subject's groups: a ServiceAccount is in `system:serviceaccounts`, `system:serviceaccounts:<namespace>` and `system:authenticated`, a user in `system:authenticated`, and a group is asked as a probe user in that group and `system:authenticated`. A Role can limit a verb to named objects, so existing objects are asked by name: the instance pods, the `Cluster`, every Secret, the NetworkPolicies, the nodes, `system:masters`, `cluster-admin` and the ServiceAccounts of CNPG and cert-manager. `system:masters` is the group whose members skip all authorization checks; the k3s admin certificate is in it. All reviews go in one List to one `kubectl create`; a failed review fails the run, so an error is never taken as a "no". Each yes comes with the API server's reason, which names the binding that allowed it.
-10. **Compare.** Each section's facts are compared with `desired.yaml` and the fixed CNPG facts, giving one sentence per violation.
+10. **Compare.** Each section's facts are compared with the expected values from `desired.yaml` and the fixed CNPG facts, giving one sentence per violation.
 
 ## Output
 
@@ -157,7 +157,7 @@ Per right, the subjects the API server says yes for, as `system:serviceaccount:<
 | `network/` | `network.jq`: policies to named sources, per pod |
 | `kubernetes/` | `subjects.jq`, `needs.jq` (which questions), `reviews.jq` (the questions as SubjectAccessReviews), `answers.jq` (the answers and their reasons), `kubernetes.jq` (grouping) |
 | `pods/`, `host-network/`, `software/` | Instance pods, hostNetwork pods, versions |
-| `violations/` | One `.jq` per section with its expected values; `violations.sh` joins their sentences |
+| `violations/` | `expected.jq`: the expected values; one `.jq` per section with its rules; `violations.sh` joins their sentences |
 
 Every file has a `*.test.sh` next to it with a stubbed `kubectl` and fixed inputs; `scripts/test.sh` runs them all. The SQL files need a running PostgreSQL and are not covered by these tests.
 

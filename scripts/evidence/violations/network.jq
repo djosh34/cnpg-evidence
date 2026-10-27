@@ -4,20 +4,11 @@
 # Input: {facts, values}. Output: a list of sentences.
 
 include "common";
+include "expected";
 
 def ports: if includes("all") then "all ports" else map(tostring) | join(", ") end;
 
-.values.network as $network
-| {
-    outside: [5432],
-    "other nodes": [5432],
-    "own node": ["all"],
-    loadbalancer: [5432],
-    "pg pods": [5432, 8000],
-    "\($network.operatorNamespace) operator": [8000],
-    ($network.otelNamespace): [9187],
-    "other namespaces": []
-  } as $expected
+(.values | network_sources) as $expected
 | [
     .facts.network_policy | to_entries[]
     | .key as $pod | .value as $actual
