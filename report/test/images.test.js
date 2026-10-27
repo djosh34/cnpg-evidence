@@ -148,6 +148,13 @@ test('a changed value in the first column marks that value, not the row', () => 
   assert.equal(page.rowState(s.rows[0], s.names), '');
 });
 
+test('the population says All only for more than one', () => {
+  const population = s => s.context.find(([term]) => term === 'Population')[1];
+  assert.equal(population(sheet(clean, desired, 'evidence-04-client-ca-actual.png')), '1 certificate');
+  assert.equal(population(sheet(clean, desired, 'evidence-04-client-ca-desired.png')), '1 certificate');
+  assert.equal(population(sheet(clean, desired, 'evidence-07-container-isolation-actual.png')), 'All 3 instances');
+});
+
 test('a missing check or probe keeps its desired values', () => {
   const hc = sample('host-check.clean.json');
   hc.checks.shift();

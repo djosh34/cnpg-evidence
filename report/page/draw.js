@@ -87,7 +87,8 @@ function plan(doc, desired) {
       // A desired row for every instance ("*") gives no count.
       if (image.noun && !rows.some(r => r.sort === '*')) {
         const count = rows.filter(r => rowState(r, image.names) !== 'missing').length;
-        context.push(['Population', `${which === 'actual' ? 'All ' : ''}${count} ${image.noun}`]);
+        const [one, many] = image.noun;
+        context.push(['Population', `${which === 'actual' && count > 1 ? 'All ' : ''}${count} ${count === 1 ? one : many}`]);
       }
       if (image.raw && which === 'actual') {
         const raw = valueAt(from, image.raw);
