@@ -132,6 +132,42 @@ test('the network images state their scope', () => {
   }
 });
 
+test('the network image keeps every port that may reach 8000 or 9187', () => {
+  const actual = structuredClone(clean);
+  Object.assign(actual.network_policy['pg-1'], { everyone: ['7999-9190', '1000-2000', 'UDP/9187'], 'other namespaces': [5432, 'metrics'] });
+  const lines = rows(sheet(actual, desired, 'evidence-06-network-actual.png')).filter(r => r[0] === 'pg-1');
+  assert.deepEqual(lines.find(r => r[1] === '+everyone'), ['pg-1', '+everyone', '+7999-9190 +UDP/9187']);
+  assert.deepEqual(lines.find(r => r[1] === 'other namespaces'), ['pg-1', 'other namespaces', '+metrics']);
+});
+
+test('a changed value in the first column marks that value, not the row', () => {
+  const actual = structuredClone(clean);
+  actual.client_ca.secret = 'other-ca';
+  const s = sheet(actual, desired, 'evidence-04-client-ca-actual.png');
+  assert.deepEqual(rows(s), [['+other-ca -client-ca', 'CN=example-ca', s.rows[0].cells[2][0].text]]);
+  assert.equal(page.rowState(s.rows[0], s.names), '');
+});
+
+test('a missing check or probe keeps its desired values', () => {
+  const hc = sample('host-check.clean.json');
+  hc.checks.shift();
+  const check = sheet(hc, sample('host-check.desired.json'), 'host-check-node-a-selinux-enforcing-actual.png');
+  assert.deepEqual(rows(check), [['-selinux-enforcing', '-enforcing']]);
+  const pr = sample('prove.clean.json');
+  pr.probes.shift();
+  const login = sheet(pr, sample('prove.desired.json'), 'prove-01-login-attempts-actual.png');
+  assert.deepEqual(rows(login).find(r => r[0] === '-password-tls'), ['-password-tls', '-refused by pg_hba reject', '-denied']);
+});
+
+test('per-instance login rules show the desired lines they replace', () => {
+  const actual = structuredClone(clean);
+  actual.details.pg_hba = { 'pg-1': clean.details.pg_hba, 'pg-2': clean.details.pg_hba.slice(1) };
+  const lines = rows(sheet(actual, desired, 'evidence-03-login-rules-actual.png')).filter(r => r[0].includes('pg_hba'));
+  assert.equal(lines.filter(r => r[0] === '-pg_hba').length, 9);
+  assert.equal(lines.filter(r => r[0] === '+pg_hba on pg-1').length, 9);
+  assert.equal(lines.filter(r => r[0] === '+pg_hba on pg-2').length, 8);
+});
+
 test('documents that cannot be drawn are refused', () => {
   assert.throws(() => page.plan(clean), /needs its desired document/);
   assert.throws(() => page.plan(desired, desired), /drawn alone/);
@@ -142,4 +178,7 @@ test('documents that cannot be drawn are refused', () => {
   assert.throws(() => page.plan({ ...clean, collected_at: 'yesterday' }, desired), /not a UTC time/);
   assert.throws(() => page.plan({ ...sample('host-check.clean.json'), node: '../x' }, sample('host-check.desired.json')), /not a node name/);
   assert.throws(() => page.plan({ kind: 'actual', source: 'other' }, desired), /unknown source/);
+  const unknownCheck = sample('host-check.clean.json');
+  unknownCheck.checks[0].id = '../x';
+  assert.throws(() => page.plan(unknownCheck, sample('host-check.desired.json')), /unknown host-check check/);
 });

@@ -26,7 +26,6 @@ body {
 /* One sheet is one image. */
 .sheet {
   width: max-content;
-  min-width: calc(1080px + 2 * var(--pad));
   padding: var(--pad);
   background: var(--paper);
 }

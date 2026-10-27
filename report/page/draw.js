@@ -14,6 +14,9 @@ const SOURCES = {
 
 const MIN_TABLE_WIDTH = 1080;
 
+// Node names and check ids go into file names.
+const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
 function fail(message) {
   throw new Error(message);
 }
@@ -59,7 +62,7 @@ function plan(doc, desired) {
     collectedAt(need(actual, 'collected_at', 'actual'));
     if (source === 'host-check') {
       node = need(actual, 'node', 'actual');
-      if (typeof node !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(node)) fail(`node is not a node name: ${JSON.stringify(node)}`);
+      if (typeof node !== 'string' || !NAME.test(node)) fail(`node is not a node name: ${JSON.stringify(node)}`);
     }
   } else {
     fail(`kind is neither desired nor actual: ${JSON.stringify(kind)}`);
@@ -71,6 +74,7 @@ function plan(doc, desired) {
       if (!image.actualOnly) need(desired, key, 'desired');
       if (actual) need(actual, key, 'actual');
     }
+    if (!NAME.test(image.name)) fail(`not a name for a file: ${JSON.stringify(image.name)}`);
     const base = source === 'host-check' ? `host-check-${node}-${image.name}` : `${source}-${image.name}`;
     const pair = [];
     if (!image.actualOnly) pair.push({ side: 'desired', doc: desired, reader: side(desired, null) });
@@ -82,7 +86,7 @@ function plan(doc, desired) {
       else context.push(['Collected by', SOURCES[source].by]);
       // A desired row for every instance ("*") gives no count.
       if (image.noun && !rows.some(r => r.sort === '*')) {
-        const count = rows.filter(r => r.cells[0][0]?.state !== 'missing').length;
+        const count = rows.filter(r => rowState(r, image.names) !== 'missing').length;
         context.push(['Population', `${which === 'actual' ? 'All ' : ''}${count} ${image.noun}`]);
       }
       if (image.raw && which === 'actual') {
@@ -107,6 +111,12 @@ function plan(doc, desired) {
     }
   }
   return sheets;
+}
+
+// 'extra' or 'missing' when the cells that name the row all are: the whole
+// row is then drawn so.
+function rowState(row, names) {
+  return allState(row.cells.slice(0, names).flat().map(v => v.state));
 }
 
 function element(tag, className, content) {
@@ -149,9 +159,9 @@ function sheetElement(sheet, id) {
   const body = element('tbody');
   for (const row of sheet.rows) {
     const tr = element('tr');
-    const first = row.cells[0][0]?.state ?? '';
-    tr.className = first;
-    row.cells.forEach((values, i) => tr.append(cell(values, i < sheet.names, sheet.inline && i >= sheet.names, first)));
+    const state = rowState(row, sheet.names);
+    tr.className = state;
+    row.cells.forEach((values, i) => tr.append(cell(values, i < sheet.names, sheet.inline && i >= sheet.names, state)));
     body.append(tr);
   }
   table.append(body);

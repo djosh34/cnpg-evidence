@@ -7,7 +7,7 @@ const page = path.join(__dirname, '..', 'page');
 
 function load() {
   const code = ['compare.js', 'images.js', 'draw.js'].map(file => fs.readFileSync(path.join(page, file), 'utf8')).join('\n');
-  return new Function(`${code}\nreturn { differences, side, plan };`)();
+  return new Function(`${code}\nreturn { differences, side, plan, rowState };`)();
 }
 
 function sample(name) {

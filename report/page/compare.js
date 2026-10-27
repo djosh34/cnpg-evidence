@@ -117,6 +117,13 @@ function valueAt(value, path) {
   return value;
 }
 
+// The part of a difference's value below it, at rest. A keyed row reported
+// whole sits at its list's path, so the first step of rest is its identity.
+function below(value, rest) {
+  if (!isKeyed(value) || !rest.length) return valueAt(value, rest);
+  return identity(value) === rest[0] ? valueAt(value, rest.slice(1)) : undefined;
+}
+
 function isPrefix(prefix, path) {
   return prefix.length <= path.length && prefix.every((x, i) => x === path[i]);
 }
@@ -140,7 +147,7 @@ function side(doc, diffs) {
     if (desired) return [];
     return diffs
       .filter(d => Object.hasOwn(d, kind) && isPrefix(d.path, path))
-      .map(d => ({ exact: d.path.length === path.length, value: valueAt(d[kind], path.slice(d.path.length)) }))
+      .map(d => ({ exact: d.path.length === path.length, value: below(d[kind], path.slice(d.path.length)) }))
       .filter(h => h.value !== undefined)
       .map(h => ({ ...h, value: isAllowedSet(h.value) ? h.value.allowed : h.value }));
   }
@@ -173,7 +180,9 @@ function side(doc, diffs) {
   function keys(path) {
     const value = at(path);
     const own = isObject(value) ? Object.keys(value) : [];
-    const out = own.map(key => ({ key, state: held('extra', [...path, key]).length ? 'extra' : '' }));
+    // A key is extra when a difference holds its whole value, not a member of it.
+    const extra = key => held('extra', [...path, key]).some(h => same(h.value, value[key]));
+    const out = own.map(key => ({ key, state: extra(key) ? 'extra' : '' }));
     const add = key => {
       if (!out.some(k => k.key === key)) out.push({ key, state: 'missing' });
     };

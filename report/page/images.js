@@ -118,8 +118,15 @@ function loginRules(s) {
   [['pg_hba', 1], ['pg_ident', 2]].forEach(([file, order]) => {
     const path = ['details', file];
     // When the instances disagree, the lines come as one list per instance.
-    if (Array.isArray(s.at(path)) || s.at(path) === undefined) s.items(path).forEach(item => add(file, order, item));
-    else s.keys(path).forEach(({ key }) => s.items([...path, key]).forEach(item => add(`${file} on ${key}`, order, item)));
+    if (Array.isArray(s.at(path)) || s.at(path) === undefined) {
+      s.items(path).forEach(item => add(file, order, item));
+    } else {
+      s.keys(path).forEach(({ key }) => s.items([...path, key]).forEach(item => add(`${file} on ${key}`, order, item)));
+      // The one desired list the per-instance lists replace.
+      for (const { value, state } of s.values(path)) {
+        if (state === 'missing' && Array.isArray(value)) value.forEach(line => add(file, order, { value: line, state }));
+      }
+    }
     s.items(['details', `${file}_not_understood`]).forEach(item => add(`${file}, not understood`, order + 2, item));
   });
   return rows;
@@ -154,11 +161,22 @@ function encryption(s) {
   }));
 }
 
+// Whether a port of a NetworkPolicy may admit 8000 or 9187: "all", either
+// number, a range over either, or a named port or other protocol, whose
+// number only the pod knows.
+function mayReachScope(port) {
+  const scope = [8000, 9187];
+  if (typeof port === 'number' || /^\d+$/.test(port)) return scope.includes(Number(port));
+  const range = /^(\d+)-(\d+)$/.exec(port);
+  if (range) return scope.some(p => p >= Number(range[1]) && p <= Number(range[2]));
+  return true;
+}
+
 function network(s) {
   const rows = [];
   for (const pod of s.keys(['network_policy'])) {
     for (const source of s.keys(['network_policy', pod.key])) {
-      const ports = s.items(['network_policy', pod.key, source.key]).filter(p => [8000, 9187, 'all'].includes(p.value));
+      const ports = s.items(['network_policy', pod.key, source.key]).filter(p => mayReachScope(p.value));
       if (!ports.length) continue;
       rows.push({
         sort: `${pod.key}\n${source.key}`,
@@ -513,7 +531,8 @@ const CHECKS = {
 };
 
 function hostCheckImage(id) {
-  const [title, control] = CHECKS[id] ?? [id, `The ${id} check.`];
+  if (!Object.hasOwn(CHECKS, id)) throw new Error(`unknown host-check check ${JSON.stringify(id)}`);
+  const [title, control] = CHECKS[id];
   return {
     name: id,
     sections: ['checks'],
