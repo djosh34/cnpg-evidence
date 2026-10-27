@@ -41,7 +41,7 @@ compare "an extra role with no rights is an extra row" '[{"path": ["postgres", "
   . '.postgres.roles += ["unexpected_nologin"]'
 compare "a missing role is a missing row" '[{"path": ["postgres", "roles"], "missing": "orders"}]' \
   . '.postgres.roles -= ["orders"]'
-compare "a moved pg_hba line is a missing and an extra row" \
+compare "a moved pg_hba line is one missing and one extra row per number" \
   '[{"path": ["details", "pg_hba"], "extra": {"number": 1, "line": "host all all all reject"}},
     {"path": ["details", "pg_hba"], "extra": {"number": 2, "line": "hostssl orders orders all cert"}},
     {"path": ["details", "pg_hba"], "missing": {"number": 1, "line": "hostssl orders orders all cert"}},
