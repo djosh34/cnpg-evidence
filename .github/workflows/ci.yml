@@ -17,7 +17,8 @@ jobs:
           persist-credentials: false
       - name: Tool versions
         run: |
-          bash --version | head -n 1
+          set -euo pipefail
+          bash --version
           jq --version
           openssl version
           python3 --version
