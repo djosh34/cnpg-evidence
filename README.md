@@ -39,7 +39,7 @@ bash scripts/host-check/host-check.sh > host-check.json
 # Real login and access attempts that must fail.
 bash scripts/prove/prove.sh > prove.json
 
-# Anywhere with bash, jq and openssl. The desired documents of the three scripts,
+# Anywhere with yq, bash, jq and openssl. The desired documents of the three scripts,
 # and the differences between a desired and an actual document.
 yq -o=json desired.yaml | bash scripts/desired/desired.sh --ca client-ca.pem > evidence.desired.json
 bash scripts/desired/compare.sh evidence.desired.json evidence.json

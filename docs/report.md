@@ -8,12 +8,17 @@ It only draws. The verdict stays the script's `status` and `violations`, and no 
 
 ## Get the binary
 
-The binary is the only file in the image `ghcr.io/djosh34/cnpg-report`, at `/cnpg-report`. The image tags are the release versions, such as `v0.1.0`; set `version` to the newest one. The image is for `linux/amd64` only. The commands below name that platform, so they also work on a host of another architecture.
+The binary is the only file in the image `ghcr.io/djosh34/cnpg-report`, at `/cnpg-report`. The image tags are the release versions, such as `v0.1.0`, and match the tags of this repository. Use the release whose tag is the version of the scripts that wrote your documents, and set it once:
+
+```bash
+version=v0.1.0
+```
+
+The image is for `linux/amd64` only. The commands below name that platform, so they also work on a host of another architecture.
 
 With podman (or docker, with the same commands):
 
 ```bash
-version=v0.1.0
 podman pull --platform linux/amd64 "ghcr.io/djosh34/cnpg-report:$version"
 podman create --platform linux/amd64 --name cnpg-report "ghcr.io/djosh34/cnpg-report:$version" /cnpg-report
 podman cp cnpg-report:/cnpg-report ./cnpg-report
@@ -49,7 +54,7 @@ bash scripts/prove/prove.sh > prove.json
 
 `host-check.sh` runs on every node, so give each node's file its own name when you gather them, such as `node-a.json` and `node-b.json` below.
 
-Their desired documents, anywhere with yq, bash, jq and openssl:
+Their desired documents, anywhere with yq, bash, jq and openssl, from the same `desired.yaml` and `client-ca.pem` that `evidence.sh` read. If `prove.sh` ran with `--postgres-uid`, give `desired.sh` the same value.
 
 ```bash
 yq -o=json desired.yaml | bash scripts/desired/desired.sh --ca client-ca.pem > evidence.desired.json
@@ -72,7 +77,7 @@ The comparison is the one `compare.sh` makes, described in [desired.md](desired.
 cnpg-report [--desired <file.json>] --out <dir> <file.json>
 ```
 
-One call draws the images of one document into `<dir>`, and makes `<dir>` if needed. The script and the kind come from the document itself. An actual document needs its desired document as `--desired`, and the call writes both images of every pair.
+One call draws the images of one document into `<dir>`, and makes `<dir>` if needed. The script and the kind come from the document itself. An actual document needs its desired document as `--desired`, and the call writes both images of every pair. The flags come before the file; anything after the file counts as a second file.
 
 ```bash
 # evidence.sh: both images of every pair
@@ -100,7 +105,7 @@ The images of one pair line up whether they come from one call or two, since bot
 - `0`: every image is written.
 - `2`: an error. No image of this call is left in `<dir>`, and `<dir>` is removed again if the call made it.
 
-A wrong call, such as a missing `--out`, a second file or an unknown flag, prints the usage line on stderr; `-h` does the same. Every other error prints one line on stderr that starts with `cnpg-report:`, and a failed render adds the last lines of Chrome's output. Those errors are a file that is not readable or not JSON, a missing key, an unknown `source`, two documents that are not one desired and one actual document of the same script, a host-check desired document alone, and a render that fails or takes longer than 5 minutes.
+A wrong call, such as a missing `--out`, a second file or an unknown flag, prints a short reason or only the usage line on stderr; `-h` prints the usage line too. Every other error prints one line on stderr that starts with `cnpg-report:`, and a failed render adds the last lines of Chrome's output. Those errors are a file that is not readable or not JSON, a missing key, an unknown `source`, two documents that are not one desired and one actual document of the same script, a `collected_at` that is not a UTC time like `2026-01-02T03:04:05Z`, a host-check `node` or check `id` that does not fit in a file name (letters, digits, `.`, `_` and `-`, starting with a letter or digit), a host-check desired document alone, and a render that fails or takes longer than 5 minutes.
 
 `cnpg-report` prints nothing on success. Files already in `<dir>` stay, and an image with the same name is replaced. If writing an image fails, the call removes every image it wrote, so an older image it had already replaced is gone too.
 
@@ -161,7 +166,7 @@ The binary carries:
 
 The binary carries the licence texts in `licenses/` of the directory each call unpacks, and removes them with it at the end of the call. `licenses/rpms.txt` lists every RPM with its version, licence and project URL, and `licenses/rpm/<RPM>/` holds its texts. Where an RPM has no licence file of its own, the texts come from a sibling RPM of the same source RPM, such as libX11-common for libX11, or else from the top of its upstream source in the UBI9 source RPM. `rpms.txt` names any RPM with a text in none of these places.
 
-The same texts are available without a call. `OFL.txt` is in [`report/page/fonts/`](../report/page/fonts/), `LICENSE.headless_shell` is in the Chrome for Testing zip that `report/build.sh` pins, and the RPMs are the ones [`report/launcher/libs.sh`](../report/launcher/libs.sh) installs from UBI9.
+The same texts are available without a call. `OFL.txt` is in [`report/page/fonts/`](../report/page/fonts/), `LICENSE.headless_shell` is in the Chrome for Testing zip that `report/build.sh` pins, Go's `LICENSE` is in the Go release of the golang image that `report/build.sh` pins, and the RPMs are the ones [`report/launcher/libs.sh`](../report/launcher/libs.sh) installs from UBI9.
 
 `cnpg-report` itself is under the Apache License 2.0 of this repository.
 
