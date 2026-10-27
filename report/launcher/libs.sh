@@ -70,16 +70,22 @@ licence_texts() {
   rpm -qd "$@" | awk 'tolower($0) ~ /\/(copying|licen[cs]e|copyright)[^\/]*$/'
 }
 
+# upstream_tarball RPM DIR: unpacks RPM's source RPM from UBI9 into DIR and
+# prints the path of its upstream tarball, or nothing if it has none.
+upstream_tarball() {
+  local rpm=$1 dir=$2 srpm
+  srpm=$(rpm -q --qf '%{SOURCERPM}' "$rpm")
+  (cd "$dir" && "${dnf[@]}" download -q --source --enablerepo='ubi-9-*-source-rpms' "$rpm" >&2 &&
+    rpm2cpio "$srpm" | cpio -idm --quiet)
+  find "$dir" -maxdepth 1 -name "${srpm%-*-*}-$(rpm -q --qf '%{VERSION}' "$rpm").tar.*"
+}
+
 # source_texts RPM DEST: copies the licence files at the top of the upstream
 # tarball in RPM's source RPM, or in its docs/ directory, into DEST.
 source_texts() {
-  local rpm=$1 dest=$2 srpm name tarball dir
-  srpm=$(rpm -q --qf '%{SOURCERPM}' "$rpm")
-  name=${srpm%-*-*}
+  local rpm=$1 dest=$2 tarball dir
   dir=$(mktemp -d)
-  (cd "$dir" && "${dnf[@]}" download -q --source --enablerepo='ubi-9-*-source-rpms' "$rpm" >&2 &&
-    rpm2cpio "$srpm" | cpio -idm --quiet)
-  tarball=$(find "$dir" -maxdepth 1 -name "$name-$(rpm -q --qf '%{VERSION}' "$rpm").tar.*")
+  tarball=$(upstream_tarball "$rpm" "$dir")
   if [ -n "$tarball" ]; then
     mapfile -t members < <(tar -tf "$tarball" |
       grep -iE '^[^/]+/(docs/)?(copying|licen[cs]e|copyright)[^/]*$' || [ $? = 1 ])
@@ -91,6 +97,26 @@ source_texts() {
       done
     fi
   fi
+  rm -rf "$dir"
+}
+
+# libdrm_notice DEST: libdrm has no licence file in its RPM or its upstream
+# source; its MIT notice is in the comments of its sources. Writes the notice
+# comment of each file libdrm.so.2 is built from, the xf86drm*.c files at the
+# top of the upstream tarball, into DEST/NOTICE.
+libdrm_notice() {
+  local dest=$1 tarball dir file
+  dir=$(mktemp -d)
+  tarball=$(upstream_tarball libdrm "$dir")
+  mkdir -p "$dir/x" "$dest"
+  tar -xf "$tarball" -C "$dir/x" --wildcards --no-wildcards-match-slash '*/xf86drm*.c'
+  for file in "$dir"/x/*/xf86drm*.c; do
+    echo "${file#"$dir/x/"}:"
+    awk '/^\/\*/ { block = ""; open = 1 }
+      open { block = block $0 "\n" }
+      open && /\*\// { open = 0; if (block ~ /Permission is hereby granted/) { printf "%s\n", block; found = 1; exit } }
+      END { if (!found) exit 1 }' "$file"
+  done > "$dest/NOTICE"
   rm -rf "$dir"
 }
 
@@ -112,6 +138,9 @@ for rpm in "${rpms[@]}"; do
   done
   if [ ! -d "$payload/licenses/rpm/$rpm" ]; then
     source_texts "$rpm" "$payload/licenses/rpm/$rpm/source"
+  fi
+  if [ "$rpm" = libdrm ] && [ ! -d "$payload/licenses/rpm/$rpm" ]; then
+    libdrm_notice "$payload/licenses/rpm/$rpm/source"
   fi
   if [ ! -d "$payload/licenses/rpm/$rpm" ]; then
     no_text+=("$rpm")
