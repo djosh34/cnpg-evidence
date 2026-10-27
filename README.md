@@ -1,6 +1,6 @@
 # CNPG least-privilege access: samples and evidence
 
-Sample manifests for a CloudNativePG (CNPG) cluster that accepts only certificate logins, and three scripts that show the rules below hold on a running cluster.
+Sample manifests for a CloudNativePG (CNPG) cluster that accepts only certificate logins, and three scripts that show the rules below hold on a running cluster. `cnpg-report` draws the scripts' output as images.
 
 ## What the scripts assume
 
@@ -44,6 +44,10 @@ bash scripts/prove/prove.sh > prove.json
 yq -o=json desired.yaml | bash scripts/desired/desired.sh --ca client-ca.pem > evidence.desired.json
 bash scripts/desired/compare.sh evidence.desired.json evidence.json
 
+# On any x86_64 Linux host, with no network. A desired and an actual image
+# for each piece of evidence. See docs/report.md for getting the binary.
+cnpg-report --desired evidence.desired.json --out images/ evidence.json
+
 # Anywhere with bash, jq, openssl and python3. The unit tests of all three scripts,
 # with kubectl and psql stubbed.
 bash scripts/test.sh
@@ -57,6 +61,7 @@ bash scripts/test.sh
 - `host-check.sh` reads one node: accounts with the postgres uid or gid, sudoers, directory modes, SELinux, subordinate ids and low ports. It shows the host side of rule 6. It only reads.
 - `prove.sh` tries what rules 1, 2, 5 and 6 forbid: password logins, certificate logins as the wrong role, connections from a pod in another namespace, and file and socket access as the host postgres uid. Each attempt must fail with the expected denial, and two control attempts must succeed.
 - `desired.sh` builds, from `desired.yaml` alone, a document of the same shape as each script's output that holds the desired values. `compare.sh` lists where an actual document differs from it. The scripts' own checks stay the verdict.
+- `cnpg-report` draws one desired and one actual document of the same script as PNG images, a desired and an actual image for each piece of evidence. On the actual image, a value only the actual document has is red, and a desired value the actual document lacks is red and struck through. It needs no cluster, network or OS library, so the scripts can run on the cluster and the images can be drawn elsewhere from the JSON files.
 
 ## Files
 
@@ -68,9 +73,9 @@ bash scripts/test.sh
 | `scripts/host-check/host-check.sh` | Accounts, modes, SELinux, subordinate ids and low ports on one node | [host-check.md](docs/host-check.md) |
 | `scripts/prove/prove.sh` | Login, connection and host-uid attempts that must fail | [prove.md](docs/prove.md) |
 | `scripts/desired/` | The desired documents of the three scripts, and the comparison with an actual document | [desired.md](docs/desired.md) |
-| `report/` | The page that draws a desired and an actual image for each piece of evidence | [report/README.md](report/README.md) |
+| `report/` | `cnpg-report`, which draws a desired and an actual image for each piece of evidence: its page, build and tests | [report.md](docs/report.md), [report/README.md](report/README.md) |
 | `scripts/lib/` | Logging and exit helpers shared by the scripts | |
 | `scripts/test.sh` | Runs the `*.test.sh` next to every part of the three scripts | |
-| `.github/workflows/ci.yml` | Runs `scripts/test.sh` and the page tests on every pull request and push to `main` | |
+| `.github/workflows/ci.yml` | Runs `scripts/test.sh`, the page tests and the test of the built `cnpg-report` on every pull request and push to `main` | |
 | `.shellcheckrc` | ShellCheck settings for the scripts | |
 | `LICENSE` | Apache License 2.0 | |

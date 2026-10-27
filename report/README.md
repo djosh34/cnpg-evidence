@@ -2,6 +2,8 @@
 
 The page that draws the evidence images, and `cnpg-report`, the one static file that draws them with the Chrome it carries.
 
+How to get, run and read `cnpg-report` is in [report.md](../docs/report.md). This file is about the code.
+
 The page is plain HTML, one CSS file and plain JS, with no build step. A caller loads `page/index.html` in Chrome, passes it the documents of one script, and saves each sheet the page draws as one PNG.
 
 Each image is one table. A desired image shows the values of a desired document from `scripts/desired/desired.sh`; its actual image shows the values of the script's actual document in the same columns and row order. On the actual image, a value only the actual document has is red, and a desired value it lacks is red and struck through. A difference marks a value, not a failed check: the scripts' own checks stay the verdict, and no image says passed or failed.
