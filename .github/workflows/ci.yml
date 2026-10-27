@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_call:
 
 permissions:
   contents: read
@@ -69,4 +70,12 @@ jobs:
         with:
           name: report-images
           path: images/
+          if-no-files-found: error
+      # A release pushes this binary, the one the steps above tested.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: github.ref_type == 'tag'
+        with:
+          name: cnpg-report
+          path: build/cnpg-report
+          retention-days: 1
           if-no-files-found: error

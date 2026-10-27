@@ -1,0 +1,98 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  image:
+    needs: ci
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: cnpg-report
+          path: image
+      - name: Tool versions
+        run: |
+          set -euo pipefail
+          podman --version
+      - name: Build and push the image
+        id: push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ghcr.io/djosh34/cnpg-report:${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # An artifact loses the file mode.
+          chmod 755 image/cnpg-report
+          printf 'FROM scratch\nCOPY cnpg-report /cnpg-report\n' > image/Containerfile
+          podman build --platform linux/amd64 \
+            --label org.opencontainers.image.source=https://github.com/djosh34/cnpg-evidence \
+            --file image/Containerfile --tag "$IMAGE" image
+          echo "$GITHUB_TOKEN" | podman login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          podman push --digestfile digest.txt "$IMAGE"
+          digest=$(cat digest.txt)
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "Pushed $IMAGE, digest $digest" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # Gets the binary as docs/report.md says, and renders the clean samples.
+  check:
+    needs: image
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Tool versions
+        run: |
+          set -euo pipefail
+          podman --version
+          jq --version
+      - name: Pull the image and copy the binary out
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ghcr.io/djosh34/cnpg-report:${{ github.ref_name }}
+          DIGEST: ${{ needs.image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          echo "$GITHUB_TOKEN" | podman login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          podman pull --platform linux/amd64 "$IMAGE"
+          podman image inspect --format '{{join .RepoDigests "\n"}}' "$IMAGE" |
+            grep -xF "ghcr.io/djosh34/cnpg-report@$DIGEST"
+          test "$(podman image inspect --format '{{index .Labels "org.opencontainers.image.source"}}' "$IMAGE")" = \
+            https://github.com/djosh34/cnpg-evidence
+          podman create --platform linux/amd64 --name cnpg-report "$IMAGE" /cnpg-report
+          podman cp cnpg-report:/cnpg-report ./cnpg-report
+          test "$(podman export cnpg-report | tar -t)" = cnpg-report
+          podman rm cnpg-report
+          file cnpg-report
+      - name: Render the clean samples
+        run: |
+          set -euo pipefail
+          for source in evidence host-check prove; do
+            ./cnpg-report --desired "report/samples/$source.desired.json" --out "images/$source" \
+              "report/samples/$source.clean.json"
+            diff <(bash report/test/expected-images.sh "report/samples/$source.clean.json") \
+              <(cd "images/$source" && LC_ALL=C ls)
+            echo "ok: $source clean sample"
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-images
+          path: images/
+          if-no-files-found: error
