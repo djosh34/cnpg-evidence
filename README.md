@@ -63,5 +63,6 @@ bash scripts/test.sh
 | `scripts/prove/prove.sh` | Login, connection and host-uid attempts that must fail | [prove.md](docs/prove.md) |
 | `scripts/lib/` | Logging and exit helpers shared by the scripts | |
 | `scripts/test.sh` | Runs the `*.test.sh` next to every part of the three scripts | |
+| `.github/workflows/ci.yml` | Runs `scripts/test.sh` on every pull request and push to `main` | |
 | `.shellcheckrc` | ShellCheck settings for the scripts | |
 | `LICENSE` | Apache License 2.0 | |
