@@ -2,17 +2,20 @@
 
 `cnpg-report` draws PNG images from the JSON documents of `evidence.sh`, `host-check.sh` and `prove.sh`. Each piece of evidence gets a pair of images. The desired image shows the values the rules call for, and the actual image shows the values the script found, in the same columns and row order. A reviewer reads the pair side by side.
 
-It is one static x86_64 Linux file of about 130 MB. It carries its own Chrome, glibc, libraries, fonts and the page that draws the images, so it runs with no network and no library or font from the OS, for example in a stock `ubi9-minimal` container. It only draws: the verdict stays the script's `status` and `violations`, and no image says passed or failed.
+It is one static x86_64 Linux file of about 130 MB. It carries its own Chrome, glibc, libraries, fonts and the page that draws the images, so it runs with no network and no library or font from the OS, for example in a stock `ubi9-minimal` container. glibc still reads `/etc/nsswitch.conf` and `/etc/hosts` from the OS. Chrome runs without its sandbox, so give `cnpg-report` only documents of the three scripts.
+
+It only draws. The verdict stays the script's `status` and `violations`, and no image says passed or failed.
 
 ## Get the binary
 
-The binary is the only file in the image `ghcr.io/djosh34/cnpg-report`, at `/cnpg-report`. The image tags are the release versions, such as `v0.1.0`. The image is for `linux/amd64` only, so on another host add `--platform linux/amd64` to the pull.
+The binary is the only file in the image `ghcr.io/djosh34/cnpg-report`, at `/cnpg-report`. The image tags are the release versions, such as `v0.1.0`; set `version` to the newest one. The image is for `linux/amd64` only. The commands below name that platform, so they also work on a host of another architecture.
 
 With podman (or docker, with the same commands):
 
 ```bash
-podman pull --platform linux/amd64 ghcr.io/djosh34/cnpg-report:v0.1.0
-podman create --name cnpg-report ghcr.io/djosh34/cnpg-report:v0.1.0 /cnpg-report
+version=v0.1.0
+podman pull --platform linux/amd64 "ghcr.io/djosh34/cnpg-report:$version"
+podman create --platform linux/amd64 --name cnpg-report "ghcr.io/djosh34/cnpg-report:$version" /cnpg-report
 podman cp cnpg-report:/cnpg-report ./cnpg-report
 podman rm cnpg-report
 ```
@@ -23,12 +26,14 @@ With skopeo and jq, without a container engine:
 
 ```bash
 skopeo --override-arch amd64 --override-os linux copy \
-  docker://ghcr.io/djosh34/cnpg-report:v0.1.0 dir:cnpg-report-image
+  "docker://ghcr.io/djosh34/cnpg-report:$version" dir:cnpg-report-image
 layer=$(jq -r '.layers[0].digest | sub("sha256:"; "")' cnpg-report-image/manifest.json)
 tar -xf "cnpg-report-image/$layer" cnpg-report
 ```
 
-The image has one layer, and `dir:` stores it as a file named by its digest. Then copy `cnpg-report` to the host that renders. It runs on any x86_64 Linux; `chmod +x cnpg-report` if the copy lost the mode.
+The image has one layer, and `dir:` stores it as a file named by its digest.
+
+Then copy `cnpg-report` to the host that renders, which can be any x86_64 Linux, and put it in a directory on `PATH`, as the examples below assume. Run `chmod +x cnpg-report` if the copy lost the mode.
 
 To build it from source instead, see [Building](../report/README.md#building).
 
@@ -38,11 +43,13 @@ Every script prints an actual document (`"kind": "actual"`), the values it found
 
 ```bash
 yq -o=json desired.yaml | bash scripts/evidence/evidence.sh --ca client-ca.pem > evidence.json
-bash scripts/host-check/host-check.sh > node-a.json    # on each node
+bash scripts/host-check/host-check.sh > host-check.json
 bash scripts/prove/prove.sh > prove.json
 ```
 
-Their desired documents, anywhere with bash, jq and openssl:
+`host-check.sh` runs on every node, so give each node's file its own name when you gather them, such as `node-a.json` and `node-b.json` below.
+
+Their desired documents, anywhere with yq, bash, jq and openssl:
 
 ```bash
 yq -o=json desired.yaml | bash scripts/desired/desired.sh --ca client-ca.pem > evidence.desired.json
@@ -86,14 +93,16 @@ cnpg-report --out images/ prove.desired.json
 
 A host-check desired document alone is refused. It holds no node name, and the node name is part of every host-check file name, so its desired images come only from a call with a node file.
 
-The images of one pair line up whether they come from one call or two: both take their column widths from the desired table. A longer actual value wraps, so rows that differ may differ in height.
+The images of one pair line up whether they come from one call or two, since both take their column widths from the desired table. A longer actual value wraps, so rows that differ may differ in height.
 
 ### Exit codes
 
 - `0`: every image is written.
-- `2`: an error, with a one-line message on stderr that starts with `cnpg-report:`. No image of this call is left in `<dir>`, and `<dir>` is removed again if the call made it. Errors are a wrong call, a file that is not readable or not JSON, a missing key, an unknown `source`, two documents that are not one desired and one actual document of the same script, a host-check desired document alone, and a render that fails or takes longer than 5 minutes.
+- `2`: an error. No image of this call is left in `<dir>`, and `<dir>` is removed again if the call made it.
 
-`cnpg-report` prints nothing on success. Files already in `<dir>` stay, and an image with the same name is replaced.
+A wrong call, such as a missing `--out`, a second file or an unknown flag, prints the usage line on stderr; `-h` does the same. Every other error prints one line on stderr that starts with `cnpg-report:`, and a failed render adds the last lines of Chrome's output. Those errors are a file that is not readable or not JSON, a missing key, an unknown `source`, two documents that are not one desired and one actual document of the same script, a host-check desired document alone, and a render that fails or takes longer than 5 minutes.
+
+`cnpg-report` prints nothing on success. Files already in `<dir>` stay, and an image with the same name is replaced. If writing an image fails, the call removes every image it wrote, so an older image it had already replaced is gone too.
 
 ### Space and TMPDIR
 
@@ -102,8 +111,6 @@ Each call unpacks about 300 MB into a new directory under `TMPDIR` (default `/tm
 ```bash
 TMPDIR=/var/tmp cnpg-report --desired evidence.desired.json --out images/ evidence.json
 ```
-
-Chrome runs without its sandbox, so give `cnpg-report` only documents of the three scripts. glibc still reads `/etc/nsswitch.conf` and `/etc/hosts` from the OS.
 
 ## Output file names
 
@@ -148,11 +155,15 @@ Each image is as wide as its table plus 88 px margins, and as high as its conten
 The binary carries:
 
 - chrome-headless-shell of [Chrome for Testing](https://googlechromelabs.github.io/chrome-for-testing/), at the version pinned in `report/build.sh`, under its `LICENSE.headless_shell`.
-- glibc, its loader `ld-linux-x86-64.so.2` and the libraries Chrome needs, all from UBI9 RPMs, each under the licence texts of its RPM.
+- glibc, its loader `ld-linux-x86-64.so.2` and the libraries Chrome needs, all from UBI9 RPMs, under the licences of those RPMs.
 - The Sofia Sans, Sofia Sans Semi Condensed and Sofia Sans Condensed fonts, under the SIL Open Font License (`OFL.txt`).
 - The Go runtime and standard library, under Go's licence.
 
-The texts are in `licenses/` of the directory a call unpacks, while it runs. `licenses/rpms.txt` lists every RPM with its version, licence and project URL, and `licenses/rpm/<RPM>/` holds its texts. An RPM with no licence file of its own gets the licence files at the top of its upstream source, from the UBI9 source RPM. `cnpg-report` itself is under the Apache License 2.0 of this repository.
+The binary carries the licence texts in `licenses/` of the directory each call unpacks, and removes them with it at the end of the call. `licenses/rpms.txt` lists every RPM with its version, licence and project URL, and `licenses/rpm/<RPM>/` holds its texts. Where an RPM has no licence file of its own, the texts come from a sibling RPM of the same source RPM, such as libX11-common for libX11, or else from the top of its upstream source in the UBI9 source RPM. `rpms.txt` names any RPM with a text in none of these places.
+
+The same texts are available without a call. `OFL.txt` is in [`report/page/fonts/`](../report/page/fonts/), `LICENSE.headless_shell` is in the Chrome for Testing zip that `report/build.sh` pins, and the RPMs are the ones [`report/launcher/libs.sh`](../report/launcher/libs.sh) installs from UBI9.
+
+`cnpg-report` itself is under the Apache License 2.0 of this repository.
 
 ## More
 
