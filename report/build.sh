@@ -37,6 +37,7 @@ mv "$payload/chrome/LICENSE.headless_shell" "$payload/chrome/ABOUT" "$payload/li
 
 echo "Libraries from UBI9" >&2
 docker run --rm -v "$payload:/payload" -v "$launcher/libs.sh:/libs.sh:ro" "$ubi" bash /libs.sh /payload
+cut -f1 "$payload/licenses/rpms.txt" >&2
 
 echo "Fonts and page" >&2
 cp -r "$report/page" "$payload/page"
