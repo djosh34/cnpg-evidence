@@ -25,7 +25,7 @@ work=$(mktemp -d)
 # The containers run as root and leave files only root may remove.
 trap 'docker run --rm -v "$work:/work" "$ubi" find /work -mindepth 1 -delete && rmdir "$work"' EXIT
 payload=$work/payload
-mkdir -p "$payload/licenses/chrome-for-testing" "$payload/licenses/fonts" "$payload/licenses/go" "$payload/fonts" "$payload/cache"
+mkdir -p "$payload/licenses/chrome-for-testing" "$payload/licenses/fonts" "$payload/licenses/go" "$payload/cache"
 
 echo "Chrome for Testing $chrome_version" >&2
 curl -fsSL -o "$work/chrome.zip" \
@@ -41,7 +41,6 @@ cut -f1 "$payload/licenses/rpms.txt" >&2
 
 echo "Fonts and page" >&2
 cp -r "$report/page" "$payload/page"
-cp "$report"/page/fonts/*.ttf "$payload/fonts/"
 cp "$report/page/fonts/OFL.txt" "$payload/licenses/fonts/"
 cp "$launcher/fonts.conf" "$payload/fonts.conf"
 

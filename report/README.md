@@ -39,15 +39,14 @@ for node in node-a.json node-b.json; do
 done
 ```
 
-The file is a static x86_64 Linux executable of about 130 MB. It runs on any x86_64 Linux, such as `ubi9-minimal`, with no network and no library from the OS. Each call unpacks about 300 MB into a new directory in `TMPDIR` (default `/tmp`), which must allow running files, and removes it after. Chrome runs without its sandbox, so give it only documents of the scripts.
+The file is a static x86_64 Linux executable of about 130 MB. It needs no network and no library or font from the OS; the test below shows this in a stock `ubi9-minimal` container. glibc still reads `/etc/nsswitch.conf` and `/etc/hosts` there. Each call unpacks about 300 MB into a new directory in `TMPDIR` (default `/tmp`), which must allow running files, and removes it after. Chrome runs without its sandbox, so give it only documents of the scripts.
 
 What it carries:
 
 - chrome-headless-shell of [Chrome for Testing](https://googlechromelabs.github.io/chrome-for-testing/), at the version pinned in `build.sh`;
 - the libraries Chrome links and opens at run time, glibc and its loader `ld-linux-x86-64.so.2`, all taken from UBI9 RPMs; Chrome starts through that loader, and so do the processes it starts, which run through `cnpg-report` again;
-- the Sofia Sans fonts, with a `fonts.conf` that names only them;
-- the page;
-- the licence texts in `licenses/`: Chrome for Testing's `LICENSE.headless_shell`, the texts of each RPM in `licenses/rpm/<RPM>/`, `OFL.txt` of the fonts and Go's licence. `licenses/rpms.txt` lists every RPM with its version, licence and project URL; a few RPMs ship no licence text, and that list is the record of their licence. The texts are in the unpacked directory while a call runs.
+- the page, with its Sofia Sans fonts and a `fonts.conf` that names only them;
+- the licence texts in `licenses/`: Chrome for Testing's `LICENSE.headless_shell`, `OFL.txt` of the fonts, Go's licence, and the texts of each RPM in `licenses/rpm/<RPM>/`. An RPM with no licence file of its own gets those at the top of its upstream source, from the UBI9 source RPM. `licenses/rpms.txt` lists every RPM with its version, licence and project URL, and names any RPM with a licence file in neither place. The texts are in the unpacked directory while a call runs.
 
 ### Building
 

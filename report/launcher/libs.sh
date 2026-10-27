@@ -9,7 +9,7 @@
 set -euo pipefail
 
 payload=$1
-loader=${LOADER:-/lib64/ld-linux-x86-64.so.2}
+loader=/lib64/ld-linux-x86-64.so.2
 
 # The RPMs of the libraries chrome-headless-shell links, and of those it
 # opens at run time. NSS opens softokn and freebl; Chrome's GPU and video
@@ -70,10 +70,38 @@ licence_texts() {
   rpm -qd "$@" | awk 'tolower($0) ~ /\/(copying|licen[cs]e|copyright)[^\/]*$/'
 }
 
+# source_texts RPM DEST: copies the licence files at the top of the upstream
+# tarball in RPM's source RPM, or in its docs/ directory, into DEST.
+source_texts() {
+  local rpm=$1 dest=$2 srpm name tarball dir
+  srpm=$(rpm -q --qf '%{SOURCERPM}' "$rpm")
+  name=${srpm%-*-*}
+  dir=$(mktemp -d)
+  (cd "$dir" && "${dnf[@]}" download -q --source --enablerepo='ubi-9-*-source-rpms' "$rpm" >&2 &&
+    rpm2cpio "$srpm" | cpio -idm --quiet)
+  tarball=$(find "$dir" -maxdepth 1 -name "$name-$(rpm -q --qf '%{VERSION}' "$rpm").tar.*")
+  if [ -n "$tarball" ]; then
+    mapfile -t members < <(tar -tf "$tarball" |
+      grep -iE '^[^/]+/(docs/)?(copying|licen[cs]e|copyright)[^/]*$' || [ $? = 1 ])
+    if [ "${#members[@]}" -gt 0 ]; then
+      mkdir -p "$dest" "$dir/x"
+      tar -xf "$tarball" -C "$dir/x" "${members[@]}"
+      for member in "${members[@]}"; do
+        cp "$dir/x/$member" "$dest/"
+      done
+    fi
+  fi
+  rm -rf "$dir"
+}
+
 # Each RPM's texts go into licenses/rpm/<RPM>/. Some RPMs keep them in a
 # sibling RPM of the same source RPM, such as libX11 in libX11-common, so the
-# siblings' texts count too. A few RPMs carry no text; licenses/rpms.txt names
-# the licence and the project URL of every RPM.
+# siblings' texts count too. An RPM with no text gets those of its upstream
+# source, from the UBI9 source RPM. licenses/rpms.txt names the licence and
+# the project URL of every RPM, and the RPMs that still have no text: their
+# source has no licence file either.
+"${dnf[@]}" install cpio bzip2 xz >&2
+no_text=()
 for rpm in "${rpms[@]}"; do
   source=$(rpm -q --qf '%{SOURCERPM}' "$rpm")
   mapfile -t siblings < <(rpm -qa --qf '%{NAME} %{SOURCERPM}\n' | awk -v s="$source" '$2 == s { print $1 }')
@@ -82,5 +110,17 @@ for rpm in "${rpms[@]}"; do
     mkdir -p "$(dirname "$dest")"
     cp -L "$text" "$dest"
   done
+  if [ ! -d "$payload/licenses/rpm/$rpm" ]; then
+    source_texts "$rpm" "$payload/licenses/rpm/$rpm/source"
+  fi
+  if [ ! -d "$payload/licenses/rpm/$rpm" ]; then
+    no_text+=("$rpm")
+  fi
 done
-rpm -q --qf '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}\t%{LICENSE}\t%{URL}\n' "${rpms[@]}" > "$payload/licenses/rpms.txt"
+{
+  rpm -q --qf '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}\t%{LICENSE}\t%{URL}\n' "${rpms[@]}"
+  if [ "${#no_text[@]}" -gt 0 ]; then
+    echo
+    echo "No licence file in the RPM or its upstream source: ${no_text[*]}"
+  fi
+} > "$payload/licenses/rpms.txt"

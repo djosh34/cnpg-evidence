@@ -81,25 +81,33 @@ func run(docFile, desiredFile, outDir string) error {
 		docs = append(docs, doc)
 	}
 
-	root, err := os.MkdirTemp("", "cnpg-report-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(root)
-
-	if err := unpack(root); err != nil {
-		return fmt.Errorf("unpack: %w", err)
-	}
-
+	// A signal cancels the work, so the unpacked files are removed then too.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	ctx, cancel := context.WithTimeout(ctx, renderTimeout)
 	defer cancel()
-	images, err := render(ctx, root, docs)
+
+	root, err := os.MkdirTemp("", "cnpg-report-")
+	if err != nil {
+		return err
+	}
+	images, err := unpackAndRender(ctx, root, docs)
+	// The unpacked files go before any image is written, so a failed removal
+	// leaves no image behind.
+	if rmErr := os.RemoveAll(root); rmErr != nil {
+		err = errors.Join(err, fmt.Errorf("remove the unpacked files: %w", rmErr))
+	}
 	if err != nil {
 		return err
 	}
 	return writeImages(outDir, images)
+}
+
+func unpackAndRender(ctx context.Context, root string, docs []json.RawMessage) ([]image, error) {
+	if err := unpack(ctx, root); err != nil {
+		return nil, fmt.Errorf("unpack: %w", err)
+	}
+	return render(ctx, root, docs)
 }
 
 func readJSON(file string) (json.RawMessage, error) {
@@ -115,13 +123,16 @@ func readJSON(file string) (json.RawMessage, error) {
 
 // unpack writes the payload into root. The payload holds only directories and
 // regular files.
-func unpack(root string) error {
+func unpack(ctx context.Context, root string) error {
 	gz, err := gzip.NewReader(bytes.NewReader(payload))
 	if err != nil {
 		return err
 	}
 	tr := tar.NewReader(gz)
 	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		hdr, err := tr.Next()
 		if errors.Is(err, io.EOF) {
 			return gz.Close()
@@ -161,8 +172,7 @@ func writeFile(path string, r io.Reader, mode os.FileMode) error {
 		return err
 	}
 	if _, err := io.Copy(f, r); err != nil {
-		f.Close()
-		return err
+		return errors.Join(err, f.Close())
 	}
 	return f.Close()
 }
@@ -182,6 +192,10 @@ func writeImages(dir string, images []image) error {
 		if err == nil {
 			written = append(written, path)
 			continue
+		}
+		// The failed write may have left part of its file.
+		if rmErr := os.Remove(path); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
+			err = errors.Join(err, rmErr)
 		}
 		for _, w := range written {
 			if rmErr := os.Remove(w); rmErr != nil {

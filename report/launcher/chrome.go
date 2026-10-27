@@ -21,8 +21,7 @@ import (
 //	chrome/  chrome-headless-shell, its own files, and ld-linux-x86-64.so.2,
 //	         which must sit beside them so Chrome finds its resources
 //	lib/     every other library, glibc included
-//	fonts/   the fonts, and fonts.conf at the root
-//	page/    the page
+//	page/    the page, its fonts in page/fonts, and fonts.conf at the root
 const (
 	loader = "chrome/ld-linux-x86-64.so.2"
 	chrome = "chrome/chrome-headless-shell"
@@ -75,13 +74,10 @@ func render(ctx context.Context, root string, docs []json.RawMessage) ([]image, 
 	if err != nil {
 		return nil, err
 	}
-	defer cmdWrite.Close()
 	replyRead, replyWrite, err := os.Pipe()
 	if err != nil {
-		cmdRead.Close()
-		return nil, err
+		return nil, errors.Join(err, cmdRead.Close(), cmdWrite.Close())
 	}
-	defer replyRead.Close()
 
 	argv := chromeArgv(root, []string{
 		"--headless",
@@ -112,25 +108,27 @@ func render(ctx context.Context, root string, docs []json.RawMessage) ([]image, 
 	stderr := &tailWriter{}
 	cmd.Stderr = stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	err = cmd.Start()
-	cmdRead.Close()
-	replyWrite.Close()
-	if err != nil {
-		return nil, fmt.Errorf("start Chrome: %w", err)
+	if err := cmd.Start(); err != nil {
+		return nil, errors.Join(fmt.Errorf("start Chrome: %w", err),
+			cmdRead.Close(), cmdWrite.Close(), replyRead.Close(), replyWrite.Close())
 	}
 	exited := make(chan error, 1)
 	go func() { exited <- cmd.Wait() }()
 	running := true
 
-	c := newClient(cmdWrite, replyRead)
-	images, err := drawAndShoot(ctx, c, root, docs)
+	// Chrome holds its own copies of its ends of the pipes.
+	err = errors.Join(cmdRead.Close(), replyWrite.Close())
+	var images []image
 	if err == nil {
-		err = c.call(ctx, "", "Browser.close", nil, nil)
+		images, err = drawAndShoot(ctx, newClient(cmdWrite, replyRead), root, docs)
 	}
 	if err == nil {
 		select {
-		case <-exited:
+		case waitErr := <-exited:
 			running = false
+			if waitErr != nil {
+				err = fmt.Errorf("Chrome exited after Browser.close: %w", waitErr)
+			}
 		case <-time.After(10 * time.Second):
 			err = errors.New("Chrome did not exit after Browser.close")
 		}
@@ -141,8 +139,11 @@ func render(ctx context.Context, root string, docs []json.RawMessage) ([]image, 
 		err = errors.Join(err, killErr)
 	}
 	if running {
+		// err already says why Chrome was killed; its exit status after the
+		// kill adds nothing.
 		<-exited
 	}
+	err = errors.Join(err, cmdWrite.Close(), replyRead.Close())
 	if err == nil {
 		return images, nil
 	}
@@ -159,6 +160,7 @@ type pageError string
 
 func (e pageError) Error() string { return string(e) }
 
+// drawAndShoot draws the documents, takes every image and closes Chrome.
 func drawAndShoot(ctx context.Context, c *client, root string, docs []json.RawMessage) ([]image, error) {
 	var target struct{ TargetID string }
 	if err := c.call(ctx, "", "Target.createTarget", map[string]any{"url": "about:blank"}, &target); err != nil {
@@ -210,6 +212,9 @@ func drawAndShoot(ctx context.Context, c *client, root string, docs []json.RawMe
 			return nil, fmt.Errorf("%s: %w", f.File, err)
 		}
 		images = append(images, image{file: f.File, png: png})
+	}
+	if err := c.call(ctx, "", "Browser.close", nil, nil); err != nil {
+		return nil, err
 	}
 	return images, nil
 }

@@ -93,8 +93,8 @@ os_paths='"(/usr/lib64|/lib64|/usr/share/fonts|/etc/fonts)/'
   echo "processes: $(cut -d' ' -f1 "$work/trace.txt" | sort -u | wc -l)"
   echo "under /usr/lib64, /lib64, /usr/share/fonts or /etc/fonts: $(grep -cE "$os_paths" "$work/trace.txt" || [ $? = 1 ])"
   grep -E "$os_paths" "$work/trace.txt" || [ $? = 1 ]
-  echo "opened outside the unpacked payload, by path:"
-  grep -oE 'openat\([^,]*, "[^"]*"' "$work/trace.txt" | sed 's/^[^"]*"//; s/"$//' |
+  echo "absolute paths opened outside the unpacked payload:"
+  grep -oE 'openat\([^,]*, "/[^"]*"' "$work/trace.txt" | sed 's/^[^"]*"//; s/"$//' |
     grep -vE '^/tmp/cnpg-report-' | sort | uniq -c | sort -rn
 } > "$out/strace-summary.txt"
 head -n 3 "$out/strace-summary.txt"
