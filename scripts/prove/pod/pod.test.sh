@@ -44,8 +44,8 @@ export -f kubectl
 result=$(bash "$here/pod.sh" databases pg pg-rw-lb | jq -s .)
 same_text 'pod controls and policy probes' true "$(jq 'length == 6 and all(.ok)' <<<"$result")"
 same 'names without addresses, targets with them' \
-  '[["control-other-namespace","10.43.0.1:443","allowed"],["other-namespace 5432","10.42.0.1:5432","denied"],
-    ["other-namespace 8000","10.42.0.1:8000","denied"],["other-namespace 9187","10.42.0.1:9187","denied"],
+  '[["control-other-namespace","10.43.0.1:443","allowed"],["other-namespace-5432","10.42.0.1:5432","denied"],
+    ["other-namespace-8000","10.42.0.1:8000","denied"],["other-namespace-9187","10.42.0.1:9187","denied"],
     ["other-namespace-lb","192.0.2.1:5432","denied"],["other-namespace-nodeport","192.0.2.2:30000","denied"]]' \
   "$(jq -c 'map([.probe, .target, .value])' <<<"$result")"
 for refusal in 'psql: error: connection failed: Connection refused' \

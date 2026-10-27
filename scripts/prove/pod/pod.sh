@@ -72,6 +72,6 @@ for target in "$api" "${targets[@]}"; do
     elif [[ $result == connected ]]; then
       value=allowed
     fi
-    add_probe "other-namespace ${target##*:}" "$target" "timeout or connection refused" denied "$value" "$result"
+    add_probe "other-namespace-${target##*:}" "$target" "timeout or connection refused" denied "$value" "$result"
   fi
 done

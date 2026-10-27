@@ -106,7 +106,7 @@ Exit 0: every attempt matches. Exit 1: at least one differs. Exit 2: a usage or 
 - `replication-cert-as-streaming_replica`: `streaming_replica` gets the pg_hba reject for the application database.
 - `control-replication-cert`: the replication certificate logs in as `streaming_replica` to `postgres`. Must succeed.
 - `control-other-namespace`: the pod in another namespace connects to the Kubernetes API on 443. Must succeed.
-- `other-namespace 5432`, `other-namespace 8000`, `other-namespace 9187`: each instance pod's address on that port times out or refuses the connection.
+- `other-namespace-5432`, `other-namespace-8000`, `other-namespace-9187`: each instance pod's address on that port times out or refuses the connection.
 - `other-namespace-lb`: through each LoadBalancer address, a pg_hba reject or no connection (refused, or a `psql` connect timeout); a login or any other error fails.
 - `other-namespace-nodeport`: the same for the NodePort on every node's address.
 - `uid-UID socket-proc-root`: the host uid cannot log in through the socket under the process root. One attempt per instance pod on the node.

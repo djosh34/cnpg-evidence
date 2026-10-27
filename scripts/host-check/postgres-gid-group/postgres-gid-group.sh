@@ -34,4 +34,4 @@ done
 ((${#details[@]})) || details=("no group with gid $postgres_gid")
 ok=true
 ((${#open[@]} == 0)) || ok=false
-add_check "$id" "$ok" "$(listed "${open[@]}")" "$(joined "${details[@]}")"
+add_check "$id" "$ok" "$(listed "not locked with nologin" "${open[@]}")" "$(joined "${details[@]}")"

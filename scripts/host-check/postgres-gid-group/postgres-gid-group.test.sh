@@ -33,7 +33,21 @@ getent() {
   esac
 }
 export -f getent
-same_text "an open member is the value" alice "$(bash "$here/postgres-gid-group.sh" 26 26 | jq -r .value)"
+same_text "an open member is the value" "not locked with nologin: alice" \
+  "$(bash "$here/postgres-gid-group.sh" 26 26 | jq -r .value)"
+getent() {
+  case $* in
+    'passwd') echo 'root:x:0:0:root:/root:/bin/bash' ;;
+    'passwd none') echo 'none:x:1000:1000::/:/bin/bash' ;;
+    'group'|'group 26') echo 'postgres:x:26:none' ;;
+    'shadow none') echo 'none:password-hash:1:0:99999:7:::' ;;
+    *) return 2 ;;
+  esac
+}
+export -f getent
+same "an open member named none differs from no member" \
+  '{"ok":false,"value":"not locked with nologin: none"}' \
+  "$(bash "$here/postgres-gid-group.sh" 26 26 | jq -c '{ok, value}')"
 
 getent() { return 1; }
 export -f getent

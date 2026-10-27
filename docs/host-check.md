@@ -79,8 +79,8 @@ Exit 0: every check passed. Exit 1: a check failed. Exit 2: an argument, privile
 | Check | Passes when | `value` when it passes | `value` when it fails |
 | --- | --- | --- | --- |
 | `selinux-enforcing` | The kernel's SELinux mode is enforcing. | `enforcing` | `permissive` or `disabled` |
-| `postgres-uid-account` | Every account with the PostgreSQL uid or primary gid is locked and has a `nologin` shell. No such account also passes. | `none` | the accounts that are not |
-| `postgres-gid-group` | Every member of the PostgreSQL group is locked and has a `nologin` shell. An absent or empty group passes. | `none` | the members that are not |
+| `postgres-uid-account` | Every account with the PostgreSQL uid or primary gid is locked and has a `nologin` shell. No such account also passes. | `none` | `not locked with nologin: ` and the accounts that are not |
+| `postgres-gid-group` | Every member of the PostgreSQL group is locked and has a `nologin` shell. An absent or empty group passes. | `none` | `not locked with nologin: ` and the members that are not |
 | `postgres-sudoers` | No sudoers line outside comments names `postgres`, a matching account or group, or the uid or gid. In sudoers, `#` followed by a number names a uid and is not a comment. | `none` | the lines, as `file:line: text` |
 | `postgresql-server-absent` | `rpm -qa 'postgresql*-server'` finds no package. | `none` | the packages |
 | `storage-dir-mode` | The storage directory is 0700 or tighter, owned by `root:root`, without an ACL. | `700 or tighter, root:root, no ACL` | the same parts with what differs, such as `755, root:root, no ACL`, or `missing` |

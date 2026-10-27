@@ -32,4 +32,4 @@ done
 ((${#details[@]})) || details=("no account with uid $postgres_uid or primary gid $postgres_gid")
 ok=true
 ((${#open[@]} == 0)) || ok=false
-add_check "$id" "$ok" "$(listed "${open[@]}")" "$(joined "${details[@]}")"
+add_check "$id" "$ok" "$(listed "not locked with nologin" "${open[@]}")" "$(joined "${details[@]}")"

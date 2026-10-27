@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Provides JSON-check output and semicolon-separated text helpers.
 # Usage: source lib.sh; add_check ID true|false VALUE RAW; joined TEXT...;
-#   listed TEXT...
+#   listed LABEL TEXT...
 # Exit: helpers return 0 on success, nonzero on command errors.
 set -euo pipefail
 shopt -s inherit_errexit nullglob
@@ -17,9 +17,12 @@ joined() {
   echo "${out%; }"
 }
 
-# The texts joined, or none without any.
+# "LABEL: " and the texts joined, or none without any. The label keeps a list
+# that holds a name such as "none" apart from the empty list.
 listed() {
-  if (($#)); then joined "$@"; else echo none; fi
+  local label=$1
+  shift
+  if (($#)); then echo "$label: $(joined "$@")"; else echo none; fi
 }
 
 # VALUE is the result in the terms of the check's rule, so a passing check on
