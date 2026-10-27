@@ -13,16 +13,16 @@ input=$(cat <<'EOF'
   "instances": {
     "pg-1": {
       "pg_hba": [
-        {"line": "local all all peer map=local", "type": "local", "databases": ["all"], "users": ["all"], "address": null, "method": "peer", "options": ["map=local"], "error": null},
-        {"line": "hostssl replication streaming_replica all cert map=cnpg_streaming_replica", "type": "hostssl", "databases": ["replication"], "users": ["streaming_replica"], "address": "all", "method": "cert", "options": ["map=cnpg_streaming_replica"], "error": null},
-        {"line": "hostssl orders orders all cert map=clients", "type": "hostssl", "databases": ["orders"], "users": ["orders"], "address": "all", "method": "cert", "options": ["map=clients", "clientcert=verify-full"], "error": null},
-        {"line": "host all all all reject", "type": "host", "databases": ["all"], "users": ["all"], "address": "all", "method": "reject", "options": [], "error": null},
-        {"line": "host all all all scram-sha-256", "type": "host", "databases": ["all"], "users": ["all"], "address": "all", "method": "scram-sha-256", "options": [], "error": null}
+        {"number": 1, "line": "local all all peer map=local", "type": "local", "databases": ["all"], "users": ["all"], "address": null, "method": "peer", "options": ["map=local"], "error": null},
+        {"number": 2, "line": "hostssl replication streaming_replica all cert map=cnpg_streaming_replica", "type": "hostssl", "databases": ["replication"], "users": ["streaming_replica"], "address": "all", "method": "cert", "options": ["map=cnpg_streaming_replica"], "error": null},
+        {"number": 3, "line": "hostssl orders orders all cert map=clients", "type": "hostssl", "databases": ["orders"], "users": ["orders"], "address": "all", "method": "cert", "options": ["map=clients", "clientcert=verify-full"], "error": null},
+        {"number": 4, "line": "host all all all reject", "type": "host", "databases": ["all"], "users": ["all"], "address": "all", "method": "reject", "options": [], "error": null},
+        {"number": 5, "line": "host all all all scram-sha-256", "type": "host", "databases": ["all"], "users": ["all"], "address": "all", "method": "scram-sha-256", "options": [], "error": null}
       ],
       "pg_ident": [
-        {"line": "local postgres postgres", "map": "local", "system_user": "postgres", "role": "postgres", "error": null},
-        {"line": "cnpg_streaming_replica pg-replication streaming_replica", "map": "cnpg_streaming_replica", "system_user": "pg-replication", "role": "streaming_replica", "error": null},
-        {"line": "clients orders-app.test orders", "map": "clients", "system_user": "orders-app.test", "role": "orders", "error": null}
+        {"number": 1, "line": "local postgres postgres", "map": "local", "system_user": "postgres", "role": "postgres", "error": null},
+        {"number": 2, "line": "cnpg_streaming_replica pg-replication streaming_replica", "map": "cnpg_streaming_replica", "system_user": "pg-replication", "role": "streaming_replica", "error": null},
+        {"number": 3, "line": "clients orders-app.test orders", "map": "clients", "system_user": "orders-app.test", "role": "orders", "error": null}
       ]
     }
   },
@@ -61,16 +61,16 @@ expected=$(cat <<'EOF'
   },
   "details": {
     "pg_hba": [
-      "local all all peer map=local",
-      "hostssl replication streaming_replica all cert map=cnpg_streaming_replica",
-      "hostssl orders orders all cert map=clients",
-      "host all all all reject",
-      "host all all all scram-sha-256"
+      {"number": 1, "line": "local all all peer map=local"},
+      {"number": 2, "line": "hostssl replication streaming_replica all cert map=cnpg_streaming_replica"},
+      {"number": 3, "line": "hostssl orders orders all cert map=clients"},
+      {"number": 4, "line": "host all all all reject"},
+      {"number": 5, "line": "host all all all scram-sha-256"}
     ],
     "pg_ident": [
-      "local postgres postgres",
-      "cnpg_streaming_replica pg-replication streaming_replica",
-      "clients orders-app.test orders"
+      {"number": 1, "line": "local postgres postgres"},
+      {"number": 2, "line": "cnpg_streaming_replica pg-replication streaming_replica"},
+      {"number": 3, "line": "clients orders-app.test orders"}
     ],
     "pg_hba_not_understood": [],
     "pg_ident_not_understood": []
@@ -130,19 +130,42 @@ same "lines it cannot read do not hide later lines" \
 
 # Instances that differ: the lines per instance, the logins of both.
 input_two=$(jq '.instances["pg-2"] = (.instances["pg-1"] | .pg_ident += [
-  {"line": "clients other.test orders", "map": "clients", "system_user": "other.test", "role": "orders", "error": null}
+  {"number": 4, "line": "clients other.test orders", "map": "clients", "system_user": "other.test", "role": "orders", "error": null}
 ])' <<<"$input")
 expected=$(cat <<'EOF'
 {
   "logins": {"common_names": ["orders-app.test", "other.test"]},
   "pg_ident": {
-    "pg-1": ["local postgres postgres", "cnpg_streaming_replica pg-replication streaming_replica", "clients orders-app.test orders"],
-    "pg-2": ["local postgres postgres", "cnpg_streaming_replica pg-replication streaming_replica", "clients orders-app.test orders", "clients other.test orders"]
+    "pg-1": [
+      {"number": 1, "line": "local postgres postgres"},
+      {"number": 2, "line": "cnpg_streaming_replica pg-replication streaming_replica"},
+      {"number": 3, "line": "clients orders-app.test orders"}
+    ],
+    "pg-2": [
+      {"number": 1, "line": "local postgres postgres"},
+      {"number": 2, "line": "cnpg_streaming_replica pg-replication streaming_replica"},
+      {"number": 3, "line": "clients orders-app.test orders"},
+      {"number": 4, "line": "clients other.test orders"}
+    ]
   }
 }
 EOF
 )
 same "different instances: lines per instance, logins of all" \
   "$expected" "$(logins <<<"$input_two" | jq '{logins: .databases.orders.logins.orders, pg_ident: .details.pg_ident}')"
+
+# A moved line keeps its text but not its number.
+input_moved=$(jq '.instances["pg-1"].pg_hba |= ([.[0], .[2], .[1], .[3], .[4]] | to_entries | map(.value.number = .key + 1 | .value))' <<<"$input")
+expected=$(cat <<'EOF'
+[
+  {"number": 1, "line": "local all all peer map=local"},
+  {"number": 2, "line": "hostssl orders orders all cert map=clients"},
+  {"number": 3, "line": "hostssl replication streaming_replica all cert map=cnpg_streaming_replica"},
+  {"number": 4, "line": "host all all all reject"},
+  {"number": 5, "line": "host all all all scram-sha-256"}
+]
+EOF
+)
+same "a moved line carries its new number" "$expected" "$(logins <<<"$input_moved" | jq .details.pg_hba)"
 
 finish

@@ -53,18 +53,25 @@ fi
 for target in "$api" "${targets[@]}"; do
   line=$(grep -Fm1 "$target " <<<"$output") || line="$target no result, the pod did not finish"
   result=${line#"$target "}
-  ok=false
+  value=error
   if [[ $target == "$api" ]]; then
-    [[ $result != connected ]] || ok=true
-    add_probe "control-other-namespace $target" "connected (Kubernetes API, the pod network works)" "$result" "$ok"
+    [[ $result != connected ]] || value=allowed
+    add_probe control-other-namespace "$target" "connected (Kubernetes API, the pod network works)" \
+      allowed "$value" "$result"
   elif [[ $target == "lb "* || $target == "nodeport "* ]]; then
-    if [[ $result != 'succeeded: '* &&
-      $result =~ pg_hba\.conf\ rejects\ connection|[Cc]onnection\ refused|timeout\ expired ]]; then
-      ok=true
+    if [[ $result == 'succeeded: '* ]]; then
+      value=allowed
+    elif [[ $result =~ pg_hba\.conf\ rejects\ connection|[Cc]onnection\ refused|timeout\ expired ]]; then
+      value=denied
     fi
-    add_probe "other-namespace-$target" "pg_hba refusal or no connection (connection refused or connect timeout)" "$result" "$ok"
+    add_probe "other-namespace-${target%% *}" "${target#* }" \
+      "pg_hba refusal or no connection (connection refused or connect timeout)" denied "$value" "$result"
   else
-    [[ $result != timeout && $result != *refused* ]] || ok=true
-    add_probe "other-namespace $target" "timeout or connection refused" "$result" "$ok"
+    if [[ $result == timeout || $result == *refused* ]]; then
+      value=denied
+    elif [[ $result == connected ]]; then
+      value=allowed
+    fi
+    add_probe "other-namespace ${target##*:}" "$target" "timeout or connection refused" denied "$value" "$result"
   fi
 done

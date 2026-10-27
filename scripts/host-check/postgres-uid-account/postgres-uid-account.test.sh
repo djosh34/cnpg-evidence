@@ -20,7 +20,7 @@ getent() {
   esac
 }
 export -f getent
-same "locked direct uid account" '{"id":"postgres-uid-account","ok":true,"detail":"postgres uid=26 gid=26 shell=/sbin/nologin locked=yes"}' "$(bash "$here/postgres-uid-account.sh" 26 26)"
+same "locked direct uid account" '{"id":"postgres-uid-account","ok":true,"value":"none","raw":"postgres uid=26 gid=26 shell=/sbin/nologin locked=yes"}' "$(bash "$here/postgres-uid-account.sh" 26 26)"
 getent() {
   case $1 in
     passwd) echo 'postgres:x:26:26::/:/bin/bash' ;;
@@ -28,7 +28,17 @@ getent() {
   esac
 }
 export -f getent
-same "login shell fails" false "$(bash "$here/postgres-uid-account.sh" 26 26 | jq .ok)"
+same "login shell fails" '{"id":"postgres-uid-account","ok":false,"value":"postgres","raw":"postgres uid=26 gid=26 shell=/bin/bash locked=yes"}' \
+  "$(bash "$here/postgres-uid-account.sh" 26 26)"
+getent() {
+  case $* in
+    passwd) echo 'root:x:0:0:root:/root:/bin/bash' ;;
+    *) return 2 ;;
+  esac
+}
+export -f getent
+same "no account has the same value as a locked one" '{"id":"postgres-uid-account","ok":true,"value":"none","raw":"no account with uid 26 or primary gid 26"}' \
+  "$(bash "$here/postgres-uid-account.sh" 26 26)"
 
 getent() { return 1; }
 export -f getent

@@ -22,4 +22,8 @@ same_text "die logs an error on stderr" "probe.sh: error: no kubectl" "$(run 'di
 same_text "have finds bash" yes "$(run 'have bash && echo yes || echo no')"
 same_text "have misses a missing tool, silently" no "$(run 'have no-such-tool-here && echo yes || echo no' 2>&1)"
 
+same_text "collected_at is UTC ISO 8601" yes \
+  "$(run 'collected_at' | grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$' && echo yes || echo no)"
+same_text "collected_at asks date for UTC" "-u +%Y-%m-%dT%H:%M:%SZ" "$(run 'date() { echo "$*"; }; collected_at')"
+
 finish

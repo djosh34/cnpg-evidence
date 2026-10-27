@@ -43,6 +43,11 @@ TEXT
 export -f kubectl
 result=$(bash "$here/pod.sh" databases pg pg-rw-lb | jq -s .)
 same_text 'pod controls and policy probes' true "$(jq 'length == 6 and all(.ok)' <<<"$result")"
+same 'names without addresses, targets with them' \
+  '[["control-other-namespace","10.43.0.1:443","allowed"],["other-namespace 5432","10.42.0.1:5432","denied"],
+    ["other-namespace 8000","10.42.0.1:8000","denied"],["other-namespace 9187","10.42.0.1:9187","denied"],
+    ["other-namespace-lb","192.0.2.1:5432","denied"],["other-namespace-nodeport","192.0.2.2:30000","denied"]]' \
+  "$(jq -c 'map([.probe, .target, .value])' <<<"$result")"
 for refusal in 'psql: error: connection failed: Connection refused' \
   'psql: error: connection failed: timeout expired'; do
   result=$(service_result=$refusal bash "$here/pod.sh" databases pg pg-rw-lb | jq -s .)
@@ -54,6 +59,8 @@ for failure in 'succeeded: 1' 'succeeded: pg_hba.conf rejects connection' \
   result=$(service_result=$failure bash "$here/pod.sh" databases pg pg-rw-lb | jq -s .)
   same_text "$failure never proves service denial" 2 \
     "$(jq '[.[] | select(.ok == false)] | length' <<<"$result")"
+  same_text "$failure is allowed or error" "$([[ $failure == succeeded* ]] && echo allowed || echo error)" \
+    "$(jq -r 'map(select(.probe == "other-namespace-lb"))[0].value' <<<"$result")"
 done
 for failure in run wait; do
   status=0

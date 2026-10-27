@@ -16,17 +16,20 @@ source "$here/../accounts/accounts.sh"
 postgres_uid=$1
 postgres_gid=$2
 id=postgres-uid-account
-ok=true
 details=()
+# Accounts that are not locked with a nologin shell.
+open=()
 
 if ! have getent; then
-  add_check "$id" false "getent not found"
+  add_check "$id" false "getent not found" "getent not found"
   exit 0
 fi
 accounts=$(postgres_accounts "$postgres_uid" "$postgres_gid") || exit 2
 for name in $accounts; do
-  line=$(account_state "$name") || ok=false
+  line=$(account_state "$name") || open+=("$name")
   details+=("$line")
 done
 ((${#details[@]})) || details=("no account with uid $postgres_uid or primary gid $postgres_gid")
-add_check "$id" "$ok" "$(joined "${details[@]}")"
+ok=true
+((${#open[@]} == 0)) || ok=false
+add_check "$id" "$ok" "$(listed "${open[@]}")" "$(joined "${details[@]}")"

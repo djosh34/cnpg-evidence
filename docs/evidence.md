@@ -38,6 +38,10 @@ Exit 0 when `violations` is empty, 1 when not, 2 on any error (bad input, a miss
 Example, shortened and shown as YAML:
 
 ```yaml
+kind: actual
+source: evidence
+collected_at: "2026-01-02T03:04:05Z"
+cluster: {name: pg, namespace: databases}
 status: pass
 violations: []
 postgres: {superusers: [postgres], can_replicate: [postgres, streaming_replica], roles: [billing, cnpg_metrics_exporter, orders, postgres, streaming_replica], ...}
@@ -49,9 +53,13 @@ kubernetes: {namespaces: {databases: {exec_into_pods: [group:system:masters, ...
 pods_sharing_host_uids: []
 host_network_pods_that_can_bind_low_ports: []
 software: {kubernetes: v1.x.y+k3s1, cnpg_operator: 1.x.y, barman_cloud_plugin: v0.x.y, postgresql: "x.y"}
-details: {primary: pg-1, instances: [pg-1, pg-2, pg-3], pg_hba: [...], pg_ident: [...], ...}
+details: {primary: pg-1, instances: [pg-1, pg-2, pg-3], pg_hba: [{number: 1, line: local all all peer map=local}, ...], ...}
 ```
 
+- `kind`: `actual`, a document read from a live cluster.
+- `source`: `evidence`.
+- `collected_at`: when the script started reading, in UTC, ISO 8601, from the local clock.
+- `cluster`: the `name` and `namespace` of the CNPG `Cluster`, from `desired.yaml`.
 - `status`: `pass` when `violations` is empty, else `fail`.
 - `violations`: one sentence each, starting with its rule, for example `rule 8: mallory can change secret client-ca in databases (allowed by RoleBinding "mallory/databases" of Role "secrets" to User "mallory")`. A Kubernetes rights violation ends with the reason the API server gave, which names the binding. Extra and missing things both count.
 
@@ -135,6 +143,7 @@ Per right, the subjects the API server says yes for, as `system:serviceaccount:<
 
 - `software`: Kubernetes, operator, plugin and PostgreSQL versions. Reported, not compared.
 - `details`: the primary, the instance pods, the pg_hba and pg_ident lines (one list per instance when they differ, which is a violation), and `pg_hba_not_understood`, `pg_ident_not_understood`: lines it cannot interpret, such as a regular expression or an `ldap` method. Each is a violation.
+- Each pg_hba and pg_ident line is `{number, line}`. `number` is its place in the order PostgreSQL matches the lines (`rule_number` or `map_number`), so the same line in another place has another number. It is `null` for a line with an error.
 
 ## Code
 

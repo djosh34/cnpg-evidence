@@ -13,7 +13,7 @@ kubectl() {
     return 1
   elif [[ $sql == *"'pg_hba'"* ]]; then
     cat <<EOF
-{"pg_hba": [{"line": "host all all all reject $pod", "type": "host", "databases": ["all"], "users": ["all"],
+{"pg_hba": [{"number": 1, "line": "host all all all reject $pod", "type": "host", "databases": ["all"], "users": ["all"],
              "address": "all", "method": "reject", "options": [], "error": null}],
  "pg_ident": []}
 EOF
@@ -36,8 +36,8 @@ expected=$(cat <<'EOF'
   },
   "details": {
     "pg_hba": {
-      "pg-1": ["host all all all reject pg-1"],
-      "pg-2": ["host all all all reject pg-2"]
+      "pg-1": [{"number": 1, "line": "host all all all reject pg-1"}],
+      "pg-2": [{"number": 1, "line": "host all all all reject pg-2"}]
     },
     "pg_ident": [],
     "pg_hba_not_understood": [],

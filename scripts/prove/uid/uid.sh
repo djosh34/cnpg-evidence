@@ -22,26 +22,27 @@ read_command=(dd of=/dev/null bs=1 count=1 status=none)
 socket_text=$(<"$here/socket.sh")
 
 deny_path() {
-  local probe=$1 uid=$2 gid=$3 path=$4
-  shift 4
+  local probe=$1 target=$2 uid=$3 gid=$4 path=$5
+  shift 5
 
   if [[ ! -e $path ]]; then
-    add_probe "$probe" "Permission denied on $path" "$path missing as root, nothing proven" false
+    add_probe "$probe" "$target" "Permission denied" denied error "$path missing as root, nothing proven"
     return
   fi
-  deny "$probe" "Permission denied on $path" 'Permission denied' as_uid "$uid" "$gid" "$@"
+  deny "$probe" "$target" "Permission denied" 'Permission denied' as_uid "$uid" "$gid" "$@"
 }
 
 pods=$(kjson "$namespace" pods -l "cnpg.io/cluster=$cluster,cnpg.io/podRole=instance" \
   --field-selector "spec.nodeName=$node" | jq -r '.items[] | "\(.metadata.name) \(.metadata.uid)"')
+expected_instance="an instance of $cluster on this node, with its postgres process"
 if [[ -z $pods ]]; then
-  add_probe "uid-probes $node" "an instance of $cluster on this node" "none found" false
+  add_probe uid-probes "$node" "$expected_instance" found "not found" "no instance pod found"
   exit 0
 fi
 
 while read -r pod pod_uid; do
   if ! pid=$(bash "$here/postmaster.sh" "$pod_uid"); then
-    add_probe "uid-probes $pod" "a postgres process for pod $pod_uid" "none found" false
+    add_probe uid-probes "$pod" "$expected_instance" found "not found" "no postgres process for pod $pod_uid"
     continue
   fi
 
@@ -59,20 +60,20 @@ while read -r pod pod_uid; do
   mapped_gid=$((gid_base + postgres_uid))
   log "$pod: pid $pid, mapped uid $mapped_uid"
 
-  deny_path "uid-$postgres_uid socket-proc-root $pod" "$postgres_uid" "$postgres_uid" \
+  deny_path "uid-$postgres_uid socket-proc-root" "$pod" "$postgres_uid" "$postgres_uid" \
     "$process_root/controller/run/.s.PGSQL.5432" \
     "${psql_command[@]}" "host=$process_root/controller/run dbname=postgres user=postgres"
-  deny_path "uid-$postgres_uid token-proc-root $pod" "$postgres_uid" "$postgres_uid" \
+  deny_path "uid-$postgres_uid token-proc-root" "$pod" "$postgres_uid" "$postgres_uid" \
     "$process_root/run/secrets/kubernetes.io/serviceaccount/token" \
     "${read_command[@]}" "if=$process_root/run/secrets/kubernetes.io/serviceaccount/token"
-  deny_path "uid-$postgres_uid environ $pod" "$postgres_uid" "$postgres_uid" \
+  deny_path "uid-$postgres_uid environ" "$pod" "$postgres_uid" "$postgres_uid" \
     "/proc/$pid/environ" "${read_command[@]}" "if=/proc/$pid/environ"
-  deny_path "uid-$postgres_uid socket-host-path $pod" "$postgres_uid" "$postgres_uid" \
+  deny_path "uid-$postgres_uid socket-host-path" "$pod" "$postgres_uid" "$postgres_uid" \
     "$socket_dir/.s.PGSQL.5432" bash -c "$socket_text" socket.sh "$socket_dir"
-  deny_path "uid-$postgres_uid token-host-path $pod" "$postgres_uid" "$postgres_uid" \
+  deny_path "uid-$postgres_uid token-host-path" "$pod" "$postgres_uid" "$postgres_uid" \
     "$token" "${read_command[@]}" "if=$token"
-  deny_path "uid-$postgres_uid pgdata-host-path $pod" "$postgres_uid" "$postgres_uid" \
+  deny_path "uid-$postgres_uid pgdata-host-path" "$pod" "$postgres_uid" "$postgres_uid" \
     "$pgdata" "${read_command[@]}" "if=$pgdata"
-  deny_path "uid-$mapped_uid socket-host-path $pod" "$mapped_uid" "$mapped_gid" \
+  deny_path "uid-mapped socket-host-path" "$pod uid $mapped_uid" "$mapped_uid" "$mapped_gid" \
     "$socket_dir/.s.PGSQL.5432" bash -c "$socket_text" socket.sh "$socket_dir"
 done <<<"$pods"

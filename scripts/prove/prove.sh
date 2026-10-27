@@ -46,6 +46,7 @@ done
 ((EUID == 0)) || die "run as root"
 
 export PGCONNECT_TIMEOUT=5
+collected_at=$(collected_at)
 
 log "login probes"
 login=$(bash "$here/login/login.sh" "$namespace" "$cluster" "$lb_service") || exit 2
@@ -55,8 +56,8 @@ log "uid probes on node $node"
 uid=$(bash "$here/uid/uid.sh" "$namespace" "$cluster" "$node" "$node_root" "$postgres_uid") || exit 2
 
 output=$(printf '%s\n' "$login" "$pod" "$uid" |
-  jq -s --arg node "$node" --arg namespace "$namespace" --arg cluster "$cluster" \
-    -f "$here/output.jq") || exit 2
+  jq -s --arg collected_at "$collected_at" --arg node "$node" --arg namespace "$namespace" \
+    --arg cluster "$cluster" -f "$here/output.jq") || exit 2
 printf '%s\n' "$output"
 
 if jq -e '.probes | all(.ok)' <<<"$output" >/dev/null; then

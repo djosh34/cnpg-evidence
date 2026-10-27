@@ -12,12 +12,12 @@ source "$here/../lib.sh"
 
 id=postgresql-server-absent
 if ! have rpm; then
-  add_check "$id" false "rpm not found"
+  add_check "$id" false "rpm not found" "rpm not found"
   exit 0
 fi
 pkgs=$(rpm -qa 'postgresql*-server' | sort)
 if [[ -z $pkgs ]]; then
-  add_check "$id" true "no postgresql*-server package installed"
+  add_check "$id" true none "no postgresql*-server package installed"
 else
-  add_check "$id" false "installed: ${pkgs//$'\n'/, }"
+  add_check "$id" false "${pkgs//$'\n'/; }" "installed: ${pkgs//$'\n'/; }"
 fi

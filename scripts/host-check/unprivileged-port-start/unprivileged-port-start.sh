@@ -14,6 +14,9 @@ source "$here/../lib.sh"
 value=$(< "${1:-/proc/sys/net/ipv4/ip_unprivileged_port_start}")
 [[ $value =~ ^[0-9]+$ ]] || die "invalid ip_unprivileged_port_start: $value"
 ok=false
-((value < 1024)) || ok=true
+rule_value=$value
+if ((value >= 1024)); then
+  ok=true rule_value="1024 or higher"
+fi
 
-add_check unprivileged-port-start "$ok" "ip_unprivileged_port_start = $value, want 1024 or higher"
+add_check unprivileged-port-start "$ok" "$rule_value" "ip_unprivileged_port_start = $value"

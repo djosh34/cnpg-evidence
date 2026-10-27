@@ -26,7 +26,7 @@ SUDOERS
 ))
 same "named sudoers line fails" false "$(jq .ok <<<"$actual")"
 same_text "matching line reported with location" true \
-  "$(jq '.detail | endswith(":1: example ALL=(postgres) ALL")' <<<"$actual")"
+  "$(jq '.value | endswith(":1: example ALL=(postgres) ALL")' <<<"$actual")"
 
 actual=$(bash "$here/postgres-sudoers.sh" 26 26 <(cat <<'SUDOERS'
 #26 ALL=(ALL) ALL
@@ -34,7 +34,7 @@ SUDOERS
 ))
 same "numeric uid is not a comment" false "$(jq .ok <<<"$actual")"
 same_text "numeric uid line reported" true \
-  "$(jq '.detail | endswith(":1: #26 ALL=(ALL) ALL")' <<<"$actual")"
+  "$(jq '.value | endswith(":1: #26 ALL=(ALL) ALL")' <<<"$actual")"
 
 actual=$(bash "$here/postgres-sudoers.sh" 26 26 <(cat <<'SUDOERS'
 # postgres ALL=(ALL) ALL

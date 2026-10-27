@@ -64,9 +64,9 @@ As root the script first checks that each target exists; a missing path cannot s
 
 ### 4. Combine the results
 
-Each of the three groups writes one JSON record per attempt; `prove.sh` combines them when all three have finished. A denial must show the expected failure text and a control must succeed; an unrelated error never counts as a denial.
+Each of the three groups writes one JSON record per attempt; `prove.sh` combines them when all three have finished. A denial must show the expected failure text and a control must succeed; an unrelated error never counts as a denial. Attempts with the same probe name, such as one login per LoadBalancer address or one connection per instance pod, become one row.
 
-The groups also run on their own:
+The groups also run on their own and print their records, one per line:
 
 - `bash scripts/prove/login/login.sh NAMESPACE CLUSTER LB_SERVICE`: logins from the node.
 - `bash scripts/prove/pod/pod.sh NAMESPACE CLUSTER LB_SERVICE`: attempts from the pod in another namespace.
@@ -75,41 +75,47 @@ The groups also run on their own:
 ## Output
 
 ```json
-{"node":"node-a","namespace":"databases","cluster":"pg","probes":[
-  {"probe":"password-tls 10.0.0.1:5432","expected":"refused by pg_hba reject",
-   "actual":"FATAL: pg_hba.conf rejects connection","ok":true}
+{"kind":"actual","source":"prove","collected_at":"2026-01-02T03:04:05Z",
+ "node":"node-a","namespace":"databases","cluster":"pg","probes":[
+  {"probe":"password-tls","expected":"refused by pg_hba reject","value":"denied","ok":true,
+   "raw":[{"target":"10.0.0.1:5432","value":"denied","actual":"FATAL: pg_hba.conf rejects connection"}]}
 ]}
 ```
 
 Exit 0: every attempt matches. Exit 1: at least one differs. Exit 2: a usage or collection error, with nothing on stdout.
 
+- `kind`: `actual`, a document read from a live cluster.
+- `source`: `prove`.
+- `collected_at`: when the script started, in UTC, ISO 8601, from the local clock.
 - `node`: the node of the host-uid attempts.
 - `namespace`: the cluster's namespace.
 - `cluster`: the CNPG `Cluster` name.
-- `probes`: the login, pod and uid records, in that order.
-- `probe`: the attempt and its target.
+- `probes`: one row per probe name, the login, pod and uid probes in that order.
+- `probe`: the attempt, named without addresses, pods or mapped uids, so the same probe has the same name on every cluster.
 - `expected`: the result it needs.
-- `actual`: what happened, on one line; login and uid results are cut to 400 characters. `succeeded:` marks a forbidden attempt that got through.
-- `ok`: `true` when `actual` matches `expected`.
+- `value`: `denied` when the attempt failed with the expected denial, `allowed` when it got through, `error` when it failed in another way, or a target was missing. A denial probe passes with `denied`, a control with `allowed`. When the attempts of one row differ, the value lists each once, such as `denied, allowed`.
+- `ok`: `true` when every attempt of the row matches.
+- `raw`: each attempt, with its `target` (address and port, pod, or pod and mapped uid), its `value` and `actual`: what happened, on one line. Login and uid results are cut to 400 characters. `succeeded:` marks a forbidden attempt that got through.
 
 ## Probes
 
-- `password-tls`: a password login with TLS gets the pg_hba reject.
+- `password-tls`: a password login with TLS gets the pg_hba reject. One attempt per LoadBalancer address and port.
 - `password-no-tls`: a password login without TLS gets the pg_hba reject.
 - `tls-no-client-cert`: an application login is asked for a client certificate.
 - `replication-cert-as-ROLE`: the replication certificate cannot log in as the application role.
 - `replication-cert-as-streaming_replica`: `streaming_replica` gets the pg_hba reject for the application database.
 - `control-replication-cert`: the replication certificate logs in as `streaming_replica` to `postgres`. Must succeed.
-- `control-other-namespace <API address>:443`: the pod in another namespace connects to the Kubernetes API. Must succeed.
-- `other-namespace ADDRESS:PORT`: an instance pod's address on 5432, 8000 or 9187 times out or refuses the connection.
-- `other-namespace-lb ADDRESS:PORT`: a pg_hba reject or no connection (refused, or a `psql` connect timeout); a login or any other error fails.
-- `other-namespace-nodeport NODE_ADDRESS:PORT`: the same for every node's NodePort.
-- `uid-UID socket-proc-root POD`: the host uid cannot log in through the socket under the process root.
-- `uid-UID token-proc-root POD`: the host uid cannot read the ServiceAccount token under the process root.
-- `uid-UID environ POD`: the host uid cannot read the postgres process environment.
-- `uid-UID socket-host-path POD`, once for `--postgres-uid` and once for the pod's mapped uid: neither can reach the socket on the host path and log in.
-- `uid-UID token-host-path POD`: the host uid cannot read the token on the host path.
-- `uid-UID pgdata-host-path POD`: the host uid cannot read `PG_VERSION` in the data directory on the host path.
-- `uid-probes NODE|POD`: fails when no instance runs on the node or a pod's postgres process is not found.
+- `control-other-namespace`: the pod in another namespace connects to the Kubernetes API on 443. Must succeed.
+- `other-namespace 5432`, `other-namespace 8000`, `other-namespace 9187`: each instance pod's address on that port times out or refuses the connection.
+- `other-namespace-lb`: through each LoadBalancer address, a pg_hba reject or no connection (refused, or a `psql` connect timeout); a login or any other error fails.
+- `other-namespace-nodeport`: the same for the NodePort on every node's address.
+- `uid-UID socket-proc-root`: the host uid cannot log in through the socket under the process root. One attempt per instance pod on the node.
+- `uid-UID token-proc-root`: the host uid cannot read the ServiceAccount token under the process root.
+- `uid-UID environ`: the host uid cannot read the postgres process environment.
+- `uid-UID socket-host-path`: the host uid cannot reach the socket on the host path and log in.
+- `uid-mapped socket-host-path`: the same as the pod's mapped uid.
+- `uid-UID token-host-path`: the host uid cannot read the token on the host path.
+- `uid-UID pgdata-host-path`: the host uid cannot read `PG_VERSION` in the data directory on the host path.
+- `uid-probes`: appears only to fail, with the value `not found`, when no instance runs on the node or a pod's postgres process is not found.
 
-A uid probe whose target is missing as root fails too, since a missing path shows no denial.
+A uid probe whose target is missing as root fails too, with the value `error`, since a missing path shows no denial.

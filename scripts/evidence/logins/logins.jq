@@ -120,8 +120,8 @@ def per_instance_when_different:
       | from_entries
     ),
     details: {
-      pg_hba: (.instances | map_values([.pg_hba[].line]) | per_instance_when_different),
-      pg_ident: (.instances | map_values([.pg_ident[].line]) | per_instance_when_different),
+      pg_hba: (.instances | map_values([.pg_hba[] | {number, line}]) | per_instance_when_different),
+      pg_ident: (.instances | map_values([.pg_ident[] | {number, line}]) | per_instance_when_different),
       pg_hba_not_understood: ([.instances[].pg_hba[] | select(understood_hba | not) | .line] | unique),
       pg_ident_not_understood: ([.instances[].pg_ident[] | select(understood_ident | not) | .line] | unique)
     }

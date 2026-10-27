@@ -32,12 +32,17 @@ export -f kubectl pgrep grep setpriv
 export test_pid=$$
 result=$(bash "$here/uid.sh" databases pg node1 '' 26 | jq -s .)
 same_text 'seven uid paths' 7 "$(jq length <<<"$result")"
-same_text 'missing root paths cannot prove denial' 6 "$(jq '[.[] | select(.ok == false and (.actual | contains("missing as root")))] | length' <<<"$result")"
-same_text 'existing environ denial' true "$(jq '.[2].ok' <<<"$result")"
+same_text 'missing root paths cannot prove denial' 6 "$(jq '[.[] | select(.ok == false and .value == "error" and (.actual | contains("missing as root")))] | length' <<<"$result")"
+same 'existing environ denial' '{"probe":"uid-26 environ","target":"pg-test","value":"denied","ok":true}' \
+  "$(jq -c '.[2] | {probe, target, value, ok}' <<<"$result")"
+same 'the mapped uid is in the target, not the name' '{"probe":"uid-mapped socket-host-path","target":"pg-test uid 26"}' \
+  "$(jq -c '.[6] | {probe, target}' <<<"$result")"
+same_text 'the expected text names no path' 'Permission denied' "$(jq -r 'map(.expected) | unique | join(", ")' <<<"$result")"
 result=$(no_pods=true bash "$here/uid.sh" databases pg node1 '' 26 | jq -s .)
-same_text 'no local pods fail' false "$(jq '.[0].ok' <<<"$result")"
+same 'no local pods fail' '{"probe":"uid-probes","target":"node1","value":"not found","ok":false}' \
+  "$(jq -c '.[0] | {probe, target, value, ok}' <<<"$result")"
 result=$(no_process=true bash "$here/uid.sh" databases pg node1 '' 26 | jq -s .)
-same_text 'no postmaster fails' 'none found' "$(jq -r '.[0].actual' <<<"$result")"
+same_text 'no postmaster fails' 'not found' "$(jq -r '.[0].value' <<<"$result")"
 # Both socket commands pass the helper text as the bash -c argument.
 # shellcheck disable=SC2016
 same_text 'both socket probes pass the root-read helper text' 2 \

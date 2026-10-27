@@ -20,7 +20,20 @@ getent() {
   esac
 }
 export -f getent
-same "locked supplementary group member" '{"id":"postgres-gid-group","ok":true,"detail":"group postgres gid=26 members=postgres; member postgres uid=26 gid=26 shell=/sbin/nologin locked=yes"}' "$(bash "$here/postgres-gid-group.sh" 26 26)"
+same "locked supplementary group member" '{"id":"postgres-gid-group","ok":true,"value":"none","raw":"group postgres gid=26 members=postgres; member postgres uid=26 gid=26 shell=/sbin/nologin locked=yes"}' "$(bash "$here/postgres-gid-group.sh" 26 26)"
+getent() {
+  case $* in
+    'passwd') echo 'root:x:0:0:root:/root:/bin/bash' ;;
+    'passwd postgres') echo 'postgres:x:26:26::/:/sbin/nologin' ;;
+    'passwd alice') echo 'alice:x:1000:1000::/:/bin/bash' ;;
+    'group'|'group 26') echo 'postgres:x:26:postgres,alice' ;;
+    'shadow postgres') echo 'postgres:!:1:0:99999:7:::' ;;
+    'shadow alice') echo 'alice:password-hash:1:0:99999:7:::' ;;
+    *) return 2 ;;
+  esac
+}
+export -f getent
+same_text "an open member is the value" alice "$(bash "$here/postgres-gid-group.sh" 26 26 | jq -r .value)"
 
 getent() { return 1; }
 export -f getent

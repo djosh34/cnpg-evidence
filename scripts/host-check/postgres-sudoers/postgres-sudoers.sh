@@ -35,7 +35,7 @@ if ((${#files[@]} == 0)); then
   [[ -e ${files[0]} ]] || files=("${files[@]:1}")
 fi
 if ((${#files[@]} == 0)); then
-  add_check "$id" true "no sudoers files"
+  add_check "$id" true none "no sudoers files"
   exit 0
 fi
 # A leading # followed by digits names a uid rather than starting a comment.
@@ -44,7 +44,7 @@ hits=$(awk -v re="$re" '
   $0 ~ re {print FILENAME ":" FNR ": " $0}
 ' "${files[@]}")
 if [[ -z $hits ]]; then
-  add_check "$id" true "no line names ${names//|/ or } in ${files[*]}"
+  add_check "$id" true none "no line names ${names//|/ or } in ${files[*]}"
 else
-  add_check "$id" false "${hits//$'\n'/; }"
+  add_check "$id" false "${hits//$'\n'/; }" "${hits//$'\n'/; }"
 fi

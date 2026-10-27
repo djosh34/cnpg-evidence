@@ -11,3 +11,6 @@ die() {
 }
 
 have() { command -v "$1" >/dev/null 2>&1; }
+
+# The time a document is collected: UTC, ISO 8601.
+collected_at() { date -u +%Y-%m-%dT%H:%M:%SZ; }

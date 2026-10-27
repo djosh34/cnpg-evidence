@@ -56,6 +56,7 @@ load_balancer=$(value .rwLoadBalancer.name) || exit 2
 expected_ca=$(bash "$here/client-ca/certificates.sh" <"$ca_file") || exit 2
 [[ $expected_ca != "[]" ]] || die "no certificate in $ca_file"
 
+collected_at=$(collected_at)
 log "reading the instance pods of $namespace/$cluster"
 pods=$(bash "$here/pods/pods.sh" "$namespace" "$cluster") || exit 2
 primary=$(jq -r .primary <<<"$pods") || exit 2
@@ -118,7 +119,10 @@ violations=$(
 
 result=$(
   jq -n --slurpfile facts <(echo "$facts") --slurpfile violations <(echo "$violations") \
-    '{status: (if $violations[0] == [] then "pass" else "fail" end), violations: $violations[0]} + $facts[0]'
+    --arg collected_at "$collected_at" --arg name "$cluster" --arg namespace "$namespace" \
+    '{kind: "actual", source: "evidence", $collected_at, cluster: {$name, $namespace},
+      status: (if $violations[0] == [] then "pass" else "fail" end), violations: $violations[0]}
+     + $facts[0]'
 ) || exit 2
 
 echo "$result"

@@ -1,10 +1,12 @@
 -- The pg_hba and pg_ident rows of one instance, in the order PostgreSQL
--- matches them. Rows with an error have no rule number and come first.
+-- matches them, with their place in that order. Rows with an error have no
+-- number and come first.
 BEGIN READ ONLY;
 
 SELECT json_build_object(
   'pg_hba', (
     SELECT coalesce(json_agg(json_build_object(
+        'number', rule_number,
         'line', concat_ws(' ', type, array_to_string(database, ','), array_to_string(user_name, ','),
                           address, netmask, auth_method, array_to_string(options, ' '), 'error: ' || error),
         'type', type,
@@ -19,6 +21,7 @@ SELECT json_build_object(
   ),
   'pg_ident', (
     SELECT coalesce(json_agg(json_build_object(
+        'number', map_number,
         'line', concat_ws(' ', map_name, sys_name, pg_username, 'error: ' || error),
         'map', map_name,
         'system_user', sys_name,

@@ -32,7 +32,10 @@ actual=$(bash "$here/subordinate-ids.sh" "$here/subordinate-ids.test.sh" "$here/
 same "malformed kubelet entry fails" false "$(jq .ok <<<"$actual")"
 same_text "malformed kubelet entry named" \
   "malformed or overlapping entries, kubelet range ($here/subordinate-ids.test.sh none; $here/subordinate-ids.sh none): $here/subordinate-ids.test.sh: kubelet:bad:65536; $here/subordinate-ids.sh: kubelet:bad:65536" \
-  "$(jq -r .detail <<<"$actual")"
+  "$(jq -r .raw <<<"$actual")"
+same_text "malformed kubelet entries are the value" \
+  "$here/subordinate-ids.test.sh: kubelet:bad:65536; $here/subordinate-ids.sh: kubelet:bad:65536" \
+  "$(jq -r .value <<<"$actual")"
 subids=$'kubelet:65536:0\nalice:200000:65536'
 actual=$(bash "$here/subordinate-ids.sh" "$here/subordinate-ids.test.sh" "$here/subordinate-ids.sh")
 same "empty kubelet range fails" false "$(jq .ok <<<"$actual")"

@@ -11,7 +11,7 @@ here=$(dirname "${BASH_SOURCE[0]}")
 source "$here/../lib.sh"
 
 if ! have getcap; then
-  add_check bind-service-capability false "getcap not found"
+  add_check bind-service-capability false "getcap not found" "getcap not found"
   exit 0
 fi
 
@@ -19,7 +19,7 @@ capabilities=$(getcap -r /usr /opt)
 hits=$(awk '/(^|[[:space:],])cap_net_bind_service([=,+[:space:]]|$)/' <<<"$capabilities")
 
 if [[ -z $hits ]]; then
-  add_check bind-service-capability true "no cap_net_bind_service under /usr or /opt"
+  add_check bind-service-capability true none "no cap_net_bind_service under /usr or /opt"
 else
-  add_check bind-service-capability false "${hits//$'\n'/; }"
+  add_check bind-service-capability false "${hits//$'\n'/; }" "${hits//$'\n'/; }"
 fi

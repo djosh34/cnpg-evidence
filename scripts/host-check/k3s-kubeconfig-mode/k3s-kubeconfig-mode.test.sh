@@ -15,9 +15,9 @@ ls() { echo 'drwx------ 1 root root'; }
 export -f stat ls
 actual=$(bash "$here/k3s-kubeconfig-mode.sh" /usr)
 if [[ -e /etc/rancher/k3s/k3s.yaml ]]; then
-  expected='{"id":"k3s-kubeconfig-mode","ok":true,"detail":"/etc/rancher/k3s/k3s.yaml 600 root:root, want 600 or tighter, root:root, no ACL"}'
+  expected='{"id":"k3s-kubeconfig-mode","ok":true,"value":"600 or tighter, root:root, no ACL","raw":"/etc/rancher/k3s/k3s.yaml 600 root:root"}'
 else
-  expected='{"id":"k3s-kubeconfig-mode","ok":false,"detail":"/etc/rancher/k3s/k3s.yaml missing"}'
+  expected='{"id":"k3s-kubeconfig-mode","ok":false,"value":"missing","raw":"/etc/rancher/k3s/k3s.yaml missing"}'
 fi
 same "check path and ceiling" "$expected" "$actual"
 
