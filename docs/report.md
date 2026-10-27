@@ -69,7 +69,7 @@ On an actual image, the values that differ from the desired document are red:
 - A value only the actual document has is red.
 - A desired value the actual document lacks is red and struck through.
 
-The comparison is the one `compare.sh` makes, described in [desired.md](desired.md#the-comparison). Rows match by their identity, not their place, so an extra row is red, a missing row is struck through, and a pg_hba or pg_ident line that moved shows as one missing and one extra row. Red marks a difference, not a failed check.
+The comparison is the one `compare.sh` makes, described in [desired.md](desired.md#the-comparison). Rows match by their identity, not their place, so an extra row is red, a missing row is struck through, and a moved pg_hba or pg_ident line shows as one missing and one extra row for each line whose number changed. A move renumbers the lines in between too, so swapping two lines gives four differences. Red marks a difference, not a failed check.
 
 ## Run
 
