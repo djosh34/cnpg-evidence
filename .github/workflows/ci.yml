@@ -39,3 +39,34 @@ jobs:
       - name: Page tests
         working-directory: report
         run: node --test test/*.test.js
+
+  report:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Tool versions
+        run: |
+          set -euo pipefail
+          docker --version
+          jq --version
+          file --version
+      - name: Build cnpg-report
+        run: bash report/build.sh build/cnpg-report
+      - name: One static x86_64 file
+        run: |
+          set -euo pipefail
+          file build/cnpg-report
+          file build/cnpg-report | grep -q 'x86-64.*statically linked'
+      - name: Render in ubi9-minimal without network
+        run: bash report/test/binary.sh build/cnpg-report images
+      - name: Trace summary
+        if: ${{ !cancelled() }}
+        run: cat images/strace-summary.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: report-images
+          path: images/
+          if-no-files-found: error
