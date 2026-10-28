@@ -45,6 +45,10 @@ spec:
       number: 1  # every commit waits for one other instance
       dataDurability: required  # and stops while no other instance can confirm it
       failoverQuorum: true  # promotes only a replica that holds every confirmed commit
+    parameters:
+      # A commit returns once one other instance has applied it, so a read
+      # there right after sees it.
+      synchronous_commit: remote_apply
     pg_hba:
       # One line per database: only its own role, only with a certificate.
       {{- range .Values.databases }}
@@ -107,12 +111,13 @@ spec:
                   targetPort: 5432
         {{- end }}
 
-  # A replica is ready, and so on the read port, only while it streams and its
-  # replay is less than 16Mi behind what it received.
+  # A starting replica opens the read port only once it streams and replays
+  # within 128Ki of the WAL end the primary last reported. Checked once at start;
+  # readiness stays CNPG's default, so a failover never waits on a lag check.
   probes:
-    readiness:
+    startup:
       type: streaming
-      maximumLag: 16Mi
+      maximumLag: 128Ki
 
   monitoring:
     tls:
