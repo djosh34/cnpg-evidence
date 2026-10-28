@@ -8,10 +8,10 @@ Each actual image says Passed or Failed for what it shows. The script's own verd
 
 ## Get the binary
 
-The binary is the only file in the image `ghcr.io/djosh34/cnpg-report`, at `/cnpg-report`. The image tags are the release versions, such as `v0.1.0`, and match the tags of this repository. The documents carry no version. Use the tag you took the scripts from, or the newest release if you ran them from `main`, and set it once:
+The binary is the only file in the image `ghcr.io/djosh34/cnpg-report`, at `/cnpg-report`. The image tags are the release versions, such as `v0.2.0`, and match the tags of this repository. The documents carry no version. Use the tag you took the scripts from, or the newest release if you ran them from `main`, and set it once:
 
 ```bash
-version=v0.1.0
+version=v0.2.0
 ```
 
 The image is for `linux/amd64` only. The commands below name that platform, so they also work on a host of another architecture.
