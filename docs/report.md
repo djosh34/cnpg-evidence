@@ -78,7 +78,27 @@ Under the Actual box, every actual image says **Failed** in red when it shows at
 
 Every table puts its correct rows first and the rows with a red mark last, each group in alphabetical order of its first column. The values inside a cell follow the same order. pg_hba lines are the exception: they keep their line-number order, and a line counts by its number, so a line that moved is red at its new number. pg_ident lines are compared without their numbers, since PostgreSQL reads every line of a map, so only a new pg_ident line is red.
 
-The comparison is the one `compare.sh` makes, described in [desired.md](desired.md#the-comparison). The images then leave out what is missing from actual and compare pg_ident lines without numbers, so an image can pass where `compare.sh` lists a difference.
+The images rest on the comparison below. They then leave out what is missing from actual and compare pg_ident lines without numbers, so an image can pass where the comparison finds a difference.
+
+### The comparison
+
+`cnpg-report` (`report/page/compare.js`) walks both documents from the top:
+
+- **Skipped:** the top-level `kind`, `source`, `collected_at`, `cluster`, `node`, `status` and `violations`; `details.primary` and `details.instances`; every `raw` key; and every top-level section the desired document lacks, such as `software` and `collected`.
+- **Maps** are compared key by key. A key only the actual map has is extra, unless the desired map has `"*"`; a key only the desired map has is missing.
+- **Lists** are rows, compared by identity: a row's `id` or `probe`, else the whole row without `raw`. A row only the actual list has is extra, a row only the desired list has is missing, and two rows with the same `id` or `probe` are compared key by key. The order of rows does not count; pg_hba and pg_ident rows carry their number, so a moved line shows as missing and extra rows.
+- **Values** that differ show both: the actual value as extra, the desired value as missing.
+
+Each difference is `{path, extra}` or `{path, missing}`. `path` names the keys down to the value, and for a row in a list, its `id` or `probe`:
+
+```json
+[{"path": ["postgres", "have_password"], "extra": "orders"},
+ {"path": ["kubernetes", "run_pods"], "extra": "mallory"},
+ {"path": ["checks", "selinux", "value"], "extra": "disabled; enable_selinux unset"},
+ {"path": ["checks", "selinux", "value"], "missing": "enforcing, enable_selinux true"}]
+```
+
+An empty list means the actual document has every desired value and nothing else. A `"*"` map stands for the keys the actual map has, so an actual map with no keys shows no difference; `evidence.sh` checks the number of instance pods.
 
 ## Run
 
@@ -150,45 +170,36 @@ The images land in `images/`, owned by you. The image holds nothing but `/cnpg-r
 
 Each image is one PNG, named after the script, the piece of evidence and the side.
 
-`evidence.sh`, 12 pairs and one actual image:
+`evidence.sh`, 8 pairs and one actual image:
 
 | Image | Files |
 |---|---|
-| Accounts, with the certificate names that log in as each | `evidence-01-accounts-desired.png`, `evidence-01-accounts-actual.png` |
-| Login rules | `evidence-02-login-rules-desired.png`, `evidence-02-login-rules-actual.png` |
-| Client CA | `evidence-03-client-ca-desired.png`, `evidence-03-client-ca-actual.png` |
-| Encryption | `evidence-04-encryption-desired.png`, `evidence-04-encryption-actual.png` |
-| Network | `evidence-05-network-desired.png`, `evidence-05-network-actual.png` |
-| Services and host ports | `evidence-06-ports-desired.png`, `evidence-06-ports-actual.png` |
-| Container isolation | `evidence-07-container-isolation-desired.png`, `evidence-07-container-isolation-actual.png` |
-| Operator Secrets | `evidence-08-operator-secrets-desired.png`, `evidence-08-operator-secrets-actual.png` |
-| Platform pods | `evidence-09-platform-pods-desired.png`, `evidence-09-platform-pods-actual.png` |
-| Platform Secrets | `evidence-10-platform-secrets-desired.png`, `evidence-10-platform-secrets-actual.png` |
-| Platform setup | `evidence-11-platform-setup-desired.png`, `evidence-11-platform-setup-actual.png` |
-| Nodes and certificates | `evidence-12-platform-nodes-certificates-desired.png`, `evidence-12-platform-nodes-certificates-actual.png` |
-| Versions | `evidence-13-versions-actual.png` only, since versions have no desired value |
+| Accounts, with the certificate names that log in as each and the databases they reach | `evidence-01-accounts-desired.png`, `evidence-01-accounts-actual.png` |
+| Certificate logins | `evidence-02-certificate-logins-desired.png`, `evidence-02-certificate-logins-actual.png` |
+| Login rules | `evidence-03-login-rules-desired.png`, `evidence-03-login-rules-actual.png` |
+| Client CA | `evidence-04-client-ca-desired.png`, `evidence-04-client-ca-actual.png` |
+| Encryption | `evidence-05-encryption-desired.png`, `evidence-05-encryption-actual.png` |
+| Container isolation | `evidence-06-container-isolation-desired.png`, `evidence-06-container-isolation-actual.png` |
+| Operator Secrets | `evidence-07-operator-secrets-desired.png`, `evidence-07-operator-secrets-actual.png` |
+| Platform rights | `evidence-08-platform-rights-desired.png`, `evidence-08-platform-rights-actual.png` |
+| Versions | `evidence-09-versions-actual.png` only, since versions have no desired value |
 
-The four platform images are grids: one row per account that holds one of their rights, and one square column per namespace under each right. On the Secrets and setup images, a cell names the Secrets or kinds of object when the account holds the right on only some of them.
+The certificate logins images list each certificate name with the account it logs in as and the database it reaches, then each database no certificate reaches.
 
-The network images cover the status and metrics ports, 8000 and 9187, and say so. Logins on 5432 are in the login images.
-
-The ports images list every Service in any namespace that reaches an instance pod, by its selector or by an address in its EndpointSlices, with its type, selector, traffic policy, ports, node ports, health check port and external IPs, and then the host ports of each instance pod. An extra Service is red by its name and namespace, and its node ports and external IPs are red too, since no Service may have them.
-
-The platform pods grid has a Port-forward column for the cluster's namespace. Open node ports on the nodes image covers starting pods and changing Services, Ingresses, and the Traefik IngressRoutes and IngressRouteTCPs (`ingressroutetcps.traefik.io`) where the cluster serves them.
+The platform rights images are grids: one row per account that holds one of the rights, and one square column per right.
 
 `host-check.sh`, one pair per check of the node file, named with the document's `node` and the check's `id`:
 
 - `host-check-<node>-<check>-desired.png` and `host-check-<node>-<check>-actual.png`, such as `host-check-node-a-selinux-actual.png`. The six checks are listed in [host-check.md](host-check.md#checks).
 
-`prove.sh`, three pairs:
+`prove.sh`, two pairs:
 
 | Image | Files |
 |---|---|
 | Logins from the node | `prove-01-login-attempts-desired.png`, `prove-01-login-attempts-actual.png` |
-| Connections from another namespace | `prove-02-other-namespace-desired.png`, `prove-02-other-namespace-actual.png` |
-| Access as the host postgres uid | `prove-03-host-uid-desired.png`, `prove-03-host-uid-actual.png` |
+| Access as the host postgres uid | `prove-02-host-uid-desired.png`, `prove-02-host-uid-actual.png` |
 
-Each prove image has a Tried on column. On the actual image it lists each address an attempt went to, with its ports, or the pod for an attempt as the uid, so the login attempts and `other-namespace-lb` show the rw LoadBalancer port 5432 and the read LoadBalancer port on every node. The desired image says where `prove.sh` makes each attempt.
+Each prove image has a Tried on column. On the actual image it lists each address an attempt went to, with its ports, or the pod for an attempt as the uid, so the login attempts show the rw LoadBalancer port on every node. The desired image says where `prove.sh` makes each attempt.
 
 Each image is as wide as its table plus 88 px margins, and as high as its content. Its header gives the title, the control, a Desired or Actual tag, the cluster or node, and who made the document. An actual image adds the collection time and Passed or Failed. A legend of the marks sits above the table.
 

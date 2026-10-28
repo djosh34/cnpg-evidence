@@ -1,6 +1,6 @@
 # host-check.sh
 
-`scripts/host-check/host-check.sh` shows host settings for [rules 6 and 8](../README.md#rules) on one node: PostgreSQL account access, directory and credential modes, SELinux and low ports. It also checks the k3s network policy setting for rule 5. It only reads.
+`scripts/host-check/host-check.sh` shows the host side of [rule 5](../README.md#rules) and rule 8 on one node: SELinux, the accounts with PostgreSQL's ids and the directory modes for rule 5; the k3s credentials, secrets encryption, low ports and the network policy controller for rule 8. It only reads.
 
 ## Run
 
@@ -24,7 +24,7 @@ bash scripts/host-check/host-check.sh --node node-a --postgres-uid 26 --postgres
 3. **Check accounts.** A host process with PostgreSQL's uid or gid can open files that PostgreSQL owns. The script lists the host account database (NSS) and also looks up the uid directly. Every account with that uid or primary gid must have a locked password and a `nologin` shell. Group members, matching sudoers lines and installed `postgresql*-server` packages are listed in `raw` only; they do not fail the check.
 4. **Check directory modes.** Pod volumes are directories on the node, under the storage directory and `/var/lib/kubelet/pods`; kubelet is the node agent that runs pods. The script checks their modes, root ownership and ACL markers.
 5. **Check k3s secrets.** The kubeconfig holds cluster-admin credentials. Config files with `token:` or `agent-token:` settings and the server directory also hold credentials. The script checks their modes, ownership and ACL markers, without printing tokens. It reads `secrets-encryption` from the config files and the unit's `ExecStart`, with later settings taking precedence. Absent paths pass. When both the kubeconfig and server directory are absent, it reports an agent node and does not require the server directory or secrets encryption.
-6. **Check low ports and the network policy setting.** The script checks that `ip_unprivileged_port_start` is at least 1024 and searches `/usr` and `/opt` for files with `cap_net_bind_service`. It reports any k3s `disable-network-policy` setting, even `false`. Its absence does not show that a suitable NetworkPolicy exists; `evidence.sh` reads those.
+6. **Check low ports and the network policy setting.** The script checks that `ip_unprivileged_port_start` is at least 1024 and searches `/usr` and `/opt` for files with `cap_net_bind_service`. It reports any k3s `disable-network-policy` setting, even `false`. Its absence shows that k3s enforces NetworkPolicies, not that a suitable one exists.
 7. **Assemble the result.** Each check gives a `value` in the terms of its rule, so a check that passes has the same value on every node, and `raw`, what it read. A failed check becomes `ok: false` and does not stop the later checks. A failed collection command stops the run with exit 2.
 
 ## Output
