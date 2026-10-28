@@ -16,7 +16,7 @@ same "the clean cluster has none" '[]' "$(violations .)"
 
 same "TLSv1.2 allowed, TLS off, plain metrics" \
   '["rule 1: pod pg-1: PostgreSQL accepts TLS from TLSv1.2, not only TLSv1.3", "rule 1: pod pg-2: PostgreSQL runs without TLS",
-    "rule 5: pod pg-2: metrics on 9187 do not use TLS"]' \
+    "rule 1: pod pg-2: metrics on 9187 do not use TLS"]' \
   "$(violations '.tls["pg-1"].postgresql = "TLSv1.2" | .tls["pg-2"] = {postgresql: "off", metrics: "none"}')"
 
 finish

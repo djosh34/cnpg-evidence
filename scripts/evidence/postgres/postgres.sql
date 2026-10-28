@@ -73,7 +73,9 @@ SELECT json_build_object(
   'can_log_in',
     (SELECT coalesce(json_agg(rolname ORDER BY rolname), '[]') FROM own_roles WHERE rolcanlogin),
   'roles',
-    (SELECT coalesce(json_agg(rolname ORDER BY rolname), '[]') FROM own_roles)
+    (SELECT coalesce(json_agg(rolname ORDER BY rolname), '[]') FROM own_roles),
+  'databases',
+    (SELECT coalesce(json_agg(datname ORDER BY datname), '[]') FROM pg_database)
 );
 
 ROLLBACK;

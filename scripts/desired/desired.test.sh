@@ -6,7 +6,7 @@ here=$(dirname "${BASH_SOURCE[0]}")
 source "$here/../lib/test.sh"
 
 values='{"cluster": {"name": "pg", "namespace": "databases", "instances": 3}, "caSecret": "client-ca",
-         "rwLoadBalancer": {"name": "pg-rw-lb"}, "network": {"operatorNamespace": "cnpg-system", "otelNamespace": "otel"},
+         "rwLoadBalancer": {"name": "pg-rw-lb"}, "network": {"operatorNamespace": "cnpg-system"},
          "replication": {"commonName": "pg-replication"},
          "databases": [{"name": "orders", "role": "orders", "clientCNs": ["orders-app.test"]},
                        {"name": "billing", "role": "billing", "clientCNs": ["billing-report.test", "billing-app.test"]}]}'
@@ -50,43 +50,36 @@ evidence=$(bash "$here/desired.sh" --ca <(echo "$ca") <<<"$values")
 same "evidence: what it is" '{"kind": "desired", "source": "evidence", "cluster": {"name": "pg", "namespace": "databases"}}' \
   "$(jq '{kind, source, cluster}' <<<"$evidence")"
 same_text "evidence: no verdict, no collection time and no versions" \
-  "cluster postgres databases client_ca tls network_policy ports kubernetes pods_sharing_host_uids host_network_pods_that_can_bind_low_ports details" \
+  "cluster postgres certificate_logins client_ca tls kubernetes pods_sharing_host_uids details" \
   "$(jq -r 'del(.kind, .source) | keys_unsorted | join(" ")' <<<"$evidence")"
-same "evidence: every role of the values, and only CNPG's roles hold rights" \
+same "evidence: every role and database of the values, and only CNPG's roles hold rights" \
   '{"roles": ["billing", "cnpg_metrics_exporter", "orders", "postgres", "streaming_replica"], "have_password": [],
-    "superusers": ["postgres"], "can_replicate": ["postgres", "streaming_replica"]}' \
-  "$(jq '.postgres | {roles, have_password, superusers, can_replicate}' <<<"$evidence")"
-same "evidence: a database of the values, its logins and the default CONNECT" \
-  '{"owner": "billing", "connect": ["PUBLIC", "billing"], "logins": {"billing": {"common_names": ["billing-app.test", "billing-report.test"]},
-    "cnpg_metrics_exporter": {"os_users": ["postgres"]}, "postgres": {"os_users": ["postgres"]}}}' \
-  "$(jq .databases.billing <<<"$evidence")"
+    "superusers": ["postgres"], "can_replicate": ["postgres", "streaming_replica"],
+    "databases": ["billing", "orders", "postgres", "template0", "template1"]}' \
+  "$(jq '.postgres | {roles, have_password, superusers, can_replicate, databases}' <<<"$evidence")"
+same "evidence: each certificate name with its role and database" \
+  '[{"common_name": "billing-app.test", "role": "billing", "database": "billing"},
+    {"common_name": "billing-report.test", "role": "billing", "database": "billing"},
+    {"common_name": "cnpg_pooler_pgbouncer", "role": "cnpg_pooler_pgbouncer", "database": "all"},
+    {"common_name": "orders-app.test", "role": "orders", "database": "orders"},
+    {"common_name": "pg-replication", "role": "streaming_replica", "database": "postgres"},
+    {"common_name": "pg-replication", "role": "streaming_replica", "database": "replication"},
+    {"common_name": "streaming_replica", "role": "streaming_replica", "database": "postgres"},
+    {"common_name": "streaming_replica", "role": "streaming_replica", "database": "replication"}]' \
+  "$(jq .certificate_logins <<<"$evidence")"
 same "evidence: the certificates of --ca" '{"secret": "client-ca", "certificates": [{"name": "CN=example-ca",
     "sha256_fingerprint": "2E:18:DB:8B:38:5D:21:DA:E1:BB:0C:63:A0:4F:1F:E1:4B:9F:1F:D9:D3:9D:44:C5:69:13:1D:63:9A:66:27:AE"}]}' \
   "$(jq .client_ca <<<"$evidence")"
 same "evidence: every instance pod under *" '{"*": {"postgresql": "TLSv1.3", "metrics": "TLSv1.3"}}' "$(jq .tls <<<"$evidence")"
-same "evidence: network sources under *" '["*"]' "$(jq '.network_policy | keys' <<<"$evidence")"
-same "evidence: the operator's and OTel's sources are named from the values" '{"cnpg-system operator": [8000], "otel": [9187]}' \
-  "$(jq '.network_policy["*"] | {"cnpg-system operator", otel}' <<<"$evidence")"
-same "evidence: CNPG's Services and the rw LoadBalancer, no node port, no host port" \
-  '{"services": {"databases/pg-rw-lb": {"type": "LoadBalancer", "selector": "cnpg.io/cluster=pg,cnpg.io/instanceRole=primary",
-                  "traffic_policy": "Cluster", "ports": ["5432 -> 5432"], "node_ports": [], "health_check_port": "none", "external_ips": []}},
-    "names": ["databases/pg-r", "databases/pg-ro", "databases/pg-rw", "databases/pg-rw-lb"], "host_ports": {"*": []}}' \
-  "$(jq '.ports | {services: {"databases/pg-rw-lb": .services["databases/pg-rw-lb"]}, names: (.services | keys), host_ports}' <<<"$evidence")"
-same "evidence: the read LoadBalancer on its port to every instance, with a health check port" \
-  '{"type": "LoadBalancer", "selector": "cnpg.io/cluster=pg,cnpg.io/podRole=instance", "traffic_policy": "Local",
-    "ports": ["5433 -> 5432"], "node_ports": [], "health_check_port": "present", "external_ips": []}' \
-  "$(jq -c '.readLoadBalancer = {name: "pg-read-lb", port: 5433}' <<<"$values" | bash "$here/desired.sh" --ca <(echo "$ca") |
-     jq '.ports.services["databases/pg-read-lb"]')"
-exits "a read LoadBalancer without a port" 2 "$(jq -c '.readLoadBalancer = {name: "pg-read-lb"}' <<<"$values")" --ca <(echo "$ca")
-same "evidence: rights are allowed sets" \
-  '{"exec": true, "secrets": true, "webhook only in cert-manager": {"cert-manager": true, "cnpg-system": false, "databases": false}, "operator": ["cnpg-system", "databases"]}' \
-  "$(jq '.kubernetes as $k | {
-      exec: ($k.namespaces.databases.exec_into_pods.allowed | index("system:serviceaccount:databases:pg") != null),
-      secrets: ($k.namespaces.databases.read_secret["*"].allowed | index("group:system:masters") != null),
-      "webhook only in cert-manager": ($k.namespaces | map_values(.run_pods.allowed | any(endswith("cert-manager-webhook")))),
+same "evidence: rights are allowed sets; Traefik only reads Secrets, the operator creates no certificates" \
+  '{"superuser": [true, true], "certificates": [false, true], "run_pods": [false, true], "operator": ["cnpg-system", "databases"]}' \
+  "$(jq '.kubernetes as $k | def has($subject): .allowed | index($subject) != null; {
+      superuser: [($k.superuser_in_cluster_namespace | has("system:serviceaccount:kube-system:traefik")),
+                  ($k.superuser_in_cluster_namespace | has("system:serviceaccount:databases:pg"))],
+      certificates: [($k.create_certificates | has("system:serviceaccount:cnpg-system:cnpg-cloudnative-pg")),
+                     ($k.create_certificates | has("system:serviceaccount:kube-system:helm-traefik"))],
+      run_pods: [($k.run_pods | has("system:serviceaccount:kube-system:traefik")), ($k.run_pods | has("group:system:masters"))],
       operator: $k.operator_reads_secrets_in.allowed}' <<<"$evidence")"
-same_text "evidence: rights in the cluster's namespace only" "change create_pg_tokens port_forward" \
-  "$(jq -r '[.kubernetes.namespaces | .databases, .["cnpg-system"] | keys - ["exec_into_pods", "change_pods", "run_pods", "read_secret", "write_secret"] | .[]] | join(" ")' <<<"$evidence")"
 same "evidence: numbered pg_hba lines with the values' lines before the reject" \
   '[{"number": 6, "line": "hostssl orders orders all cert map=clients clientcert=verify-full"},
     {"number": 7, "line": "hostssl billing billing all cert map=clients clientcert=verify-full"},
@@ -99,10 +92,10 @@ same "evidence: numbered pg_ident lines, one per CN" \
 
 host_check=$(bash "$here/desired.sh" --source host-check <<<"$values")
 same_text "host-check: every check in order" \
-  "selinux-enforcing postgres-uid-account postgres-gid-group postgres-sudoers postgresql-server-absent storage-dir-mode kubelet-pods-mode k3s-kubeconfig-mode k3s-selinux k3s-network-policy subordinate-ids unprivileged-port-start bind-service-capability" \
+  "selinux postgres-account dir-modes k3s-secrets low-ports k3s-network-policy" \
   "$(jq -r '[.checks[].id] | join(" ")' <<<"$host_check")"
-same "host-check: a row is the passing value" '{"id": "unprivileged-port-start", "ok": true, "value": "1024 or higher"}' \
-  "$(jq '.checks[11]' <<<"$host_check")"
+same "host-check: a row is the passing value" '{"id": "selinux", "ok": true, "value": "enforcing, enable_selinux true"}' \
+  "$(jq '.checks[0]' <<<"$host_check")"
 
 prove=$(bash "$here/desired.sh" --source prove --postgres-uid 99 <<<"$values")
 same "prove: what it is and where" '{"kind": "desired", "source": "prove", "namespace": "databases", "cluster": "pg"}' \
@@ -110,9 +103,10 @@ same "prove: what it is and where" '{"kind": "desired", "source": "prove", "name
 same "prove: the first database is the application login" \
   '{"probe": "tls-no-client-cert", "expected": "refused, orders to orders needs a client certificate", "value": "denied", "ok": true}' \
   "$(jq '.probes[2]' <<<"$prove")"
-same "prove: two controls" '["control-replication-cert", "control-other-namespace"]' \
+same "prove: one control" '["control-replication-cert"]' \
   "$(jq '[.probes[] | select(.value == "allowed") | .probe]' <<<"$prove")"
-same_text "prove: uid probes name --postgres-uid" 6 "$(jq '[.probes[] | select(.probe | startswith("uid-99 "))] | length' <<<"$prove")"
-same_text "prove: 18 probes" 18 "$(jq '.probes | length' <<<"$prove")"
+same "prove: uid probes name --postgres-uid" '["uid-99 socket-proc-root", "uid-99 pgdata-host-path", "uid-mapped socket-host-path"]' \
+  "$(jq -c '[.probes[] | select(.probe | startswith("uid-")) | .probe]' <<<"$prove")"
+same_text "prove: 8 probes" 8 "$(jq '.probes | length' <<<"$prove")"
 
 finish

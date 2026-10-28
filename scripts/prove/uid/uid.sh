@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# Attempts socket, token, environment and data access as the host postgres uid
-# and the pod's mapped uid, checking path existence as root before each attempt.
+# Attempts socket and data access as the host postgres uid, and socket access
+# as the pod's mapped uid, checking path existence as root before each attempt.
 # Usage: uid.sh NAMESPACE CLUSTER NODE NODE_ROOT POSTGRES_UID
 # Exit: 0 records collected (including failed probes), 2 collection error.
 set -euo pipefail
 shopt -s inherit_errexit
-shopt -s nullglob
 
 here=$(dirname "${BASH_SOURCE[0]}")
 # shellcheck source-path=SCRIPTDIR
@@ -49,8 +48,6 @@ while read -r pod pod_uid; do
   process_root=/proc/$pid/root
   volumes=$node_root/var/lib/kubelet/pods/$pod_uid/volumes
   socket_dir=$volumes/kubernetes.io~empty-dir/scratch-data/run
-  tokens=("$volumes"/kubernetes.io~projected/kube-api-access-*/token)
-  token=${tokens[0]:-$volumes/kubernetes.io~projected/token}
   volume=$(kjson "$namespace" pvc "$pod" | jq -r .spec.volumeName)
   data_path=$(kubectl get pv "$volume" -o json | jq -r '.spec.local.path // .spec.hostPath.path')
   pgdata=$node_root$data_path/pgdata/PG_VERSION
@@ -63,15 +60,6 @@ while read -r pod pod_uid; do
   deny_path "uid-$postgres_uid socket-proc-root" "$pod" "$postgres_uid" "$postgres_uid" \
     "$process_root/controller/run/.s.PGSQL.5432" \
     "${psql_command[@]}" "host=$process_root/controller/run port=5432 dbname=postgres user=postgres"
-  deny_path "uid-$postgres_uid token-proc-root" "$pod" "$postgres_uid" "$postgres_uid" \
-    "$process_root/run/secrets/kubernetes.io/serviceaccount/token" \
-    "${read_command[@]}" "if=$process_root/run/secrets/kubernetes.io/serviceaccount/token"
-  deny_path "uid-$postgres_uid environ" "$pod" "$postgres_uid" "$postgres_uid" \
-    "/proc/$pid/environ" "${read_command[@]}" "if=/proc/$pid/environ"
-  deny_path "uid-$postgres_uid socket-host-path" "$pod" "$postgres_uid" "$postgres_uid" \
-    "$socket_dir/.s.PGSQL.5432" bash -c "$socket_text" socket.sh "$socket_dir"
-  deny_path "uid-$postgres_uid token-host-path" "$pod" "$postgres_uid" "$postgres_uid" \
-    "$token" "${read_command[@]}" "if=$token"
   deny_path "uid-$postgres_uid pgdata-host-path" "$pod" "$postgres_uid" "$postgres_uid" \
     "$pgdata" "${read_command[@]}" "if=$pgdata"
   deny_path "uid-mapped socket-host-path" "$pod uid $mapped_uid" "$mapped_uid" "$mapped_gid" \

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs login, pod-network and host-uid probes, then combines their JSON records.
+# Runs login and host-uid probes, then combines their JSON records.
 #
 # Usage, with the desired state on stdin:
 #   yq -o=json desired.yaml | prove.sh [--node NAME] [--node-root DIR] [--postgres-uid UID]
@@ -38,26 +38,23 @@ for command in jq kubectl psql setpriv pgrep python3; do
 done
 
 values=$(jq -c .) || die "the desired state on stdin is not JSON"
-[[ -n $values ]] || die "the desired state on stdin is not JSON"
+[[ -n $values ]] || die "stdin is empty: pipe in desired.yaml as JSON"
 expected() { jq -r -L "$here/../evidence/violations" "include \"expected\"; $1" <<<"$values"; }
 [[ $(expected valid_values) == true ]] || die "$(expected values_needed)"
 namespace=$(jq -r .cluster.namespace <<<"$values")
 cluster=$(jq -r .cluster.name <<<"$values")
-names=$(jq -r '.rwLoadBalancer.name, (.readLoadBalancer.name // empty)' <<<"$values")
-mapfile -t lb_services <<<"$names"
+lb_service=$(jq -r .rwLoadBalancer.name <<<"$values")
 
 ((EUID == 0)) || die "run as root"
 
 collected_at=$(collected_at)
 
 log "login probes"
-login=$(bash "$here/login/login.sh" "$namespace" "$cluster" "${lb_services[@]}") || exit 2
-log "pod probes"
-pod=$(bash "$here/pod/pod.sh" "$namespace" "$cluster" "${lb_services[@]}") || exit 2
+login=$(bash "$here/login/login.sh" "$namespace" "$cluster" "$lb_service") || exit 2
 log "uid probes on node $node"
 uid=$(bash "$here/uid/uid.sh" "$namespace" "$cluster" "$node" "$node_root" "$postgres_uid") || exit 2
 
-output=$(printf '%s\n' "$login" "$pod" "$uid" |
+output=$(printf '%s\n' "$login" "$uid" |
   jq -s --arg collected_at "$collected_at" --arg node "$node" --arg namespace "$namespace" \
     --arg cluster "$cluster" -f "$here/output.jq") || exit 2
 printf '%s\n' "$output"

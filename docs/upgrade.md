@@ -1,6 +1,6 @@
 # Upgrade from v0.1.0
 
-What changes from v0.1.0 to v0.2.0, and what to do before and after the upgrade.
+What changes from v0.1.0 to v0.2.0, and what to do before and after the upgrade. The rules, sections and probes named here are those of v0.2.0; later versions dropped rule 9, the `ports` section, `port_forward`, `can_open_node_ports` and the `other-namespace` probes.
 
 ## Before the chart upgrade
 
@@ -23,7 +23,7 @@ What changes from v0.1.0 to v0.2.0, and what to do before and after the upgrade.
 
 - **`prove.sh` reads the desired state on stdin,** as `evidence.sh` does: `yq -o=json desired.yaml | bash scripts/prove/prove.sh`. Without stdin it waits for input. It drops `--namespace`, `--cluster` and `--lb-service`, and exits 2 when given one; the names come from `cluster` and the LoadBalancer blocks of `desired.yaml`. `--node`, `--node-root` and `--postgres-uid` stay.
 - **`prove.sh` probes.** The login probes and `other-namespace-lb` try every address and port of both LoadBalancers. The `other-namespace-nodeport` probe is gone; the ports section of `evidence.sh` shows that no NodePort exists.
-- **Rule 9.** A new rule for the ways into PostgreSQL besides a login. `evidence.sh` has a new `ports` section: every Service in any namespace that reaches an instance pod, by its selector or its EndpointSlices, and the host ports of the instance pods. The Kubernetes rights add `port_forward` on the instance pods, and `can_open_node_ports` adds Traefik's `ingressroutetcps.traefik.io` where the cluster serves it. See [evidence.md](evidence.md#ports).
+- **Rule 9.** A new rule for the ways into PostgreSQL besides a login. `evidence.sh` has a new `ports` section: every Service in any namespace that reaches an instance pod, by its selector or its EndpointSlices, and the host ports of the instance pods. The Kubernetes rights add `port_forward` on the instance pods, and `can_open_node_ports` adds Traefik's `ingressroutetcps.traefik.io` where the cluster serves it.
 - **Make the desired documents again** with v0.2.0's `desired.sh`. The evidence one gains `ports` and `port_forward`, and the prove one loses the NodePort probe. A saved v0.1.0 desired document makes the new Services extra, and the image fails.
 - **`psql` runs with no caller environment.** Every psql call of `evidence.sh` and `prove.sh` names its host or socket, port, database and user, and no `PG*` variable of the caller or the image reaches it.
 

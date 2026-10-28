@@ -50,7 +50,7 @@ Pods with `hostUsers: false` need a kernel with idmapped mounts on tmpfs.
    kubectl create namespace databases
    kubectl apply -f samples/rbac-cnpg-operator.yaml -f samples/rbac-barman-cloud.yaml
    ```
-2. Install cert-manager in the namespace `cert-manager` with the release name `cert-manager`: `evidence.sh` expects the ServiceAccounts `cert-manager`, `cert-manager-cainjector` and `cert-manager-webhook` there. Create the issuer named in `samples/chart/values.yaml`. Check that it accepts the `usages` in `templates/certificates.yaml`; CNPG needs `client auth` on the replication certificate.
+2. Install cert-manager in the namespace `cert-manager` with the release name `cert-manager`: `evidence.sh` expects the ServiceAccounts `cert-manager` and `cert-manager-cainjector` there. Create the issuer named in `samples/chart/values.yaml`. Check that it accepts the `usages` in `templates/certificates.yaml`; CNPG needs `client auth` on the replication certificate.
 3. In `desired.yaml`, set:
    - `cluster`: the name, namespace and number of instances. The namespaces `databases` and `cnpg-system` are also fixed in `values-cnpg-operator.yaml` (`WATCH_NAMESPACE`) and in both RBAC files. Another namespace also needs `WATCH_NAMESPACE` and the RoleBindings in both RBAC files.
    - `caSecret`: a Secret in the cluster's namespace with `ca.crt` holding the CAs that may sign client certificates, including the CA of the `issuer` in `values.yaml`: the chart also uses this Secret as the server CA, and the replication certificate is checked against it. Give the full chain if there are intermediates. Create it by hand, never with `ca.key`: `kubectl create secret generic client-ca -n databases --from-file=ca.crt=client-ca.pem`. Pass the same file to `evidence.sh --ca`.
@@ -80,7 +80,7 @@ Pods with `hostUsers: false` need a kernel with idmapped mounts on tmpfs.
    ```
 8. Point the OTel collectors at `https://<pod address>:9187/metrics`, with the CA of the server certificate as `ca_file` and one of its `dnsNames` as `server_name`.
    Run the collectors without `hostNetwork`, in the OTel namespace.
-   If a collector does use `hostNetwork`, run it with `securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}`; otherwise `evidence.sh` lists it as able to bind a port below 1024 on its node.
+   If a collector does use `hostNetwork`, run it with `securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}`; otherwise it can bind a port below 1024 on its node.
 
 CNPG creates both LoadBalancer Services and refuses a Service of the same name that it did not create (`refusing to reconcile service: ..., not owned by the cluster`). Delete such a Service before step 6; its port is closed until CNPG has made the new one.
 
@@ -195,7 +195,7 @@ The bucket holds every database's WAL and base backups. Give the credentials in 
 ## Changes later
 
 - A new database is one more entry under `databases` and a `helm upgrade`.
-- A new node needs a `helm upgrade` too: the NetworkPolicy lists every node's pod range and tunnel address. Until then `evidence.sh` cannot name the `outside` source.
+- A new node needs a `helm upgrade` too: the NetworkPolicy lists every node's pod range and tunnel address.
 - A second database namespace needs both RoleBindings there and an entry in `WATCH_NAMESPACE`, which restarts the operator.
 
 ## Restore into a new cluster

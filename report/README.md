@@ -64,37 +64,30 @@ Both images of a pair take their column widths from the desired table, so a pair
 
 ## Images
 
-`evidence.sh`, 12 pairs and one actual image:
+`evidence.sh`, 8 pairs and one actual image:
 
-- `evidence-01-accounts-desired.png`, `evidence-01-accounts-actual.png`: with the certificate names that log in as each account.
-- `evidence-02-login-rules-desired.png`, `-actual.png`
-- `evidence-03-client-ca-desired.png`, `-actual.png`
-- `evidence-04-encryption-desired.png`, `-actual.png`
-- `evidence-05-network-desired.png`, `-actual.png`
-- `evidence-06-ports-desired.png`, `-actual.png`: every Service that reaches an instance pod, and the host ports of each instance pod.
-- `evidence-07-container-isolation-desired.png`, `-actual.png`
-- `evidence-08-operator-secrets-desired.png`, `-actual.png`
-- `evidence-09-platform-pods-desired.png`, `-actual.png`
-- `evidence-10-platform-secrets-desired.png`, `-actual.png`
-- `evidence-11-platform-setup-desired.png`, `-actual.png`
-- `evidence-12-platform-nodes-certificates-desired.png`, `-actual.png`
-- `evidence-13-versions-actual.png` only: versions have no desired value.
+- `evidence-01-accounts-desired.png`, `evidence-01-accounts-actual.png`: with the certificate names that log in as each account and the databases they reach.
+- `evidence-02-certificate-logins-desired.png`, `-actual.png`: each certificate name, its account and database, then each database no certificate reaches.
+- `evidence-03-login-rules-desired.png`, `-actual.png`
+- `evidence-04-client-ca-desired.png`, `-actual.png`
+- `evidence-05-encryption-desired.png`, `-actual.png`
+- `evidence-06-container-isolation-desired.png`, `-actual.png`
+- `evidence-07-operator-secrets-desired.png`, `-actual.png`
+- `evidence-08-platform-rights-desired.png`, `-actual.png`
+- `evidence-09-versions-actual.png` only: versions have no desired value.
 
 `host-check.sh`, one pair per check of the node file, named with its `node` and the check `id`:
 
-- `host-check-<node>-<check>-desired.png`, `host-check-<node>-<check>-actual.png`, such as `host-check-node-a-selinux-enforcing-actual.png`. The 13 checks are listed in [host-check.md](../docs/host-check.md#checks).
+- `host-check-<node>-<check>-desired.png`, `host-check-<node>-<check>-actual.png`, such as `host-check-node-a-selinux-actual.png`. The six checks are listed in [host-check.md](../docs/host-check.md#checks).
 
-`prove.sh`, three pairs:
+`prove.sh`, two pairs:
 
 - `prove-01-login-attempts-desired.png`, `-actual.png`: the logins from the node.
-- `prove-02-other-namespace-desired.png`, `-actual.png`: the probes whose name contains `other-namespace`.
-- `prove-03-host-uid-desired.png`, `-actual.png`: the probes whose name starts with `uid-`.
-
-The network images cover ports 8000 and 9187 and say so; logins on 5432 are in the login images.
+- `prove-02-host-uid-desired.png`, `-actual.png`: the probes whose name starts with `uid-`.
 
 ## The comparison
 
-`page/compare.js` follows the rule of `scripts/desired/compare.jq`, described in [desired.md](../docs/desired.md#the-comparison): skipped top-level keys and `raw`, allowed sets, `"*"` maps, and rows compared by identity. The tests check that it finds the same differences as `compare.sh` on every sample and on each test case.
+`page/compare.js` follows the rule described in [report.md](../docs/report.md#the-comparison): skipped top-level keys and `raw`, allowed sets, `"*"` maps, and rows compared by identity. The tests check that it finds no difference on the clean samples and the expected differences on each test case.
 
 The images then apply the rules of the report on top of those differences:
 

@@ -29,73 +29,13 @@
       "ok": true
     },
     {
-      "probe": "replication-cert-as-streaming_replica",
-      "expected": "refused by pg_hba reject for database orders",
-      "value": "denied",
-      "ok": true
-    },
-    {
       "probe": "control-replication-cert",
       "expected": "logs in as streaming_replica to postgres (CNPG's fixed line)",
       "value": "allowed",
       "ok": true
     },
     {
-      "probe": "control-other-namespace",
-      "expected": "connected (Kubernetes API, the pod network works)",
-      "value": "allowed",
-      "ok": true
-    },
-    {
-      "probe": "other-namespace-5432",
-      "expected": "timeout or connection refused",
-      "value": "denied",
-      "ok": true
-    },
-    {
-      "probe": "other-namespace-8000",
-      "expected": "timeout or connection refused",
-      "value": "denied",
-      "ok": true
-    },
-    {
-      "probe": "other-namespace-9187",
-      "expected": "timeout or connection refused",
-      "value": "denied",
-      "ok": true
-    },
-    {
-      "probe": "other-namespace-lb",
-      "expected": "pg_hba refusal or no connection (connection refused or connect timeout)",
-      "value": "denied",
-      "ok": true
-    },
-    {
       "probe": "uid-26 socket-proc-root",
-      "expected": "Permission denied",
-      "value": "denied",
-      "ok": true
-    },
-    {
-      "probe": "uid-26 token-proc-root",
-      "expected": "Permission denied",
-      "value": "denied",
-      "ok": true
-    },
-    {
-      "probe": "uid-26 environ",
-      "expected": "Permission denied",
-      "value": "denied",
-      "ok": true
-    },
-    {
-      "probe": "uid-26 socket-host-path",
-      "expected": "Permission denied",
-      "value": "denied",
-      "ok": true
-    },
-    {
-      "probe": "uid-26 token-host-path",
       "expected": "Permission denied",
       "value": "denied",
       "ok": true

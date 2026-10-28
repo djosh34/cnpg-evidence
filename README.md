@@ -13,15 +13,14 @@ Sample manifests for a CloudNativePG (CNPG) cluster that accepts only certificat
 
 `evidence.sh` starts each violation with the number of the rule it breaks.
 
-1. A client logs in only with a certificate signed by the client CA. Its CN maps to exactly one role, and that role reaches exactly one database.
+1. A client logs in only with a certificate signed by the client CA, over TLS 1.3. Its CN maps to exactly one role, and that role reaches exactly one database. The metrics port answers only over TLS.
 2. No password login works, with or without TLS.
 3. No application role can create roles or has any other special attribute.
 4. There is no `app` role or database.
-5. Pods in other namespaces cannot connect to the instance pods on PostgreSQL (5432), the status port (8000) or metrics (9187), except the CNPG operator on 8000 and the OTel collectors on 9187.
-6. A host user with the postgres uid cannot reach the socket, the data or the ServiceAccount token of an instance.
-7. The CNPG operator and the barman-cloud plugin cannot read Secrets outside the operator's and the cluster's namespaces.
-8. Only `system:masters`, CNPG's components, cert-manager and its cainjector, the API server and the Kubernetes and k3s controllers hold a right that equals PostgreSQL superuser or opens a port on the nodes. Rights that equal superuser include exec into the instance pods, reading or writing their Secrets and changing CNPG objects. Of these subjects, only `system:masters`, cert-manager and the controllers can request certificates. No hostNetwork pod can bind a port below 1024.
-9. Besides a login, PostgreSQL is reached only through CNPG's three ClusterIP Services, the rw LoadBalancer on 5432 and, when `desired.yaml` sets it, the read LoadBalancer on its port. No Service that reaches an instance pod has a database NodePort or an external IP, no instance pod has a host port, and only the subjects of rule 8 can port-forward to the instance pods.
+5. A host user with the postgres uid cannot reach the socket or the data of an instance.
+6. The CNPG operator and the barman-cloud plugin cannot read Secrets outside the operator's and the cluster's namespaces.
+7. Only `system:masters`, CNPG's components, cert-manager and its cainjector, the API server, the Kubernetes and k3s controllers and k3s's Helm install jobs can get PostgreSQL superuser through rights in the cluster's namespace, write Ingresses or Traefik routes, run pods, or become cluster-admin. Rights that equal superuser include exec into the instance pods, reading or writing their Secrets and changing CNPG objects; Traefik may also read the Secrets, for the certificates of the routes it serves. Of these subjects, only `system:masters`, cert-manager, the controllers and the Helm install jobs can create certificates.
+8. On every node, only root can bind ports below 1024 or read the k3s credentials, k3s encrypts Secrets in its datastore, and k3s enforces NetworkPolicies.
 
 ## Run
 
@@ -29,10 +28,10 @@ All three scripts print one JSON document on stdout and logs on stderr. Exit 0 m
 
 ```bash
 # Anywhere with a cluster-admin kubeconfig (on a k3s server node,
-# KUBECONFIG=/etc/rancher/k3s/k3s.yaml). Rules 1 to 5, 7 to 9 and the pod side of 6.
+# KUBECONFIG=/etc/rancher/k3s/k3s.yaml). Rules 1 to 4, 6, 7 and the pod side of 5.
 yq -o=json desired.yaml | bash scripts/evidence/evidence.sh --ca client-ca.pem > evidence.json
 
-# On every node, as root. The host side of rule 6, and who can bind low ports.
+# On every node, as root. The host side of rule 5, and rule 8.
 bash scripts/host-check/host-check.sh > host-check.json
 
 # On one node that runs an instance, as root, with a cluster-admin kubeconfig
@@ -40,10 +39,8 @@ bash scripts/host-check/host-check.sh > host-check.json
 # Real login and access attempts that must fail.
 yq -o=json desired.yaml | bash scripts/prove/prove.sh > prove.json
 
-# Anywhere with yq, bash, jq and openssl. The desired documents of the three scripts,
-# and the differences between a desired and an actual document.
+# Anywhere with yq, bash, jq and openssl. The desired documents of the three scripts.
 yq -o=json desired.yaml | bash scripts/desired/desired.sh --ca client-ca.pem > evidence.desired.json
-bash scripts/desired/compare.sh evidence.desired.json evidence.json
 
 # On any x86_64 Linux host, with no network. A desired and an actual image
 # for each piece of evidence. See docs/report.md for getting the binary.
@@ -58,15 +55,15 @@ bash scripts/test.sh
 
 ## How the scripts fit together
 
-- `evidence.sh` reads the live state through the API server and PostgreSQL, and compares it with `desired.yaml`. It shows rules 1 to 5, 7 to 9, and the pod side of rule 6. It only reads.
-- `host-check.sh` reads one node: accounts with the postgres uid or gid, sudoers, directory modes, SELinux, subordinate ids and low ports. It shows the host side of rule 6. It only reads.
-- `prove.sh` tries what rules 1, 2, 5 and 6 forbid: password logins, certificate logins as the wrong role, connections from a pod in another namespace, and file and socket access as the host postgres uid. Each attempt must fail with the expected denial, and two control attempts must succeed.
-- `desired.sh` builds, from `desired.yaml` alone, a document of the same shape as each script's output that holds the desired values. `compare.sh` lists where an actual document differs from it. The scripts' own checks stay the verdict.
+- `evidence.sh` reads the live state through the API server and PostgreSQL, and compares it with `desired.yaml`. It shows rules 1 to 4, 6, 7 and the pod side of rule 5. It only reads.
+- `host-check.sh` reads one node: SELinux, accounts with the postgres uid or gid, directory modes, the k3s credentials and secrets encryption, low ports and the network policy controller. It shows the host side of rule 5 and rule 8. It only reads.
+- `prove.sh` tries what rules 1, 2 and 5 forbid: password logins, a certificate login as the wrong role, and socket and data access as the host postgres uid. Each attempt must fail with the expected denial, and one control attempt must succeed.
+- `desired.sh` builds, from `desired.yaml` alone, a document of the same shape as each script's output that holds the desired values. The scripts' own checks stay the verdict.
 - `cnpg-report` draws one desired and one actual document of the same script as PNG images, a desired and an actual image for each piece of evidence. On the actual image, every value or right beyond the desired document is red, and the image says Passed or Failed. It needs no cluster, network or OS library, so the scripts can run on the cluster and the images can be drawn elsewhere from the JSON files.
 
 ## Upgrade from v0.1.0
 
-v0.2.0 adds the optional read LoadBalancer and rule 9, and drops `rwLoadBalancer.create`, the sample chart's NodePorts and the cluster flags of `prove.sh`, which now reads `desired.yaml` on stdin. Delete a Service of the rw or read name that was made outside the chart before the upgrade, and remove an old NodePort once after it. [upgrade.md](docs/upgrade.md) lists every step and the changed images.
+v0.2.0 adds the optional read LoadBalancer and a rule 9 for the ways into PostgreSQL besides a login, which later versions dropped again, and drops `rwLoadBalancer.create`, the sample chart's NodePorts and the cluster flags of `prove.sh`, which now reads `desired.yaml` on stdin. Delete a Service of the rw or read name that was made outside the chart before the upgrade, and remove an old NodePort once after it. [upgrade.md](docs/upgrade.md) lists every step and the changed images.
 
 ## Files
 
@@ -75,9 +72,9 @@ v0.2.0 adds the optional read LoadBalancer and rule 9, and drops `rwLoadBalancer
 | `desired.yaml` | The desired state of the cluster, read by the chart, `evidence.sh` and `desired.sh` | [samples.md](docs/samples.md) |
 | `samples/` | Helm chart rendered from `desired.yaml`, operator and plugin values, RBAC for both | [samples.md](docs/samples.md) |
 | `scripts/evidence/evidence.sh` | Who can do what in PostgreSQL and Kubernetes, and every rule the live state breaks | [evidence.md](docs/evidence.md) |
-| `scripts/host-check/host-check.sh` | Accounts, modes, SELinux, subordinate ids and low ports on one node | [host-check.md](docs/host-check.md) |
-| `scripts/prove/prove.sh` | Login, connection and host-uid attempts that must fail | [prove.md](docs/prove.md) |
-| `scripts/desired/` | The desired documents of the three scripts, and the comparison with an actual document | [desired.md](docs/desired.md) |
+| `scripts/host-check/host-check.sh` | SELinux, accounts, modes, k3s credentials and low ports on one node | [host-check.md](docs/host-check.md) |
+| `scripts/prove/prove.sh` | Login and host-uid attempts that must fail | [prove.md](docs/prove.md) |
+| `scripts/desired/` | The desired documents of the three scripts | [desired.md](docs/desired.md) |
 | `report/` | `cnpg-report`, which draws a desired and an actual image for each piece of evidence: its page, build and tests | [report.md](docs/report.md), [report/README.md](report/README.md) |
 | `scripts/lib/` | Logging and exit helpers shared by the scripts | |
 | `scripts/test.sh` | Runs the `*.test.sh` next to every part of the three scripts | |

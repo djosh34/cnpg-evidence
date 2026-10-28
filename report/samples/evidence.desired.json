@@ -52,117 +52,57 @@
       "orders",
       "postgres",
       "streaming_replica"
+    ],
+    "databases": [
+      "billing",
+      "orders",
+      "postgres",
+      "template0",
+      "template1"
     ]
   },
-  "databases": {
-    "postgres": {
-      "owner": "postgres",
-      "connect": [
-        "PUBLIC",
-        "postgres"
-      ],
-      "logins": {
-        "postgres": {
-          "os_users": [
-            "postgres"
-          ]
-        },
-        "cnpg_metrics_exporter": {
-          "os_users": [
-            "postgres"
-          ]
-        },
-        "streaming_replica": {
-          "common_names": [
-            "pg-replication",
-            "streaming_replica"
-          ]
-        }
-      }
+  "certificate_logins": [
+    {
+      "common_name": "billing-app.test",
+      "role": "billing",
+      "database": "billing"
     },
-    "template0": {
-      "owner": "postgres",
-      "allows_connections": false
+    {
+      "common_name": "billing-report.test",
+      "role": "billing",
+      "database": "billing"
     },
-    "template1": {
-      "owner": "postgres",
-      "connect": [
-        "PUBLIC",
-        "postgres"
-      ],
-      "logins": {
-        "postgres": {
-          "os_users": [
-            "postgres"
-          ]
-        },
-        "cnpg_metrics_exporter": {
-          "os_users": [
-            "postgres"
-          ]
-        }
-      }
+    {
+      "common_name": "cnpg_pooler_pgbouncer",
+      "role": "cnpg_pooler_pgbouncer",
+      "database": "all"
     },
-    "replication": {
-      "logins": {
-        "streaming_replica": {
-          "common_names": [
-            "pg-replication",
-            "streaming_replica"
-          ]
-        }
-      }
+    {
+      "common_name": "orders-app.test",
+      "role": "orders",
+      "database": "orders"
     },
-    "orders": {
-      "owner": "orders",
-      "connect": [
-        "PUBLIC",
-        "orders"
-      ],
-      "logins": {
-        "postgres": {
-          "os_users": [
-            "postgres"
-          ]
-        },
-        "cnpg_metrics_exporter": {
-          "os_users": [
-            "postgres"
-          ]
-        },
-        "orders": {
-          "common_names": [
-            "orders-app.test"
-          ]
-        }
-      }
+    {
+      "common_name": "pg-replication",
+      "role": "streaming_replica",
+      "database": "postgres"
     },
-    "billing": {
-      "owner": "billing",
-      "connect": [
-        "PUBLIC",
-        "billing"
-      ],
-      "logins": {
-        "postgres": {
-          "os_users": [
-            "postgres"
-          ]
-        },
-        "cnpg_metrics_exporter": {
-          "os_users": [
-            "postgres"
-          ]
-        },
-        "billing": {
-          "common_names": [
-            "billing-app.test",
-            "billing-report.test"
-          ]
-        }
-      }
+    {
+      "common_name": "pg-replication",
+      "role": "streaming_replica",
+      "database": "replication"
+    },
+    {
+      "common_name": "streaming_replica",
+      "role": "streaming_replica",
+      "database": "postgres"
+    },
+    {
+      "common_name": "streaming_replica",
+      "role": "streaming_replica",
+      "database": "replication"
     }
-  },
+  ],
   "client_ca": {
     "secret": "client-ca",
     "certificates": [
@@ -178,929 +118,8 @@
       "metrics": "TLSv1.3"
     }
   },
-  "network_policy": {
-    "*": {
-      "outside": [
-        5432
-      ],
-      "other nodes": [
-        5432
-      ],
-      "own node": [
-        "all"
-      ],
-      "loadbalancer": [
-        5432
-      ],
-      "pg pods": [
-        5432,
-        8000
-      ],
-      "cnpg-system operator": [
-        8000
-      ],
-      "otel": [
-        9187
-      ],
-      "other namespaces": []
-    }
-  },
-  "ports": {
-    "services": {
-      "databases/pg-rw": {
-        "type": "ClusterIP",
-        "selector": "cnpg.io/cluster=pg,cnpg.io/instanceRole=primary",
-        "traffic_policy": "none",
-        "ports": [
-          "5432 -> 5432"
-        ],
-        "node_ports": [],
-        "health_check_port": "none",
-        "external_ips": []
-      },
-      "databases/pg-r": {
-        "type": "ClusterIP",
-        "selector": "cnpg.io/cluster=pg,cnpg.io/podRole=instance",
-        "traffic_policy": "none",
-        "ports": [
-          "5432 -> 5432"
-        ],
-        "node_ports": [],
-        "health_check_port": "none",
-        "external_ips": []
-      },
-      "databases/pg-rw-lb": {
-        "type": "LoadBalancer",
-        "selector": "cnpg.io/cluster=pg,cnpg.io/instanceRole=primary",
-        "traffic_policy": "Cluster",
-        "ports": [
-          "5432 -> 5432"
-        ],
-        "node_ports": [],
-        "health_check_port": "none",
-        "external_ips": []
-      },
-      "databases/pg-ro": {
-        "type": "ClusterIP",
-        "selector": "cnpg.io/cluster=pg,cnpg.io/instanceRole=replica",
-        "traffic_policy": "none",
-        "ports": [
-          "5432 -> 5432"
-        ],
-        "node_ports": [],
-        "health_check_port": "none",
-        "external_ips": []
-      },
-      "databases/pg-read-lb": {
-        "type": "LoadBalancer",
-        "selector": "cnpg.io/cluster=pg,cnpg.io/podRole=instance",
-        "traffic_policy": "Local",
-        "ports": [
-          "5433 -> 5432"
-        ],
-        "node_ports": [],
-        "health_check_port": "present",
-        "external_ips": []
-      }
-    },
-    "host_ports": {
-      "*": []
-    }
-  },
   "kubernetes": {
-    "namespaces": {
-      "cert-manager": {
-        "exec_into_pods": {
-          "allowed": [
-            "group:system:masters",
-            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
-            "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
-            "system:serviceaccount:databases:pg",
-            "kube-apiserver",
-            "system:serviceaccount:cert-manager:cert-manager",
-            "system:serviceaccount:cert-manager:cert-manager-cainjector",
-            "system:kube-controller-manager",
-            "k3s-cloud-controller-manager",
-            "system:serviceaccount:kube-system:clusterrole-aggregation-controller",
-            "system:serviceaccount:kube-system:cronjob-controller",
-            "system:serviceaccount:kube-system:daemon-set-controller",
-            "system:serviceaccount:kube-system:deployment-controller",
-            "system:serviceaccount:kube-system:endpoint-controller",
-            "system:serviceaccount:kube-system:endpointslice-controller",
-            "system:serviceaccount:kube-system:endpointslicemirroring-controller",
-            "system:serviceaccount:kube-system:generic-garbage-collector",
-            "system:serviceaccount:kube-system:job-controller",
-            "system:serviceaccount:kube-system:legacy-service-account-token-cleaner",
-            "system:serviceaccount:kube-system:local-path-provisioner-service-account",
-            "system:serviceaccount:kube-system:namespace-controller",
-            "system:serviceaccount:kube-system:persistent-volume-binder",
-            "system:serviceaccount:kube-system:replicaset-controller",
-            "system:serviceaccount:kube-system:replication-controller",
-            "system:serviceaccount:kube-system:resourcequota-controller",
-            "system:serviceaccount:kube-system:statefulset-controller",
-            "system:serviceaccount:cert-manager:cert-manager-webhook"
-          ]
-        },
-        "change_pods": {
-          "allowed": [
-            "group:system:masters",
-            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
-            "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
-            "system:serviceaccount:databases:pg",
-            "kube-apiserver",
-            "system:serviceaccount:cert-manager:cert-manager",
-            "system:serviceaccount:cert-manager:cert-manager-cainjector",
-            "system:kube-controller-manager",
-            "k3s-cloud-controller-manager",
-            "system:serviceaccount:kube-system:clusterrole-aggregation-controller",
-            "system:serviceaccount:kube-system:cronjob-controller",
-            "system:serviceaccount:kube-system:daemon-set-controller",
-            "system:serviceaccount:kube-system:deployment-controller",
-            "system:serviceaccount:kube-system:endpoint-controller",
-            "system:serviceaccount:kube-system:endpointslice-controller",
-            "system:serviceaccount:kube-system:endpointslicemirroring-controller",
-            "system:serviceaccount:kube-system:generic-garbage-collector",
-            "system:serviceaccount:kube-system:job-controller",
-            "system:serviceaccount:kube-system:legacy-service-account-token-cleaner",
-            "system:serviceaccount:kube-system:local-path-provisioner-service-account",
-            "system:serviceaccount:kube-system:namespace-controller",
-            "system:serviceaccount:kube-system:persistent-volume-binder",
-            "system:serviceaccount:kube-system:replicaset-controller",
-            "system:serviceaccount:kube-system:replication-controller",
-            "system:serviceaccount:kube-system:resourcequota-controller",
-            "system:serviceaccount:kube-system:statefulset-controller",
-            "system:serviceaccount:cert-manager:cert-manager-webhook"
-          ]
-        },
-        "run_pods": {
-          "allowed": [
-            "group:system:masters",
-            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
-            "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
-            "system:serviceaccount:databases:pg",
-            "kube-apiserver",
-            "system:serviceaccount:cert-manager:cert-manager",
-            "system:serviceaccount:cert-manager:cert-manager-cainjector",
-            "system:kube-controller-manager",
-            "k3s-cloud-controller-manager",
-            "system:serviceaccount:kube-system:clusterrole-aggregation-controller",
-            "system:serviceaccount:kube-system:cronjob-controller",
-            "system:serviceaccount:kube-system:daemon-set-controller",
-            "system:serviceaccount:kube-system:deployment-controller",
-            "system:serviceaccount:kube-system:endpoint-controller",
-            "system:serviceaccount:kube-system:endpointslice-controller",
-            "system:serviceaccount:kube-system:endpointslicemirroring-controller",
-            "system:serviceaccount:kube-system:generic-garbage-collector",
-            "system:serviceaccount:kube-system:job-controller",
-            "system:serviceaccount:kube-system:legacy-service-account-token-cleaner",
-            "system:serviceaccount:kube-system:local-path-provisioner-service-account",
-            "system:serviceaccount:kube-system:namespace-controller",
-            "system:serviceaccount:kube-system:persistent-volume-binder",
-            "system:serviceaccount:kube-system:replicaset-controller",
-            "system:serviceaccount:kube-system:replication-controller",
-            "system:serviceaccount:kube-system:resourcequota-controller",
-            "system:serviceaccount:kube-system:statefulset-controller",
-            "system:serviceaccount:cert-manager:cert-manager-webhook"
-          ]
-        },
-        "read_secret": {
-          "*": {
-            "allowed": [
-              "group:system:masters",
-              "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
-              "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
-              "system:serviceaccount:databases:pg",
-              "kube-apiserver",
-              "system:serviceaccount:cert-manager:cert-manager",
-              "system:serviceaccount:cert-manager:cert-manager-cainjector",
-              "system:kube-controller-manager",
-              "k3s-cloud-controller-manager",
-              "system:serviceaccount:kube-system:clusterrole-aggregation-controller",
-              "system:serviceaccount:kube-system:cronjob-controller",
-              "system:serviceaccount:kube-system:daemon-set-controller",
-              "system:serviceaccount:kube-system:deployment-controller",
-              "system:serviceaccount:kube-system:endpoint-controller",
-              "system:serviceaccount:kube-system:endpointslice-controller",
-              "system:serviceaccount:kube-system:endpointslicemirroring-controller",
-              "system:serviceaccount:kube-system:generic-garbage-collector",
-              "system:serviceaccount:kube-system:job-controller",
-              "system:serviceaccount:kube-system:legacy-service-account-token-cleaner",
-              "system:serviceaccount:kube-system:local-path-provisioner-service-account",
-              "system:serviceaccount:kube-system:namespace-controller",
-              "system:serviceaccount:kube-system:persistent-volume-binder",
-              "system:serviceaccount:kube-system:replicaset-controller",
-              "system:serviceaccount:kube-system:replication-controller",
-              "system:serviceaccount:kube-system:resourcequota-controller",
-              "system:serviceaccount:kube-system:statefulset-controller",
-              "system:serviceaccount:cert-manager:cert-manager-webhook"
-            ]
-          }
-        },
-        "write_secret": {
-          "*": {
-            "allowed": [
-              "group:system:masters",
-              "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
-              "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
-              "system:serviceaccount:databases:pg",
-              "kube-apiserver",
-              "system:serviceaccount:cert-manager:cert-manager",
-              "system:serviceaccount:cert-manager:cert-manager-cainjector",
-              "system:kube-controller-manager",
-              "k3s-cloud-controller-manager",
-              "system:serviceaccount:kube-system:clusterrole-aggregation-controller",
-              "system:serviceaccount:kube-system:cronjob-controller",
-              "system:serviceaccount:kube-system:daemon-set-controller",
-              "system:serviceaccount:kube-system:deployment-controller",
-              "system:serviceaccount:kube-system:endpoint-controller",
-              "system:serviceaccount:kube-system:endpointslice-controller",
-              "system:serviceaccount:kube-system:endpointslicemirroring-controller",
-              "system:serviceaccount:kube-system:generic-garbage-collector",
-              "system:serviceaccount:kube-system:job-controller",
-              "system:serviceaccount:kube-system:legacy-service-account-token-cleaner",
-              "system:serviceaccount:kube-system:local-path-provisioner-service-account",
-              "system:serviceaccount:kube-system:namespace-controller",
-              "system:serviceaccount:kube-system:persistent-volume-binder",
-              "system:serviceaccount:kube-system:replicaset-controller",
-              "system:serviceaccount:kube-system:replication-controller",
-              "system:serviceaccount:kube-system:resourcequota-controller",
-              "system:serviceaccount:kube-system:statefulset-controller",
-              "system:serviceaccount:cert-manager:cert-manager-webhook"
-            ]
-          }
-        }
-      },
-      "cnpg-system": {
-        "exec_into_pods": {
-          "allowed": [
-            "group:system:masters",
-            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
-            "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
-            "system:serviceaccount:databases:pg",
-            "kube-apiserver",
-            "system:serviceaccount:cert-manager:cert-manager",
-            "system:serviceaccount:cert-manager:cert-manager-cainjector",
-            "system:kube-controller-manager",
-            "k3s-cloud-controller-manager",
-            "system:serviceaccount:kube-system:clusterrole-aggregation-controller",
-            "system:serviceaccount:kube-system:cronjob-controller",
-            "system:serviceaccount:kube-system:daemon-set-controller",
-            "system:serviceaccount:kube-system:deployment-controller",
-            "system:serviceaccount:kube-system:endpoint-controller",
-            "system:serviceaccount:kube-system:endpointslice-controller",
-            "system:serviceaccount:kube-system:endpointslicemirroring-controller",
-            "system:serviceaccount:kube-system:generic-garbage-collector",
-            "system:serviceaccount:kube-system:job-controller",
-            "system:serviceaccount:kube-system:legacy-service-account-token-cleaner",
-            "system:serviceaccount:kube-system:local-path-provisioner-service-account",
-            "system:serviceaccount:kube-system:namespace-controller",
-            "system:serviceaccount:kube-system:persistent-volume-binder",
-            "system:serviceaccount:kube-system:replicaset-controller",
-            "system:serviceaccount:kube-system:replication-controller",
-            "system:serviceaccount:kube-system:resourcequota-controller",
-            "system:serviceaccount:kube-system:statefulset-controller"
-          ]
-        },
-        "change_pods": {
-          "allowed": [
-            "group:system:masters",
-            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
-            "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
-            "system:serviceaccount:databases:pg",
-            "kube-apiserver",
-            "system:serviceaccount:cert-manager:cert-manager",
-            "system:serviceaccount:cert-manager:cert-manager-cainjector",
-            "system:kube-controller-manager",
-            "k3s-cloud-controller-manager",
-            "system:serviceaccount:kube-system:clusterrole-aggregation-controller",
-            "system:serviceaccount:kube-system:cronjob-controller",
-            "system:serviceaccount:kube-system:daemon-set-controller",
-            "system:serviceaccount:kube-system:deployment-controller",
-            "system:serviceaccount:kube-system:endpoint-controller",
-            "system:serviceaccount:kube-system:endpointslice-controller",
-            "system:serviceaccount:kube-system:endpointslicemirroring-controller",
-            "system:serviceaccount:kube-system:generic-garbage-collector",
-            "system:serviceaccount:kube-system:job-controller",
-            "system:serviceaccount:kube-system:legacy-service-account-token-cleaner",
-            "system:serviceaccount:kube-system:local-path-provisioner-service-account",
-            "system:serviceaccount:kube-system:namespace-controller",
-            "system:serviceaccount:kube-system:persistent-volume-binder",
-            "system:serviceaccount:kube-system:replicaset-controller",
-            "system:serviceaccount:kube-system:replication-controller",
-            "system:serviceaccount:kube-system:resourcequota-controller",
-            "system:serviceaccount:kube-system:statefulset-controller"
-          ]
-        },
-        "run_pods": {
-          "allowed": [
-            "group:system:masters",
-            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
-            "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
-            "system:serviceaccount:databases:pg",
-            "kube-apiserver",
-            "system:serviceaccount:cert-manager:cert-manager",
-            "system:serviceaccount:cert-manager:cert-manager-cainjector",
-            "system:kube-controller-manager",
-            "k3s-cloud-controller-manager",
-            "system:serviceaccount:kube-system:clusterrole-aggregation-controller",
-            "system:serviceaccount:kube-system:cronjob-controller",
-            "system:serviceaccount:kube-system:daemon-set-controller",
-            "system:serviceaccount:kube-system:deployment-controller",
-            "system:serviceaccount:kube-system:endpoint-controller",
-            "system:serviceaccount:kube-system:endpointslice-controller",
-            "system:serviceaccount:kube-system:endpointslicemirroring-controller",
-            "system:serviceaccount:kube-system:generic-garbage-collector",
-            "system:serviceaccount:kube-system:job-controller",
-            "system:serviceaccount:kube-system:legacy-service-account-token-cleaner",
-            "system:serviceaccount:kube-system:local-path-provisioner-service-account",
-            "system:serviceaccount:kube-system:namespace-controller",
-            "system:serviceaccount:kube-system:persistent-volume-binder",
-            "system:serviceaccount:kube-system:replicaset-controller",
-            "system:serviceaccount:kube-system:replication-controller",
-            "system:serviceaccount:kube-system:resourcequota-controller",
-            "system:serviceaccount:kube-system:statefulset-controller"
-          ]
-        },
-        "read_secret": {
-          "*": {
-            "allowed": [
-              "group:system:masters",
-              "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
-              "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
-              "system:serviceaccount:databases:pg",
-              "kube-apiserver",
-              "system:serviceaccount:cert-manager:cert-manager",
-              "system:serviceaccount:cert-manager:cert-manager-cainjector",
-              "system:kube-controller-manager",
-              "k3s-cloud-controller-manager",
-              "system:serviceaccount:kube-system:clusterrole-aggregation-controller",
-              "system:serviceaccount:kube-system:cronjob-controller",
-              "system:serviceaccount:kube-system:daemon-set-controller",
-              "system:serviceaccount:kube-system:deployment-controller",
-              "system:serviceaccount:kube-system:endpoint-controller",
-              "system:serviceaccount:kube-system:endpointslice-controller",
-              "system:serviceaccount:kube-system:endpointslicemirroring-controller",
-              "system:serviceaccount:kube-system:generic-garbage-collector",
-              "system:serviceaccount:kube-system:job-controller",
-              "system:serviceaccount:kube-system:legacy-service-account-token-cleaner",
-              "system:serviceaccount:kube-system:local-path-provisioner-service-account",
-              "system:serviceaccount:kube-system:namespace-controller",
-              "system:serviceaccount:kube-system:persistent-volume-binder",
-              "system:serviceaccount:kube-system:replicaset-controller",
-              "system:serviceaccount:kube-system:replication-controller",
-              "system:serviceaccount:kube-system:resourcequota-controller",
-              "system:serviceaccount:kube-system:statefulset-controller"
-            ]
-          }
-        },
-        "write_secret": {
-          "*": {
-            "allowed": [
-              "group:system:masters",
-              "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
-              "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
-              "system:serviceaccount:databases:pg",
-              "kube-apiserver",
-              "system:serviceaccount:cert-manager:cert-manager",
-              "system:serviceaccount:cert-manager:cert-manager-cainjector",
-              "system:kube-controller-manager",
-              "k3s-cloud-controller-manager",
-              "system:serviceaccount:kube-system:clusterrole-aggregation-controller",
-              "system:serviceaccount:kube-system:cronjob-controller",
-              "system:serviceaccount:kube-system:daemon-set-controller",
-              "system:serviceaccount:kube-system:deployment-controller",
-              "system:serviceaccount:kube-system:endpoint-controller",
-              "system:serviceaccount:kube-system:endpointslice-controller",
-              "system:serviceaccount:kube-system:endpointslicemirroring-controller",
-              "system:serviceaccount:kube-system:generic-garbage-collector",
-              "system:serviceaccount:kube-system:job-controller",
-              "system:serviceaccount:kube-system:legacy-service-account-token-cleaner",
-              "system:serviceaccount:kube-system:local-path-provisioner-service-account",
-              "system:serviceaccount:kube-system:namespace-controller",
-              "system:serviceaccount:kube-system:persistent-volume-binder",
-              "system:serviceaccount:kube-system:replicaset-controller",
-              "system:serviceaccount:kube-system:replication-controller",
-              "system:serviceaccount:kube-system:resourcequota-controller",
-              "system:serviceaccount:kube-system:statefulset-controller"
-            ]
-          }
-        }
-      },
-      "databases": {
-        "exec_into_pods": {
-          "allowed": [
-            "group:system:masters",
-            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
-            "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
-            "system:serviceaccount:databases:pg",
-            "kube-apiserver",
-            "system:serviceaccount:cert-manager:cert-manager",
-            "system:serviceaccount:cert-manager:cert-manager-cainjector",
-            "system:kube-controller-manager",
-            "k3s-cloud-controller-manager",
-            "system:serviceaccount:kube-system:clusterrole-aggregation-controller",
-            "system:serviceaccount:kube-system:cronjob-controller",
-            "system:serviceaccount:kube-system:daemon-set-controller",
-            "system:serviceaccount:kube-system:deployment-controller",
-            "system:serviceaccount:kube-system:endpoint-controller",
-            "system:serviceaccount:kube-system:endpointslice-controller",
-            "system:serviceaccount:kube-system:endpointslicemirroring-controller",
-            "system:serviceaccount:kube-system:generic-garbage-collector",
-            "system:serviceaccount:kube-system:job-controller",
-            "system:serviceaccount:kube-system:legacy-service-account-token-cleaner",
-            "system:serviceaccount:kube-system:local-path-provisioner-service-account",
-            "system:serviceaccount:kube-system:namespace-controller",
-            "system:serviceaccount:kube-system:persistent-volume-binder",
-            "system:serviceaccount:kube-system:replicaset-controller",
-            "system:serviceaccount:kube-system:replication-controller",
-            "system:serviceaccount:kube-system:resourcequota-controller",
-            "system:serviceaccount:kube-system:statefulset-controller"
-          ]
-        },
-        "change_pods": {
-          "allowed": [
-            "group:system:masters",
-            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
-            "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
-            "system:serviceaccount:databases:pg",
-            "kube-apiserver",
-            "system:serviceaccount:cert-manager:cert-manager",
-            "system:serviceaccount:cert-manager:cert-manager-cainjector",
-            "system:kube-controller-manager",
-            "k3s-cloud-controller-manager",
-            "system:serviceaccount:kube-system:clusterrole-aggregation-controller",
-            "system:serviceaccount:kube-system:cronjob-controller",
-            "system:serviceaccount:kube-system:daemon-set-controller",
-            "system:serviceaccount:kube-system:deployment-controller",
-            "system:serviceaccount:kube-system:endpoint-controller",
-            "system:serviceaccount:kube-system:endpointslice-controller",
-            "system:serviceaccount:kube-system:endpointslicemirroring-controller",
-            "system:serviceaccount:kube-system:generic-garbage-collector",
-            "system:serviceaccount:kube-system:job-controller",
-            "system:serviceaccount:kube-system:legacy-service-account-token-cleaner",
-            "system:serviceaccount:kube-system:local-path-provisioner-service-account",
-            "system:serviceaccount:kube-system:namespace-controller",
-            "system:serviceaccount:kube-system:persistent-volume-binder",
-            "system:serviceaccount:kube-system:replicaset-controller",
-            "system:serviceaccount:kube-system:replication-controller",
-            "system:serviceaccount:kube-system:resourcequota-controller",
-            "system:serviceaccount:kube-system:statefulset-controller"
-          ]
-        },
-        "run_pods": {
-          "allowed": [
-            "group:system:masters",
-            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
-            "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
-            "system:serviceaccount:databases:pg",
-            "kube-apiserver",
-            "system:serviceaccount:cert-manager:cert-manager",
-            "system:serviceaccount:cert-manager:cert-manager-cainjector",
-            "system:kube-controller-manager",
-            "k3s-cloud-controller-manager",
-            "system:serviceaccount:kube-system:clusterrole-aggregation-controller",
-            "system:serviceaccount:kube-system:cronjob-controller",
-            "system:serviceaccount:kube-system:daemon-set-controller",
-            "system:serviceaccount:kube-system:deployment-controller",
-            "system:serviceaccount:kube-system:endpoint-controller",
-            "system:serviceaccount:kube-system:endpointslice-controller",
-            "system:serviceaccount:kube-system:endpointslicemirroring-controller",
-            "system:serviceaccount:kube-system:generic-garbage-collector",
-            "system:serviceaccount:kube-system:job-controller",
-            "system:serviceaccount:kube-system:legacy-service-account-token-cleaner",
-            "system:serviceaccount:kube-system:local-path-provisioner-service-account",
-            "system:serviceaccount:kube-system:namespace-controller",
-            "system:serviceaccount:kube-system:persistent-volume-binder",
-            "system:serviceaccount:kube-system:replicaset-controller",
-            "system:serviceaccount:kube-system:replication-controller",
-            "system:serviceaccount:kube-system:resourcequota-controller",
-            "system:serviceaccount:kube-system:statefulset-controller"
-          ]
-        },
-        "read_secret": {
-          "*": {
-            "allowed": [
-              "group:system:masters",
-              "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
-              "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
-              "system:serviceaccount:databases:pg",
-              "kube-apiserver",
-              "system:serviceaccount:cert-manager:cert-manager",
-              "system:serviceaccount:cert-manager:cert-manager-cainjector",
-              "system:kube-controller-manager",
-              "k3s-cloud-controller-manager",
-              "system:serviceaccount:kube-system:clusterrole-aggregation-controller",
-              "system:serviceaccount:kube-system:cronjob-controller",
-              "system:serviceaccount:kube-system:daemon-set-controller",
-              "system:serviceaccount:kube-system:deployment-controller",
-              "system:serviceaccount:kube-system:endpoint-controller",
-              "system:serviceaccount:kube-system:endpointslice-controller",
-              "system:serviceaccount:kube-system:endpointslicemirroring-controller",
-              "system:serviceaccount:kube-system:generic-garbage-collector",
-              "system:serviceaccount:kube-system:job-controller",
-              "system:serviceaccount:kube-system:legacy-service-account-token-cleaner",
-              "system:serviceaccount:kube-system:local-path-provisioner-service-account",
-              "system:serviceaccount:kube-system:namespace-controller",
-              "system:serviceaccount:kube-system:persistent-volume-binder",
-              "system:serviceaccount:kube-system:replicaset-controller",
-              "system:serviceaccount:kube-system:replication-controller",
-              "system:serviceaccount:kube-system:resourcequota-controller",
-              "system:serviceaccount:kube-system:statefulset-controller"
-            ]
-          }
-        },
-        "write_secret": {
-          "*": {
-            "allowed": [
-              "group:system:masters",
-              "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
-              "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
-              "system:serviceaccount:databases:pg",
-              "kube-apiserver",
-              "system:serviceaccount:cert-manager:cert-manager",
-              "system:serviceaccount:cert-manager:cert-manager-cainjector",
-              "system:kube-controller-manager",
-              "k3s-cloud-controller-manager",
-              "system:serviceaccount:kube-system:clusterrole-aggregation-controller",
-              "system:serviceaccount:kube-system:cronjob-controller",
-              "system:serviceaccount:kube-system:daemon-set-controller",
-              "system:serviceaccount:kube-system:deployment-controller",
-              "system:serviceaccount:kube-system:endpoint-controller",
-              "system:serviceaccount:kube-system:endpointslice-controller",
-              "system:serviceaccount:kube-system:endpointslicemirroring-controller",
-              "system:serviceaccount:kube-system:generic-garbage-collector",
-              "system:serviceaccount:kube-system:job-controller",
-              "system:serviceaccount:kube-system:legacy-service-account-token-cleaner",
-              "system:serviceaccount:kube-system:local-path-provisioner-service-account",
-              "system:serviceaccount:kube-system:namespace-controller",
-              "system:serviceaccount:kube-system:persistent-volume-binder",
-              "system:serviceaccount:kube-system:replicaset-controller",
-              "system:serviceaccount:kube-system:replication-controller",
-              "system:serviceaccount:kube-system:resourcequota-controller",
-              "system:serviceaccount:kube-system:statefulset-controller"
-            ]
-          }
-        },
-        "port_forward": {
-          "allowed": [
-            "group:system:masters",
-            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
-            "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
-            "system:serviceaccount:databases:pg",
-            "kube-apiserver",
-            "system:serviceaccount:cert-manager:cert-manager",
-            "system:serviceaccount:cert-manager:cert-manager-cainjector",
-            "system:kube-controller-manager",
-            "k3s-cloud-controller-manager",
-            "system:serviceaccount:kube-system:clusterrole-aggregation-controller",
-            "system:serviceaccount:kube-system:cronjob-controller",
-            "system:serviceaccount:kube-system:daemon-set-controller",
-            "system:serviceaccount:kube-system:deployment-controller",
-            "system:serviceaccount:kube-system:endpoint-controller",
-            "system:serviceaccount:kube-system:endpointslice-controller",
-            "system:serviceaccount:kube-system:endpointslicemirroring-controller",
-            "system:serviceaccount:kube-system:generic-garbage-collector",
-            "system:serviceaccount:kube-system:job-controller",
-            "system:serviceaccount:kube-system:legacy-service-account-token-cleaner",
-            "system:serviceaccount:kube-system:local-path-provisioner-service-account",
-            "system:serviceaccount:kube-system:namespace-controller",
-            "system:serviceaccount:kube-system:persistent-volume-binder",
-            "system:serviceaccount:kube-system:replicaset-controller",
-            "system:serviceaccount:kube-system:replication-controller",
-            "system:serviceaccount:kube-system:resourcequota-controller",
-            "system:serviceaccount:kube-system:statefulset-controller"
-          ]
-        },
-        "create_pg_tokens": {
-          "allowed": [
-            "group:system:masters",
-            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
-            "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
-            "system:serviceaccount:databases:pg",
-            "kube-apiserver",
-            "system:serviceaccount:cert-manager:cert-manager",
-            "system:serviceaccount:cert-manager:cert-manager-cainjector",
-            "system:kube-controller-manager",
-            "k3s-cloud-controller-manager",
-            "system:serviceaccount:kube-system:clusterrole-aggregation-controller",
-            "system:serviceaccount:kube-system:cronjob-controller",
-            "system:serviceaccount:kube-system:daemon-set-controller",
-            "system:serviceaccount:kube-system:deployment-controller",
-            "system:serviceaccount:kube-system:endpoint-controller",
-            "system:serviceaccount:kube-system:endpointslice-controller",
-            "system:serviceaccount:kube-system:endpointslicemirroring-controller",
-            "system:serviceaccount:kube-system:generic-garbage-collector",
-            "system:serviceaccount:kube-system:job-controller",
-            "system:serviceaccount:kube-system:legacy-service-account-token-cleaner",
-            "system:serviceaccount:kube-system:local-path-provisioner-service-account",
-            "system:serviceaccount:kube-system:namespace-controller",
-            "system:serviceaccount:kube-system:persistent-volume-binder",
-            "system:serviceaccount:kube-system:replicaset-controller",
-            "system:serviceaccount:kube-system:replication-controller",
-            "system:serviceaccount:kube-system:resourcequota-controller",
-            "system:serviceaccount:kube-system:statefulset-controller"
-          ]
-        },
-        "change": {
-          "clusters": {
-            "allowed": [
-              "group:system:masters",
-              "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
-              "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
-              "system:serviceaccount:databases:pg",
-              "kube-apiserver",
-              "system:serviceaccount:cert-manager:cert-manager",
-              "system:serviceaccount:cert-manager:cert-manager-cainjector",
-              "system:kube-controller-manager",
-              "k3s-cloud-controller-manager",
-              "system:serviceaccount:kube-system:clusterrole-aggregation-controller",
-              "system:serviceaccount:kube-system:cronjob-controller",
-              "system:serviceaccount:kube-system:daemon-set-controller",
-              "system:serviceaccount:kube-system:deployment-controller",
-              "system:serviceaccount:kube-system:endpoint-controller",
-              "system:serviceaccount:kube-system:endpointslice-controller",
-              "system:serviceaccount:kube-system:endpointslicemirroring-controller",
-              "system:serviceaccount:kube-system:generic-garbage-collector",
-              "system:serviceaccount:kube-system:job-controller",
-              "system:serviceaccount:kube-system:legacy-service-account-token-cleaner",
-              "system:serviceaccount:kube-system:local-path-provisioner-service-account",
-              "system:serviceaccount:kube-system:namespace-controller",
-              "system:serviceaccount:kube-system:persistent-volume-binder",
-              "system:serviceaccount:kube-system:replicaset-controller",
-              "system:serviceaccount:kube-system:replication-controller",
-              "system:serviceaccount:kube-system:resourcequota-controller",
-              "system:serviceaccount:kube-system:statefulset-controller"
-            ]
-          },
-          "databases": {
-            "allowed": [
-              "group:system:masters",
-              "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
-              "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
-              "system:serviceaccount:databases:pg",
-              "kube-apiserver",
-              "system:serviceaccount:cert-manager:cert-manager",
-              "system:serviceaccount:cert-manager:cert-manager-cainjector",
-              "system:kube-controller-manager",
-              "k3s-cloud-controller-manager",
-              "system:serviceaccount:kube-system:clusterrole-aggregation-controller",
-              "system:serviceaccount:kube-system:cronjob-controller",
-              "system:serviceaccount:kube-system:daemon-set-controller",
-              "system:serviceaccount:kube-system:deployment-controller",
-              "system:serviceaccount:kube-system:endpoint-controller",
-              "system:serviceaccount:kube-system:endpointslice-controller",
-              "system:serviceaccount:kube-system:endpointslicemirroring-controller",
-              "system:serviceaccount:kube-system:generic-garbage-collector",
-              "system:serviceaccount:kube-system:job-controller",
-              "system:serviceaccount:kube-system:legacy-service-account-token-cleaner",
-              "system:serviceaccount:kube-system:local-path-provisioner-service-account",
-              "system:serviceaccount:kube-system:namespace-controller",
-              "system:serviceaccount:kube-system:persistent-volume-binder",
-              "system:serviceaccount:kube-system:replicaset-controller",
-              "system:serviceaccount:kube-system:replication-controller",
-              "system:serviceaccount:kube-system:resourcequota-controller",
-              "system:serviceaccount:kube-system:statefulset-controller"
-            ]
-          },
-          "databaseroles": {
-            "allowed": [
-              "group:system:masters",
-              "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
-              "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
-              "system:serviceaccount:databases:pg",
-              "kube-apiserver",
-              "system:serviceaccount:cert-manager:cert-manager",
-              "system:serviceaccount:cert-manager:cert-manager-cainjector",
-              "system:kube-controller-manager",
-              "k3s-cloud-controller-manager",
-              "system:serviceaccount:kube-system:clusterrole-aggregation-controller",
-              "system:serviceaccount:kube-system:cronjob-controller",
-              "system:serviceaccount:kube-system:daemon-set-controller",
-              "system:serviceaccount:kube-system:deployment-controller",
-              "system:serviceaccount:kube-system:endpoint-controller",
-              "system:serviceaccount:kube-system:endpointslice-controller",
-              "system:serviceaccount:kube-system:endpointslicemirroring-controller",
-              "system:serviceaccount:kube-system:generic-garbage-collector",
-              "system:serviceaccount:kube-system:job-controller",
-              "system:serviceaccount:kube-system:legacy-service-account-token-cleaner",
-              "system:serviceaccount:kube-system:local-path-provisioner-service-account",
-              "system:serviceaccount:kube-system:namespace-controller",
-              "system:serviceaccount:kube-system:persistent-volume-binder",
-              "system:serviceaccount:kube-system:replicaset-controller",
-              "system:serviceaccount:kube-system:replication-controller",
-              "system:serviceaccount:kube-system:resourcequota-controller",
-              "system:serviceaccount:kube-system:statefulset-controller"
-            ]
-          },
-          "subscriptions": {
-            "allowed": [
-              "group:system:masters",
-              "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
-              "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
-              "system:serviceaccount:databases:pg",
-              "kube-apiserver",
-              "system:serviceaccount:cert-manager:cert-manager",
-              "system:serviceaccount:cert-manager:cert-manager-cainjector",
-              "system:kube-controller-manager",
-              "k3s-cloud-controller-manager",
-              "system:serviceaccount:kube-system:clusterrole-aggregation-controller",
-              "system:serviceaccount:kube-system:cronjob-controller",
-              "system:serviceaccount:kube-system:daemon-set-controller",
-              "system:serviceaccount:kube-system:deployment-controller",
-              "system:serviceaccount:kube-system:endpoint-controller",
-              "system:serviceaccount:kube-system:endpointslice-controller",
-              "system:serviceaccount:kube-system:endpointslicemirroring-controller",
-              "system:serviceaccount:kube-system:generic-garbage-collector",
-              "system:serviceaccount:kube-system:job-controller",
-              "system:serviceaccount:kube-system:legacy-service-account-token-cleaner",
-              "system:serviceaccount:kube-system:local-path-provisioner-service-account",
-              "system:serviceaccount:kube-system:namespace-controller",
-              "system:serviceaccount:kube-system:persistent-volume-binder",
-              "system:serviceaccount:kube-system:replicaset-controller",
-              "system:serviceaccount:kube-system:replication-controller",
-              "system:serviceaccount:kube-system:resourcequota-controller",
-              "system:serviceaccount:kube-system:statefulset-controller"
-            ]
-          },
-          "poolers": {
-            "allowed": [
-              "group:system:masters",
-              "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
-              "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
-              "system:serviceaccount:databases:pg",
-              "kube-apiserver",
-              "system:serviceaccount:cert-manager:cert-manager",
-              "system:serviceaccount:cert-manager:cert-manager-cainjector",
-              "system:kube-controller-manager",
-              "k3s-cloud-controller-manager",
-              "system:serviceaccount:kube-system:clusterrole-aggregation-controller",
-              "system:serviceaccount:kube-system:cronjob-controller",
-              "system:serviceaccount:kube-system:daemon-set-controller",
-              "system:serviceaccount:kube-system:deployment-controller",
-              "system:serviceaccount:kube-system:endpoint-controller",
-              "system:serviceaccount:kube-system:endpointslice-controller",
-              "system:serviceaccount:kube-system:endpointslicemirroring-controller",
-              "system:serviceaccount:kube-system:generic-garbage-collector",
-              "system:serviceaccount:kube-system:job-controller",
-              "system:serviceaccount:kube-system:legacy-service-account-token-cleaner",
-              "system:serviceaccount:kube-system:local-path-provisioner-service-account",
-              "system:serviceaccount:kube-system:namespace-controller",
-              "system:serviceaccount:kube-system:persistent-volume-binder",
-              "system:serviceaccount:kube-system:replicaset-controller",
-              "system:serviceaccount:kube-system:replication-controller",
-              "system:serviceaccount:kube-system:resourcequota-controller",
-              "system:serviceaccount:kube-system:statefulset-controller"
-            ]
-          },
-          "objectstores": {
-            "allowed": [
-              "group:system:masters",
-              "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
-              "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
-              "system:serviceaccount:databases:pg",
-              "kube-apiserver",
-              "system:serviceaccount:cert-manager:cert-manager",
-              "system:serviceaccount:cert-manager:cert-manager-cainjector",
-              "system:kube-controller-manager",
-              "k3s-cloud-controller-manager",
-              "system:serviceaccount:kube-system:clusterrole-aggregation-controller",
-              "system:serviceaccount:kube-system:cronjob-controller",
-              "system:serviceaccount:kube-system:daemon-set-controller",
-              "system:serviceaccount:kube-system:deployment-controller",
-              "system:serviceaccount:kube-system:endpoint-controller",
-              "system:serviceaccount:kube-system:endpointslice-controller",
-              "system:serviceaccount:kube-system:endpointslicemirroring-controller",
-              "system:serviceaccount:kube-system:generic-garbage-collector",
-              "system:serviceaccount:kube-system:job-controller",
-              "system:serviceaccount:kube-system:legacy-service-account-token-cleaner",
-              "system:serviceaccount:kube-system:local-path-provisioner-service-account",
-              "system:serviceaccount:kube-system:namespace-controller",
-              "system:serviceaccount:kube-system:persistent-volume-binder",
-              "system:serviceaccount:kube-system:replicaset-controller",
-              "system:serviceaccount:kube-system:replication-controller",
-              "system:serviceaccount:kube-system:resourcequota-controller",
-              "system:serviceaccount:kube-system:statefulset-controller"
-            ]
-          },
-          "endpoints": {
-            "allowed": [
-              "group:system:masters",
-              "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
-              "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
-              "system:serviceaccount:databases:pg",
-              "kube-apiserver",
-              "system:serviceaccount:cert-manager:cert-manager",
-              "system:serviceaccount:cert-manager:cert-manager-cainjector",
-              "system:kube-controller-manager",
-              "k3s-cloud-controller-manager",
-              "system:serviceaccount:kube-system:clusterrole-aggregation-controller",
-              "system:serviceaccount:kube-system:cronjob-controller",
-              "system:serviceaccount:kube-system:daemon-set-controller",
-              "system:serviceaccount:kube-system:deployment-controller",
-              "system:serviceaccount:kube-system:endpoint-controller",
-              "system:serviceaccount:kube-system:endpointslice-controller",
-              "system:serviceaccount:kube-system:endpointslicemirroring-controller",
-              "system:serviceaccount:kube-system:generic-garbage-collector",
-              "system:serviceaccount:kube-system:job-controller",
-              "system:serviceaccount:kube-system:legacy-service-account-token-cleaner",
-              "system:serviceaccount:kube-system:local-path-provisioner-service-account",
-              "system:serviceaccount:kube-system:namespace-controller",
-              "system:serviceaccount:kube-system:persistent-volume-binder",
-              "system:serviceaccount:kube-system:replicaset-controller",
-              "system:serviceaccount:kube-system:replication-controller",
-              "system:serviceaccount:kube-system:resourcequota-controller",
-              "system:serviceaccount:kube-system:statefulset-controller"
-            ]
-          },
-          "endpointslices": {
-            "allowed": [
-              "group:system:masters",
-              "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
-              "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
-              "system:serviceaccount:databases:pg",
-              "kube-apiserver",
-              "system:serviceaccount:cert-manager:cert-manager",
-              "system:serviceaccount:cert-manager:cert-manager-cainjector",
-              "system:kube-controller-manager",
-              "k3s-cloud-controller-manager",
-              "system:serviceaccount:kube-system:clusterrole-aggregation-controller",
-              "system:serviceaccount:kube-system:cronjob-controller",
-              "system:serviceaccount:kube-system:daemon-set-controller",
-              "system:serviceaccount:kube-system:deployment-controller",
-              "system:serviceaccount:kube-system:endpoint-controller",
-              "system:serviceaccount:kube-system:endpointslice-controller",
-              "system:serviceaccount:kube-system:endpointslicemirroring-controller",
-              "system:serviceaccount:kube-system:generic-garbage-collector",
-              "system:serviceaccount:kube-system:job-controller",
-              "system:serviceaccount:kube-system:legacy-service-account-token-cleaner",
-              "system:serviceaccount:kube-system:local-path-provisioner-service-account",
-              "system:serviceaccount:kube-system:namespace-controller",
-              "system:serviceaccount:kube-system:persistent-volume-binder",
-              "system:serviceaccount:kube-system:replicaset-controller",
-              "system:serviceaccount:kube-system:replication-controller",
-              "system:serviceaccount:kube-system:resourcequota-controller",
-              "system:serviceaccount:kube-system:statefulset-controller"
-            ]
-          },
-          "networkpolicies": {
-            "allowed": [
-              "group:system:masters",
-              "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
-              "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
-              "system:serviceaccount:databases:pg",
-              "kube-apiserver",
-              "system:serviceaccount:cert-manager:cert-manager",
-              "system:serviceaccount:cert-manager:cert-manager-cainjector",
-              "system:kube-controller-manager",
-              "k3s-cloud-controller-manager",
-              "system:serviceaccount:kube-system:clusterrole-aggregation-controller",
-              "system:serviceaccount:kube-system:cronjob-controller",
-              "system:serviceaccount:kube-system:daemon-set-controller",
-              "system:serviceaccount:kube-system:deployment-controller",
-              "system:serviceaccount:kube-system:endpoint-controller",
-              "system:serviceaccount:kube-system:endpointslice-controller",
-              "system:serviceaccount:kube-system:endpointslicemirroring-controller",
-              "system:serviceaccount:kube-system:generic-garbage-collector",
-              "system:serviceaccount:kube-system:job-controller",
-              "system:serviceaccount:kube-system:legacy-service-account-token-cleaner",
-              "system:serviceaccount:kube-system:local-path-provisioner-service-account",
-              "system:serviceaccount:kube-system:namespace-controller",
-              "system:serviceaccount:kube-system:persistent-volume-binder",
-              "system:serviceaccount:kube-system:replicaset-controller",
-              "system:serviceaccount:kube-system:replication-controller",
-              "system:serviceaccount:kube-system:resourcequota-controller",
-              "system:serviceaccount:kube-system:statefulset-controller"
-            ]
-          }
-        }
-      }
-    },
-    "request_certificates": {
-      "allowed": [
-        "group:system:masters",
-        "system:serviceaccount:cert-manager:cert-manager",
-        "system:kube-controller-manager",
-        "k3s-cloud-controller-manager",
-        "system:serviceaccount:kube-system:clusterrole-aggregation-controller",
-        "system:serviceaccount:kube-system:cronjob-controller",
-        "system:serviceaccount:kube-system:daemon-set-controller",
-        "system:serviceaccount:kube-system:deployment-controller",
-        "system:serviceaccount:kube-system:endpoint-controller",
-        "system:serviceaccount:kube-system:endpointslice-controller",
-        "system:serviceaccount:kube-system:endpointslicemirroring-controller",
-        "system:serviceaccount:kube-system:generic-garbage-collector",
-        "system:serviceaccount:kube-system:job-controller",
-        "system:serviceaccount:kube-system:legacy-service-account-token-cleaner",
-        "system:serviceaccount:kube-system:local-path-provisioner-service-account",
-        "system:serviceaccount:kube-system:namespace-controller",
-        "system:serviceaccount:kube-system:persistent-volume-binder",
-        "system:serviceaccount:kube-system:replicaset-controller",
-        "system:serviceaccount:kube-system:replication-controller",
-        "system:serviceaccount:kube-system:resourcequota-controller",
-        "system:serviceaccount:kube-system:statefulset-controller"
-      ]
-    },
-    "proxy_to_nodes": {
+    "superuser_in_cluster_namespace": {
       "allowed": [
         "group:system:masters",
         "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
@@ -1127,10 +146,40 @@
         "system:serviceaccount:kube-system:replicaset-controller",
         "system:serviceaccount:kube-system:replication-controller",
         "system:serviceaccount:kube-system:resourcequota-controller",
-        "system:serviceaccount:kube-system:statefulset-controller"
+        "system:serviceaccount:kube-system:statefulset-controller",
+        "system:serviceaccount:kube-system:helm-traefik",
+        "system:serviceaccount:kube-system:helm-traefik-crd",
+        "system:serviceaccount:kube-system:traefik"
       ]
     },
-    "impersonate": {
+    "create_certificates": {
+      "allowed": [
+        "group:system:masters",
+        "system:serviceaccount:cert-manager:cert-manager",
+        "system:kube-controller-manager",
+        "k3s-cloud-controller-manager",
+        "system:serviceaccount:kube-system:clusterrole-aggregation-controller",
+        "system:serviceaccount:kube-system:cronjob-controller",
+        "system:serviceaccount:kube-system:daemon-set-controller",
+        "system:serviceaccount:kube-system:deployment-controller",
+        "system:serviceaccount:kube-system:endpoint-controller",
+        "system:serviceaccount:kube-system:endpointslice-controller",
+        "system:serviceaccount:kube-system:endpointslicemirroring-controller",
+        "system:serviceaccount:kube-system:generic-garbage-collector",
+        "system:serviceaccount:kube-system:job-controller",
+        "system:serviceaccount:kube-system:legacy-service-account-token-cleaner",
+        "system:serviceaccount:kube-system:local-path-provisioner-service-account",
+        "system:serviceaccount:kube-system:namespace-controller",
+        "system:serviceaccount:kube-system:persistent-volume-binder",
+        "system:serviceaccount:kube-system:replicaset-controller",
+        "system:serviceaccount:kube-system:replication-controller",
+        "system:serviceaccount:kube-system:resourcequota-controller",
+        "system:serviceaccount:kube-system:statefulset-controller",
+        "system:serviceaccount:kube-system:helm-traefik",
+        "system:serviceaccount:kube-system:helm-traefik-crd"
+      ]
+    },
+    "write_routes": {
       "allowed": [
         "group:system:masters",
         "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
@@ -1157,10 +206,12 @@
         "system:serviceaccount:kube-system:replicaset-controller",
         "system:serviceaccount:kube-system:replication-controller",
         "system:serviceaccount:kube-system:resourcequota-controller",
-        "system:serviceaccount:kube-system:statefulset-controller"
+        "system:serviceaccount:kube-system:statefulset-controller",
+        "system:serviceaccount:kube-system:helm-traefik",
+        "system:serviceaccount:kube-system:helm-traefik-crd"
       ]
     },
-    "bind_or_escalate_roles": {
+    "run_pods": {
       "allowed": [
         "group:system:masters",
         "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
@@ -1187,10 +238,12 @@
         "system:serviceaccount:kube-system:replicaset-controller",
         "system:serviceaccount:kube-system:replication-controller",
         "system:serviceaccount:kube-system:resourcequota-controller",
-        "system:serviceaccount:kube-system:statefulset-controller"
+        "system:serviceaccount:kube-system:statefulset-controller",
+        "system:serviceaccount:kube-system:helm-traefik",
+        "system:serviceaccount:kube-system:helm-traefik-crd"
       ]
     },
-    "change_webhooks": {
+    "become_cluster_admin": {
       "allowed": [
         "group:system:masters",
         "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
@@ -1217,37 +270,9 @@
         "system:serviceaccount:kube-system:replicaset-controller",
         "system:serviceaccount:kube-system:replication-controller",
         "system:serviceaccount:kube-system:resourcequota-controller",
-        "system:serviceaccount:kube-system:statefulset-controller"
-      ]
-    },
-    "can_open_node_ports": {
-      "allowed": [
-        "group:system:masters",
-        "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
-        "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
-        "system:serviceaccount:databases:pg",
-        "kube-apiserver",
-        "system:serviceaccount:cert-manager:cert-manager",
-        "system:serviceaccount:cert-manager:cert-manager-cainjector",
-        "system:kube-controller-manager",
-        "k3s-cloud-controller-manager",
-        "system:serviceaccount:kube-system:clusterrole-aggregation-controller",
-        "system:serviceaccount:kube-system:cronjob-controller",
-        "system:serviceaccount:kube-system:daemon-set-controller",
-        "system:serviceaccount:kube-system:deployment-controller",
-        "system:serviceaccount:kube-system:endpoint-controller",
-        "system:serviceaccount:kube-system:endpointslice-controller",
-        "system:serviceaccount:kube-system:endpointslicemirroring-controller",
-        "system:serviceaccount:kube-system:generic-garbage-collector",
-        "system:serviceaccount:kube-system:job-controller",
-        "system:serviceaccount:kube-system:legacy-service-account-token-cleaner",
-        "system:serviceaccount:kube-system:local-path-provisioner-service-account",
-        "system:serviceaccount:kube-system:namespace-controller",
-        "system:serviceaccount:kube-system:persistent-volume-binder",
-        "system:serviceaccount:kube-system:replicaset-controller",
-        "system:serviceaccount:kube-system:replication-controller",
-        "system:serviceaccount:kube-system:resourcequota-controller",
-        "system:serviceaccount:kube-system:statefulset-controller"
+        "system:serviceaccount:kube-system:statefulset-controller",
+        "system:serviceaccount:kube-system:helm-traefik",
+        "system:serviceaccount:kube-system:helm-traefik-crd"
       ]
     },
     "operator_reads_secrets_in": {
@@ -1270,7 +295,6 @@
     }
   },
   "pods_sharing_host_uids": [],
-  "host_network_pods_that_can_bind_low_ports": [],
   "details": {
     "pg_hba": [
       {
@@ -1343,8 +367,6 @@
         "number": 8,
         "line": "clients billing-report.test billing"
       }
-    ],
-    "pg_hba_not_understood": [],
-    "pg_ident_not_understood": []
+    ]
   }
 }

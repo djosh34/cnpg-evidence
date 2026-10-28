@@ -34,6 +34,7 @@ for tool in kubectl jq openssl base64; do
 done
 
 values=$(jq -c .) || die "the desired state on stdin is not JSON"
+[[ -n $values ]] || die "stdin is empty: pipe in desired.yaml as JSON"
 [[ $(expected valid_values) == true ]] || die "$(expected values_needed)"
 operator_account=$(expected operator_account) || exit 2
 plugin_account=$(expected plugin_account) || exit 2
@@ -43,8 +44,6 @@ value() { jq -r "$1" <<<"$values"; }
 namespace=$(value .cluster.namespace) || exit 2
 cluster=$(value .cluster.name) || exit 2
 operator_namespace=$(value .network.operatorNamespace) || exit 2
-otel_namespace=$(value .network.otelNamespace) || exit 2
-load_balancer=$(value .rwLoadBalancer.name) || exit 2
 
 expected_ca=$(bash "$here/client-ca/certificates.sh" <"$ca_file") || exit 2
 [[ $expected_ca != "[]" ]] || die "no certificate in $ca_file"
@@ -59,14 +58,11 @@ mapfile -t instances < <(jq -r '.instances[]' <<<"$pods") || exit 2
 
 log "reading PostgreSQL on ${instances[*]}"
 postgres=$(bash "$here/postgres/postgres.sh" "$namespace" "$primary") || exit 2
-logins=$(bash "$here/logins/logins.sh" "$namespace" "$primary" "${instances[@]}") || exit 2
+logins=$(bash "$here/logins/logins.sh" "$namespace" "${instances[@]}") || exit 2
 
-log "reading the client CA, TLS, network policies, Services, pods and versions"
+log "reading the client CA, TLS and versions"
 client_ca=$(bash "$here/client-ca/client-ca.sh" "$namespace" "$cluster") || exit 2
 tls=$(bash "$here/tls/tls.sh" "$namespace" "${instances[@]}") || exit 2
-network=$(bash "$here/network/network.sh" "$namespace" "$cluster" "$load_balancer" "$operator_namespace" "$otel_namespace") || exit 2
-ports=$(bash "$here/ports/ports.sh" "$namespace" "$cluster") || exit 2
-host_network=$(bash "$here/host-network/host-network.sh") || exit 2
 software=$(bash "$here/software/software.sh" "$namespace" "$operator_namespace" "$primary") || exit 2
 
 log "asking the API server who holds which right"
@@ -74,29 +70,25 @@ kubernetes=$(bash "$here/kubernetes/kubernetes.sh" "$namespace" "$cluster" "$ope
   "$operator_account" "$plugin_account" "$cert_manager_namespace" "${instances[@]}") || exit 2
 
 facts=$(
-  jq -n \
+  jq -n -L "$here/violations" \
+    --slurpfile values <(echo "$values") \
     --slurpfile postgres <(echo "$postgres") \
     --slurpfile logins <(echo "$logins") \
     --slurpfile client_ca <(echo "$client_ca") \
     --slurpfile tls <(echo "$tls") \
-    --slurpfile network <(echo "$network") \
-    --slurpfile ports <(echo "$ports") \
     --slurpfile kubernetes <(echo "$kubernetes") \
     --slurpfile pods <(echo "$pods") \
-    --slurpfile host_network <(echo "$host_network") \
     --slurpfile software <(echo "$software") \
-    '{
+    'include "expected";
+     {
       postgres: $postgres[0],
-      databases: $logins[0].databases,
+      certificate_logins: ($values[0] | certificate_logins($logins[0].ident)),
       client_ca: $client_ca[0],
       tls: $tls[0],
-      network_policy: $network[0],
-      ports: $ports[0],
       kubernetes: ($kubernetes[0] | del(.granted_by)),
       pods_sharing_host_uids: $pods[0].sharing_host_uids,
-      host_network_pods_that_can_bind_low_ports: $host_network[0],
       software: $software[0],
-      details: ({primary: $pods[0].primary, instances: $pods[0].instances} + $logins[0].details)
+      details: {primary: $pods[0].primary, instances: $pods[0].instances, pg_hba: $logins[0].pg_hba, pg_ident: $logins[0].pg_ident}
     }'
 ) || exit 2
 
