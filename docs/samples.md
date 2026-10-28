@@ -140,7 +140,7 @@ An open connection ends when the node it entered through stops, and when its ins
 With embedded etcd, two of three servers lost means no Kubernetes API, so nothing is promoted and nothing changes in the cluster until a second node returns. Writes stop, as every commit needs a second instance.
 
 - **The last node runs a replica.** It keeps serving reads on its read port, with the data as it was when the other nodes were lost.
-- **The last node runs the primary.** Writes hang. After about 30 s the isolation check finds neither the API nor the other instances, and the liveness probe restarts PostgreSQL, which cannot start again without the API. Reads stop too. If k3s itself exits on that node first, which it can when it held one of the k3s leader leases, nothing restarts PostgreSQL: under systemd the running containers keep going and keep serving reads. On test nodes that run k3s in a container, a k3s exit restarts the whole node instead.
+- **The last node runs the primary.** Writes hang. After about 30 s the isolation check finds neither the API nor the other instances, and the liveness probe restarts PostgreSQL, which cannot start again without the API. Reads stop too. If k3s itself exits on that node first, which it can when it held one of the k3s leader leases, nothing restarts PostgreSQL: under systemd the running containers keep going and keep serving reads.
 - **Recovery depends on which node returns.** When the primary's node returns, everything recovers without a manual step. When only the other replica's node returns while the primary's node stays down, nothing is promoted: the returning replica cannot pass its startup check without a primary to stream from, and the quorum needs both replicas.
 
 ### A replica restart while the primary's node is down
@@ -151,19 +151,19 @@ A replica whose container restarts while the primary's node is down cannot pass 
 kubectl cnpg promote <cluster> <instance>
 ```
 
-This skips the quorum check. First check with `select pg_last_wal_receive_lsn()` on both replicas that the one to promote is not behind the other; a commit that only the other replica confirmed is lost otherwise.
+This skips the quorum check. First compare `select pg_last_wal_replay_lsn()` on both replicas, and promote only a replica that is not behind the other; otherwise wait for the primary's node, since a commit that only the other replica confirmed would be lost.
 
 ## Outside the chart
 
 ### CoreDNS on every node
 
-k3s runs one CoreDNS replica. When it runs on the primary's lost node, the failover waits on DNS: the promoted replica restores WAL from the object store by its host name, and the replicas reach the new primary through the `<cluster>-rw` Service name. On three nodes, run one CoreDNS replica per node:
+k3s runs one CoreDNS replica. When it runs on the primary's lost node, the failover waits on DNS: the promoted replica restores WAL from the object store by its host name, and the replicas reach the new primary through the `<cluster>-rw` Service name. Run one CoreDNS replica per node, through k3s's manifest method:
 
-```bash
-kubectl scale deployment coredns -n kube-system --replicas=3
-```
+1. On every server, create an empty `coredns.yaml.skip` next to `coredns.yaml` in `/var/lib/rancher/k3s/server/manifests`. k3s then no longer applies its own file.
+2. Put an own copy of `coredns.yaml` under another name in the same directory, with `replicas: 3` added to the `coredns` Deployment's `spec`. The Deployment's spread rule puts each replica on another node.
+3. On k3s upgrades, compare the copy with the new `coredns.yaml` and update it by hand.
 
-The deployment's spread rule puts each replica on another node. k3s applies its CoreDNS manifest again at every server start, and that manifest sets no replica count, so the scale stays. To change anything that the manifest does set, use k3s's manifest method: create `coredns.yaml.skip` next to `coredns.yaml` in `/var/lib/rancher/k3s/server/manifests` on every server, and put an own copy of the manifest under another name in the same directory. k3s then leaves its own file alone, and the copy needs updating by hand on k3s upgrades.
+k3s's own manifest sets no replica count, so `kubectl scale deployment coredns -n kube-system --replicas=3` also holds across k3s restarts, as long as a k3s version does not add one.
 
 ### Secrets encryption
 
@@ -171,7 +171,7 @@ By default k3s stores Secrets unencrypted in etcd and in its etcd snapshots. Tur
 
 ### Audit log
 
-The k3s API server writes no audit log by default, so a `kubectl exec` into an instance pod leaves no record. A short policy records who opened a shell in, attached to, or read a Secret in the cluster's namespace, without the Secret's content:
+The k3s API server writes no audit log by default, so a `kubectl exec` into an instance pod leaves no record. A short policy records who opened a shell in, attached to, or read a Secret in the cluster's namespace (`databases` here), without the Secret's content:
 
 ```yaml
 apiVersion: audit.k8s.io/v1
