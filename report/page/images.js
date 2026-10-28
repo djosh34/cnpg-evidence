@@ -584,12 +584,13 @@ const CHECKS = {
 
 const YES_NO = ['true', 'false', true, false];
 
-// A check whose value is true or false in either document shows it as a square.
+// A value of true or false is a square, any other value is text. A check
+// whose value is true or false in either document gets a square column.
 function hostCheckImage(id, docs) {
   if (!Object.hasOwn(CHECKS, id)) throw new Error(`unknown host-check check ${JSON.stringify(id)}`);
   const [title, control] = CHECKS[id];
   const yesNo = docs.some(doc => YES_NO.includes(doc.checks?.find(c => c.id === id)?.value));
-  const value = item => (yesNo ? { mark: item.value === true || item.value === 'true', state: item.state } : entry(item.value, item.state));
+  const value = item => (YES_NO.includes(item.value) ? { mark: item.value === true || item.value === 'true', state: item.state } : entry(item.value, item.state));
   return {
     name: id,
     sections: ['checks'],
@@ -603,9 +604,8 @@ function hostCheckImage(id, docs) {
     legend: {
       desired: yesNo ? [['on', 'true'], ['off', 'false']] : [],
       actual: [
-        ...(yesNo
-          ? [['on', 'true'], ['off', 'false'], ['on extra', 'true, but the desired image has false'], ['off extra', 'false, but the desired image has true']]
-          : [RED_VALUE('A value other than the one the check passes with')]),
+        ...(yesNo ? [['on', 'true'], ['off', 'false'], ['on extra', 'true, but the desired image has false'], ['off extra', 'false, but the desired image has true']] : []),
+        RED_VALUE('A value other than the one the check passes with'),
         [{ name: 'Red check' }, 'A check the desired image does not have'],
       ],
     },

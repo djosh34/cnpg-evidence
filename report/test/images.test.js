@@ -232,6 +232,10 @@ test('a host-check value of true or false is a square, red when it is not the de
   hc.checks.find(c => c.id === 'k3s-selinux').value = 'false';
   assert.deepEqual(rows(selinux(hc)), [['k3s-selinux', '+[ ]']]);
   assert.equal(selinux(hc).verdict, 'Failed');
+  // A value that is neither true nor false stays text.
+  hc.checks.find(c => c.id === 'k3s-selinux').value = 'unset';
+  assert.deepEqual(rows(selinux(hc)), [['k3s-selinux', '+unset']]);
+  assert.equal(selinux(hc).verdict, 'Failed');
 });
 
 test('each result prove.sh joined is its own value, red only when it is not the desired one', () => {
