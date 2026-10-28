@@ -200,15 +200,19 @@ function network(s) {
   return rows;
 }
 
-// The parts of the value at path, split by separator, each red when the
-// desired value it differs from lacks it.
-function parts(s, path, separator) {
+// prove.sh joins the different results of one attempt with ", ". Each is a
+// value of its own, red when the desired value is another.
+function results(s, path) {
   const found = s.values(path);
-  const desired = found.filter(v => v.state === 'missing').flatMap(v => String(v.value).split(separator));
+  const desired = found.filter(v => v.state === 'missing').flatMap(v => String(v.value).split(', '));
   return found
     .filter(v => v.state !== 'missing')
-    .flatMap(v => String(v.value).split(separator).map(part => entry(part, v.state === 'extra' && !desired.includes(part) ? 'extra' : '')));
+    .flatMap(v => String(v.value).split(', ').map(part => entry(part, v.state === 'extra' && !desired.includes(part) ? 'extra' : '')));
 }
+
+// A selector, one label per line, red as a whole when it differs from desired:
+// one label more or less changes the pods it reaches.
+const selector = (s, path) => s.values(path).filter(v => v.state !== 'missing').flatMap(v => String(v.value).split(',').map(label => entry(label, v.state)));
 
 const blank = [{ text: '', state: '' }];
 
@@ -228,7 +232,7 @@ function ports(s) {
         [entry(key.slice(slash + 1), state)],
         [entry(key.slice(0, slash), state)],
         plain(entries(s.values([...path, 'type']))),
-        word(plain(parts(s, [...path, 'selector'], ','))),
+        word(plain(selector(s, [...path, 'selector']))),
         word(plain(entries(s.values([...path, 'traffic_policy'])))),
         plain(entries(s.items([...path, 'ports']))),
         entries(s.items([...path, 'node_ports'])),
@@ -707,29 +711,27 @@ function where(name) {
 }
 
 // Where the attempts were made, from the targets prove.sh records: each
-// address or pod with the ports tried on it, and a target without a port as
+// address with the ports tried on it, and a target without a port, a pod, as
 // it is.
 function triedOn(s, name) {
   if (s.desired) return [entry(where(name), '')];
   const ports = new Map();
   for (const { target } of s.at(['probes', name, 'raw']) ?? []) {
-    const found = /^(?:(\S+) )?(\S+):(\d+)$/.exec(target);
-    const at = found ? found[1] ?? found[2] : target;
+    const found = /^(\S+):(\d+)$/.exec(target);
+    const at = found ? found[1] : target;
     if (!ports.has(at)) ports.set(at, []);
-    if (found && !ports.get(at).includes(found[3])) ports.get(at).push(found[3]);
+    if (found && !ports.get(at).includes(found[2])) ports.get(at).push(found[2]);
   }
   return [...ports].map(([at, list]) => entry(list.length ? `${at}: ${list.join(', ')}` : at, ''));
 }
 
-// prove.sh joins the different results of one attempt with ", ". Each is a
-// value of its own, red when the desired value is another.
 function probes(group) {
   return s => s.items(['probes'])
     .filter(row => probeGroup(String(row.value?.probe)) === group)
     .map(row => {
       const name = row.value.probe;
       return {
-        cells: [[entry(name, row.state)], triedOn(s, name), entries(s.values(['probes', name, 'expected'])), parts(s, ['probes', name, 'value'], ', ')],
+        cells: [[entry(name, row.state)], triedOn(s, name), entries(s.values(['probes', name, 'expected'])), results(s, ['probes', name, 'value'])],
       };
     });
 }

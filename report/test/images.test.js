@@ -240,7 +240,7 @@ test('a host-check value of true or false is a square, red when it is not the de
 
 test('each result prove.sh joined is its own value, red only when it is not the desired one', () => {
   const pr = sheet(sample('prove.failing.json'), sample('prove.desired.json'), 'prove-02-other-namespace-actual.png');
-  assert.deepEqual(rows(pr).find(r => r[0] === 'other-namespace-9187'), ['other-namespace-9187', 'pg-1: 9187 pg-2: 9187 pg-3: 9187', 'timeout or connection refused', 'denied +allowed']);
+  assert.deepEqual(rows(pr).find(r => r[0] === 'other-namespace-9187'), ['other-namespace-9187', '198.51.100.11: 9187 198.51.100.12: 9187 198.51.100.13: 9187', 'timeout or connection refused', 'denied +allowed']);
 });
 
 test('the network images state their scope', () => {
@@ -323,10 +323,14 @@ test('the ports image marks a changed Service by its value and an extra Service 
   // Correct rows first, Services and pods together, then the red ones.
   assert.deepEqual(ports.map(r => r[0]), ['pg-r', 'pg-ro', 'pg-rw', 'pg-rw-lb', 'pod pg-1', 'pod pg-2', '+pg-by-hand', '+pg-debug', 'pg-read-lb', 'pod pg-3']);
   assert.equal(sheet(failing, desired, 'evidence-06-ports-actual.png').verdict, 'Failed');
-  // A changed selector marks only the part desired lacks.
+  // A changed selector is red as a whole, also when it lost a label.
   const actual = structuredClone(clean);
   actual.ports.services['databases/pg-read-lb'].selector = 'cnpg.io/cluster=pg,cnpg.io/instanceRole=replica';
-  assert.equal(show(actual, '06-ports').find(r => r[0] === 'pg-read-lb')[3], 'cnpg.io/cluster=pg +cnpg.io/instanceRole=replica');
+  actual.ports.services['databases/pg-rw-lb'].selector = 'cnpg.io/cluster=pg';
+  const changed = show(actual, '06-ports');
+  assert.equal(changed.find(r => r[0] === 'pg-read-lb')[3], '+cnpg.io/cluster=pg +cnpg.io/instanceRole=replica');
+  assert.equal(changed.find(r => r[0] === 'pg-rw-lb')[3], '+cnpg.io/cluster=pg');
+  assert.equal(sheet(actual, desired, 'evidence-06-ports-actual.png').verdict, 'Failed');
 });
 
 test('the platform pods grid has a port-forward column, and an extra holder is red', () => {
@@ -356,7 +360,9 @@ test('the prove images show where each attempt went, the read LoadBalancer port 
   assert.equal(rows(login).find(r => r[0] === 'password-tls')[1], '192.0.2.10: 5432, 5433 192.0.2.11: 5432, 5433 192.0.2.12: 5432, 5433');
   const other = rows(sheet(sample('prove.clean.json'), proveDesired, 'prove-02-other-namespace-actual.png'));
   assert.equal(other.find(r => r[0] === 'other-namespace-lb')[1], '192.0.2.10: 5432, 5433 192.0.2.11: 5432, 5433 192.0.2.12: 5432, 5433');
-  assert.equal(rows(sheet(sample('prove.clean.json'), proveDesired, 'prove-03-host-uid-actual.png'))[0][1], 'pg-1 uid 26');
+  const uid = rows(sheet(sample('prove.clean.json'), proveDesired, 'prove-03-host-uid-actual.png'));
+  assert.equal(uid.find(r => r[0] === 'uid-26 environ')[1], 'pg-1');
+  assert.equal(uid.find(r => r[0] === 'uid-mapped socket-host-path')[1], 'pg-1 uid 165562');
   assert.equal(rows(sheet(proveDesired, undefined, 'prove-01-login-attempts-desired.png'))[0][1], 'Each LoadBalancer port of each node');
   // No row for the NodePorts.
   assert.ok(sheets(sample('prove.clean.json'), proveDesired).every(s => s.rows.every(r => !r.cells[0][0].text.includes('nodeport'))));

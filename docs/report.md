@@ -188,7 +188,7 @@ The platform pods grid has a Port-forward column for the cluster's namespace. Op
 | Connections from another namespace | `prove-02-other-namespace-desired.png`, `prove-02-other-namespace-actual.png` |
 | Access as the host postgres uid | `prove-03-host-uid-desired.png`, `prove-03-host-uid-actual.png` |
 
-Each prove image has a Tried on column. On the actual image it lists each address or pod an attempt went to, with its ports, so the login attempts and `other-namespace-lb` show the rw LoadBalancer port 5432 and the read LoadBalancer port on every node. The desired image says where `prove.sh` makes each attempt.
+Each prove image has a Tried on column. On the actual image it lists each address an attempt went to, with its ports, or the pod for an attempt as the uid, so the login attempts and `other-namespace-lb` show the rw LoadBalancer port 5432 and the read LoadBalancer port on every node. The desired image says where `prove.sh` makes each attempt.
 
 Each image is as wide as its table plus 88 px margins, and as high as its content. Its header gives the title, the control, a Desired or Actual tag, the cluster or node, and who made the document. An actual image adds the collection time and Passed or Failed. A legend of the marks sits above the table.
 
