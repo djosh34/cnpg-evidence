@@ -6,90 +6,76 @@
 # A Role can grant a verb on named objects only (resourceNames). The API
 # server answers a question about a named object yes for such a grant and for
 # a grant on every object, so existing objects are asked by name: the
-# instance pods, the Cluster, Secrets, NetworkPolicies, nodes, the
-# ServiceAccounts of CNPG and cert-manager, system:masters and cluster-admin.
-# create cannot be limited to a name, so it is asked without one.
+# instance pods, the Cluster, the Secrets of the cluster's namespace, nodes,
+# the ServiceAccounts of CNPG and cert-manager, system:masters and
+# cluster-admin. create cannot be limited to a name, so it is asked without one.
 #
 # A right in a namespace comes from a ClusterRoleBinding or a RoleBinding in
 # that namespace. Where no RoleBinding there names the subject or one of its
 # groups, the cluster-wide answer is the same, so that one is asked instead.
 #
-# Input: {subjects, named_in, namespaces, namespace, cluster, component_namespaces,
-#         secrets: {<namespace>: [name]}, instance_pods, network_policies, nodes,
+# Input: {subjects, named_in, namespaces, namespace, cluster,
+#         secrets: {<namespace>: [name]}, instance_pods, nodes,
 #         accounts: [{namespace, name}], operator_namespace, operator_account,
 #         plugin_account, ingress_routes: the Traefik route resources the cluster serves}
 
 def write: "create", "update", "patch";
 
-# Pods and Secrets in each namespace of CNPG and cert-manager.
-def rights_in_component_namespace($secrets):
-  [
-    {right: "exec_into_pods", verb: ("get", "create"), resource: "pods", subresource: ("exec", "attach")},
-    {right: "exec_into_pods", verb: "patch", resource: "pods", subresource: "ephemeralcontainers"},
-    {right: "change_pods", verb: ("update", "patch"), resource: "pods"},
-    ($secrets[] | {right: "read_secret \(.)", verb: "get", resource: "secrets/\(.)"}),
-    {right: "read_secret all (list)", verb: "list", resource: "secrets"},
-    {right: "read_secret all (watch)", verb: "watch", resource: "secrets"},
-    {right: "write_secret all (create)", verb: "create", resource: "secrets"},
-    ($secrets[] | {right: "write_secret \(.)", verb: ("update", "patch"), resource: "secrets/\(.)"})
-  ];
-
-# The instance pods, their ServiceAccount token, the objects that configure
-# the cluster, and the Endpoints and EndpointSlices, which decide where the
-# cluster's Services send connections, in the cluster's namespace. A
-# port-forward is opened by the kubelet inside the pod, past the NetworkPolicy.
-def rights_in_cluster_namespace($cluster; $pods; $policies):
+# Rights in the cluster's namespace that equal PostgreSQL superuser: enter
+# or change the instance pods, start a pod that mounts their volumes or runs
+# as their ServiceAccount, read or write its Secrets, or change the CNPG
+# objects that configure the cluster, its roles, databases and backups.
+def superuser_in_cluster_namespace($cluster; $pods; $secrets):
   [
     ($pods[]
-     | {right: "exec_into_pods", verb: ("get", "create"), resource: "pods/\(.)", subresource: ("exec", "attach")},
-       {right: "exec_into_pods", verb: "patch", resource: "pods/\(.)", subresource: "ephemeralcontainers"},
-       {right: "change_pods", verb: ("update", "patch"), resource: "pods/\(.)"},
-       {right: "port_forward", verb: ("get", "create"), resource: "pods/\(.)", subresource: "portforward"}),
-    {right: "create_pg_tokens", verb: "create", resource: "serviceaccounts/\($cluster)", subresource: "token"},
-    {right: "change clusters", verb: "create", resource: "clusters.postgresql.cnpg.io"},
-    {right: "change clusters", verb: ("update", "patch"), resource: "clusters.postgresql.cnpg.io/\($cluster)"},
-    ({databases: "postgresql.cnpg.io", databaseroles: "postgresql.cnpg.io", subscriptions: "postgresql.cnpg.io",
-      poolers: "postgresql.cnpg.io", objectstores: "barmancloud.cnpg.io"}
-     | to_entries[]
-     | {right: "change \(.key)", verb: write, resource: "\(.key).\(.value)"}),
-    {right: "change endpoints", verb: write, resource: "endpoints"},
-    {right: "change endpointslices", verb: write, resource: "endpointslices.discovery.k8s.io"},
-    {right: "change networkpolicies", verb: (write, "delete"), resource: "networkpolicies.networking.k8s.io"},
-    ($policies[] | {right: "change networkpolicies", verb: ("update", "patch", "delete"),
-                    resource: "networkpolicies.networking.k8s.io/\(.)"})
-  ];
+     | {verb: ("get", "create"), resource: "pods/\(.)", subresource: ("exec", "attach")},
+       {verb: "patch", resource: "pods/\(.)", subresource: "ephemeralcontainers"},
+       {verb: ("update", "patch"), resource: "pods/\(.)"}),
+    {verb: write,
+     resource: ("pods", "replicationcontrollers", "deployments.apps", "statefulsets.apps", "daemonsets.apps",
+                "replicasets.apps", "jobs.batch", "cronjobs.batch")},
+    ($secrets[] | {verb: "get", resource: "secrets/\(.)"}, {verb: ("update", "patch"), resource: "secrets/\(.)"}),
+    {verb: ("list", "watch", "create"), resource: "secrets"},
+    {verb: "create", resource: "serviceaccounts/\($cluster)", subresource: "token"},
+    {verb: "create", resource: "clusters.postgresql.cnpg.io"},
+    {verb: ("update", "patch"), resource: "clusters.postgresql.cnpg.io/\($cluster)"},
+    {verb: write, resource: ("databases.postgresql.cnpg.io", "databaseroles.postgresql.cnpg.io",
+                             "objectstores.barmancloud.cnpg.io")}
+  ]
+  | map({right: "superuser_in_cluster_namespace"} + .);
 
-def rights_cluster_wide($nodes):
-  [
-    {right: "proxy_to_nodes", verb: "get", resource: ("nodes", "nodes/\($nodes[])"), subresource: "proxy"},
-    {right: "impersonate", verb: "impersonate", resource: ("users", "groups", "serviceaccounts", "groups/system:masters")},
-    {right: "bind_or_escalate_roles", verb: ("bind", "escalate"),
-     resource: ("roles.rbac.authorization.k8s.io", "clusterroles.rbac.authorization.k8s.io",
-                "clusterroles.rbac.authorization.k8s.io/cluster-admin")},
-    {right: "change_webhooks", verb: write,
-     resource: ("mutatingwebhookconfigurations.admissionregistration.k8s.io",
-                "validatingwebhookconfigurations.admissionregistration.k8s.io")}
-  ];
-
-# Impersonating one of these ServiceAccounts gives its rights.
-def impersonate_account: {right: "impersonate", verb: "impersonate", resource: "serviceaccounts/\(.name)"};
-
-# A pod can listen on a node port (hostPort, hostNetwork); a Service of type
-# LoadBalancer gets a port on every node from servicelb; an Ingress or a
-# Traefik IngressRoute or IngressRouteTCP is served on the ingress
-# controller's ports on the nodes. A changed workload can do the same as a new one.
+# A pod can run as any ServiceAccount of its namespace, mount its volumes and
+# use hostPort or hostNetwork. cert-manager signs what a Certificate or
+# CertificateRequest asks for. An Ingress or a Traefik IngressRoute or
+# IngressRouteTCP is served on the ingress controller's ports on the nodes.
 def rights_in_every_namespace($ingress_routes):
   [
     {right: "run_pods", verb: write,
      resource: ("pods", "replicationcontrollers", "deployments.apps", "statefulsets.apps", "daemonsets.apps",
                 "replicasets.apps", "jobs.batch", "cronjobs.batch")},
-    {right: "change_services", verb: write, resource: "services"},
-    {right: "change_ingresses", verb: write,
-     resource: ("ingresses.networking.k8s.io", $ingress_routes[])},
     {right: "create_certificates", verb: "create",
      resource: ("certificates.cert-manager.io", "certificaterequests.cert-manager.io")},
-    {right: "create_certificates", verb: ("update", "patch"), resource: "certificates.cert-manager.io"}
+    {right: "create_certificates", verb: ("update", "patch"), resource: "certificates.cert-manager.io"},
+    {right: "write_routes", verb: write, resource: ("ingresses.networking.k8s.io", $ingress_routes[])}
   ];
+
+# Rights that lead to cluster-admin: the kubelet API of every node, acting as
+# another subject, granting rights, or changing what admission webhooks see.
+def become_cluster_admin($nodes):
+  [
+    {verb: "get", resource: ("nodes", "nodes/\($nodes[])"), subresource: "proxy"},
+    {verb: "impersonate", resource: ("users", "groups", "serviceaccounts", "groups/system:masters")},
+    {verb: ("bind", "escalate"),
+     resource: ("roles.rbac.authorization.k8s.io", "clusterroles.rbac.authorization.k8s.io",
+                "clusterroles.rbac.authorization.k8s.io/cluster-admin")},
+    {verb: write,
+     resource: ("mutatingwebhookconfigurations.admissionregistration.k8s.io",
+                "validatingwebhookconfigurations.admissionregistration.k8s.io")}
+  ]
+  | map({right: "become_cluster_admin"} + .);
+
+# Impersonating one of these ServiceAccounts gives its rights.
+def impersonate_account: {right: "become_cluster_admin", verb: "impersonate", resource: "serviceaccounts/\(.name)"};
 
 # The groups a subject is in when asked as itself.
 def groups_of:
@@ -113,11 +99,9 @@ def need($subject; $in; $named_in):
 | .named_in as $named_in
 | (
     .subjects[] as $subject
-    | ($input.component_namespaces[] as $namespace
-       | rights_in_component_namespace($input.secrets[$namespace] // [])[] | need($subject; $namespace; $named_in)),
-      (rights_in_cluster_namespace($input.cluster; $input.instance_pods; $input.network_policies)[]
+    | (superuser_in_cluster_namespace($input.cluster; $input.instance_pods; $input.secrets[$input.namespace] // [])[]
        | need($subject; $input.namespace; $named_in)),
-      (rights_cluster_wide($input.nodes)[] | need($subject; ""; $named_in)),
+      (become_cluster_admin($input.nodes)[] | need($subject; ""; $named_in)),
       ($input.accounts[] as $account | $account | impersonate_account | need($subject; $account.namespace; $named_in)),
       ($input.namespaces[] as $namespace
        | rights_in_every_namespace($input.ingress_routes)[] | need($subject; $namespace; $named_in))

@@ -9,7 +9,7 @@ facts='{"client_ca": {"secret":"client-ca","certificates":[{"name":"CN=example-c
 
 values=$(cat <<'EOF'
 {"cluster": {"name": "pg", "namespace": "databases", "instances": 3}, "caSecret": "client-ca",
- "rwLoadBalancer": {"name": "pg-rw-lb"}, "network": {"operatorNamespace": "cnpg-system", "otelNamespace": "otel"},
+ "rwLoadBalancer": {"name": "pg-rw-lb"}, "network": {"operatorNamespace": "cnpg-system"},
  "replication": {"commonName": "pg-replication"},
  "databases": [{"name": "orders", "role": "orders", "clientCNs": ["orders-app.test"]},
                {"name": "billing", "role": "billing", "clientCNs": ["billing-app.test", "billing-report.test"]}]}

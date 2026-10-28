@@ -12,6 +12,6 @@ here=$(dirname "${BASH_SOURCE[0]}")
 
 input=$(cat)
 
-for section in postgres databases client-ca tls network ports kubernetes pods; do
+for section in postgres logins client-ca tls kubernetes pods; do
   jq -c -L "$here" -f "$here/$section.jq" <<<"$input"
 done | jq -s add

@@ -7,13 +7,13 @@ source "$here/../../lib/test.sh"
 
 # The postgres facts of a clean cluster.
 facts=$(cat <<'JSON'
-{"postgres": {"superusers":["postgres"],"can_create_roles":["postgres"],"can_create_databases":["postgres"],"can_replicate":["postgres","streaming_replica"],"can_bypass_row_security":["postgres"],"can_run_server_programs":["postgres"],"can_read_server_files":["postgres","streaming_replica"],"can_write_server_files":["postgres"],"can_read_all_data":["postgres"],"can_write_all_data":["postgres"],"have_password":[],"can_log_in":["billing","cnpg_metrics_exporter","orders","postgres","streaming_replica"],"roles":["billing","cnpg_metrics_exporter","orders","postgres","streaming_replica"]}}
+{"postgres": {"superusers":["postgres"],"can_create_roles":["postgres"],"can_create_databases":["postgres"],"can_replicate":["postgres","streaming_replica"],"can_bypass_row_security":["postgres"],"can_run_server_programs":["postgres"],"can_read_server_files":["postgres","streaming_replica"],"can_write_server_files":["postgres"],"can_read_all_data":["postgres"],"can_write_all_data":["postgres"],"have_password":[],"can_log_in":["billing","cnpg_metrics_exporter","orders","postgres","streaming_replica"],"roles":["billing","cnpg_metrics_exporter","orders","postgres","streaming_replica"],"databases":["billing","orders","postgres","template0","template1"]}}
 JSON
 )
 
 values=$(cat <<'EOF'
 {"cluster": {"name": "pg", "namespace": "databases", "instances": 3}, "caSecret": "client-ca",
- "rwLoadBalancer": {"name": "pg-rw-lb"}, "network": {"operatorNamespace": "cnpg-system", "otelNamespace": "otel"},
+ "rwLoadBalancer": {"name": "pg-rw-lb"}, "network": {"operatorNamespace": "cnpg-system"},
  "replication": {"commonName": "pg-replication"},
  "databases": [{"name": "orders", "role": "orders", "clientCNs": ["orders-app.test"]},
                {"name": "billing", "role": "billing", "clientCNs": ["billing-app.test", "billing-report.test"]}]}
@@ -50,5 +50,11 @@ same "a role from the values that does not exist" '["rule 1: role billing does n
 
 same "a role from the values that cannot log in" '["rule 1: role billing cannot log in"]' \
   "$(violations '.postgres.can_log_in -= ["billing"]')"
+
+same "the app database" '["rule 4: database app exists"]' "$(violations '.postgres.databases += ["app"]')"
+same "another database" '["rule 1: database hidden exists and is not in the values"]' \
+  "$(violations '.postgres.databases += ["hidden"]')"
+same "a database from the values that does not exist" '["rule 1: database billing does not exist"]' \
+  "$(violations '.postgres.databases -= ["billing"]')"
 
 finish

@@ -1,5 +1,5 @@
 # Rules 1 to 4 for the postgres section: which roles hold which right, which
-# have a password, which exist and which can log in. The expected roles of
+# have a password, which exist and which can log in, and which databases exist. The expected roles of
 # each right are in expected.jq.
 #
 # Input: {facts, values}. Output: a list of sentences.
@@ -21,6 +21,7 @@ include "expected";
     can_write_all_data: "can write all data"
   } as $says
 | (.values | expected_roles) as $expected_roles
+| (.values | expected_databases) as $expected_databases
 | [
     (role_rights | to_entries[]
      | .key as $list | .value as $expected
@@ -30,5 +31,8 @@ include "expected";
     ($postgres.roles | extra($expected_roles)
      | if . == "app" then "rule 4: role app exists" else "rule 1: role \(.) exists and is not in the values" end),
     ($expected_roles | missing($postgres.roles) | "rule 1: role \(.) does not exist"),
-    ($expected_roles | missing($postgres.can_log_in) | . as $role | select($postgres.roles | includes($role)) | "rule 1: role \(.) cannot log in")
+    ($expected_roles | missing($postgres.can_log_in) | . as $role | select($postgres.roles | includes($role)) | "rule 1: role \(.) cannot log in"),
+    ($postgres.databases | extra($expected_databases)
+     | if . == "app" then "rule 4: database app exists" else "rule 1: database \(.) exists and is not in the values" end),
+    ($expected_databases | missing($postgres.databases) | "rule 1: database \(.) does not exist")
   ]

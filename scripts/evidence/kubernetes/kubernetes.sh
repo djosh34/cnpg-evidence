@@ -19,7 +19,6 @@ plugin_account=$5
 cert_manager_namespace=$6
 shift 6
 instance_pods=$(jq -nc '$ARGS.positional' --args "$@")
-component_namespaces=$(jq -nc '$ARGS.positional | unique' --args "$namespace" "$operator_namespace" "$cert_manager_namespace")
 
 subjects=$(
   {
@@ -31,7 +30,6 @@ subjects=$(
 names() { jq -c '[.items[].metadata.name]'; }
 namespaces=$(kubectl get namespaces -o json | names)
 nodes=$(kubectl get nodes -o json | names)
-network_policies=$(kubectl get networkpolicies -n "$namespace" -o json | names)
 secrets=$(
   kubectl get secrets --all-namespaces -o json |
     jq -c '.items | group_by(.metadata.namespace) | map({key: .[0].metadata.namespace, value: map(.metadata.name)}) | from_entries'
@@ -49,10 +47,8 @@ needs=$(
     --slurpfile subjects <(echo "$subjects") \
     --argjson namespaces "$namespaces" \
     --argjson nodes "$nodes" \
-    --argjson network_policies "$network_policies" \
     --argjson secrets "$secrets" \
     --argjson instance_pods "$instance_pods" \
-    --argjson component_namespaces "$component_namespaces" \
     --arg namespace "$namespace" \
     --arg cluster "$cluster" \
     --arg operator_namespace "$operator_namespace" \
@@ -61,8 +57,8 @@ needs=$(
     --arg cert_manager_namespace "$cert_manager_namespace" \
     --argjson ingress_routes "$ingress_routes" \
     '$subjects[0] + {
-       $namespaces, $nodes, $network_policies, $secrets, $instance_pods, $namespace, $cluster,
-       $operator_namespace, $operator_account, $plugin_account, $ingress_routes, $component_namespaces,
+       $namespaces, $nodes, $secrets, $instance_pods, $namespace, $cluster,
+       $operator_namespace, $operator_account, $plugin_account, $ingress_routes,
        accounts: [
          {namespace: $namespace, name: $cluster},
          {namespace: $operator_namespace, name: ($operator_account, $plugin_account)},
@@ -84,8 +80,6 @@ fi
 jq -n \
   --slurpfile needs <(echo "$needs") \
   --slurpfile answers <(echo "$answers") \
-  --arg namespace "$namespace" \
-  --argjson component_namespaces "$component_namespaces" \
   --argjson not_served "$not_served" \
-  '{needs: $needs, answers: $answers, $namespace, $component_namespaces, $not_served}' |
+  '{needs: $needs, answers: $answers, $not_served}' |
   jq -f "$here/kubernetes.jq"

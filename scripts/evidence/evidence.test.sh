@@ -6,7 +6,7 @@ here=$(dirname "${BASH_SOURCE[0]}")
 source "$here/../lib/test.sh"
 
 values='{"cluster": {"name": "pg", "namespace": "databases", "instances": 3}, "caSecret": "client-ca",
-         "rwLoadBalancer": {"name": "pg-rw-lb"}, "network": {"operatorNamespace": "cnpg-system", "otelNamespace": "otel"},
+         "rwLoadBalancer": {"name": "pg-rw-lb"}, "network": {"operatorNamespace": "cnpg-system"},
          "replication": {"commonName": "pg-replication"}, "databases": []}'
 
 # A self-signed example CA.
@@ -45,6 +45,7 @@ kubectl() { echo 'Error from server (Forbidden): secrets is forbidden' >&2; retu
 export -f kubectl
 
 exits "no --ca" 2 "$values"
+exits "empty stdin" 2 "" --ca <(echo "$ca")
 exits "values that are not JSON" 2 "cluster: pg" --ca <(echo "$ca")
 exits "values without the cluster" 2 '{}' --ca <(echo "$ca")
 exits "a CA file without certificates" 2 "$values" --ca /dev/null
@@ -53,6 +54,8 @@ exits "a forbidden read" 2 "$values" --ca <(echo "$ca")
 refused "values without cluster.name and the operator namespace" 'del(.cluster.name, .network.operatorNamespace)'
 refused "instances that are not a number" '.cluster.instances = "3"'
 refused "a database without clientCNs" '.databases = [{name: "orders", role: "orders"}]'
+errors=$(bash "$here/evidence.sh" --ca <(echo "$ca") </dev/null 2>&1 >/dev/null) || true
+same_text "empty stdin says so" "evidence.sh: error: stdin is empty: pipe in desired.yaml as JSON" "$errors"
 if bash "$here/evidence.sh" --ca <(echo "$ca") <<<"$values" 2>&1 >/dev/null | grep -q "the desired state needs"; then
   fail "complete values pass the check"
 else
@@ -66,14 +69,11 @@ cp -r "$here/.." "$copy/scripts"
 stub() { printf "echo '%s'\n" "$2" >"$copy/scripts/evidence/$1"; }
 stub pods/pods.sh '{"primary": "pg-1", "instances": ["pg-1"], "sharing_host_uids": []}'
 stub postgres/postgres.sh '{"superusers": ["postgres"]}'
-stub logins/logins.sh '{"databases": {}, "details": {"pg_hba": [{"number": 1, "line": "host all all all reject"}]}}'
+stub logins/logins.sh '{"pg_hba": [{"number": 1, "line": "host all all all reject"}], "pg_ident": [], "ident": []}'
 stub client-ca/client-ca.sh '{"secret": "client-ca", "certificates": []}'
 stub tls/tls.sh '{"pg-1": {"postgresql": "TLSv1.3", "metrics": "TLSv1.3"}}'
-stub network/network.sh '{}'
-stub ports/ports.sh '{"services": {}, "host_ports": {}}'
-stub host-network/host-network.sh '[]'
 stub software/software.sh '{"postgresql": "17.1"}'
-stub kubernetes/kubernetes.sh '{"namespaces": {}, "granted_by": {}}'
+stub kubernetes/kubernetes.sh '{"run_pods": [], "granted_by": {}}'
 # The stub expands $violations when it runs.
 # shellcheck disable=SC2016
 printf 'cat >/dev/null\necho "${violations:-[]}"\n' >"$copy/scripts/evidence/violations/violations.sh"
@@ -84,13 +84,13 @@ code=0
 out=$(bash "$copy/scripts/evidence/evidence.sh" --ca <(echo "$ca") <<<"$values" 2>/dev/null) || code=$?
 same_text "a clean run exits 0" 0 "$code"
 same_text "the document starts with what it is, when and where it was read" \
-  "kind source collected_at cluster status violations postgres databases client_ca tls network_policy ports kubernetes pods_sharing_host_uids host_network_pods_that_can_bind_low_ports software details" \
+  "kind source collected_at cluster status violations postgres certificate_logins client_ca tls kubernetes pods_sharing_host_uids software details" \
   "$(jq -r 'keys_unsorted | join(" ")' <<<"$out")"
 same "header values" \
   '{"kind": "actual", "source": "evidence", "collected_at": "2026-01-02T03:04:05Z", "cluster": {"name": "pg", "namespace": "databases"}, "status": "pass", "violations": []}' \
   "$(jq '{kind, source, collected_at, cluster, status, violations}' <<<"$out")"
 same "details keep the primary, the instances and the numbered lines" \
-  '{"primary": "pg-1", "instances": ["pg-1"], "pg_hba": [{"number": 1, "line": "host all all all reject"}]}' \
+  '{"primary": "pg-1", "instances": ["pg-1"], "pg_hba": [{"number": 1, "line": "host all all all reject"}], "pg_ident": []}' \
   "$(jq .details <<<"$out")"
 
 code=0

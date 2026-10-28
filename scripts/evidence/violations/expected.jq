@@ -19,17 +19,15 @@ def tls_minimum: "TLSv1.3";
 def valid_values:
   try (
     all(.cluster.name, .cluster.namespace, .caSecret, .rwLoadBalancer.name,
-        .network.operatorNamespace, .network.otelNamespace, .replication.commonName;
+        .network.operatorNamespace, .replication.commonName;
         type == "string" and . != "")
     and (.cluster.instances | type == "number")
     and (.databases | type == "array")
     and all(.databases[]; (.name, .role | type == "string") and (.clientCNs | type == "array"))
-    and (.readLoadBalancer == null
-         or ((.readLoadBalancer.name | type == "string" and . != "") and (.readLoadBalancer.port | type == "number")))
   ) catch false;
 
 def values_needed:
-  "the desired state needs cluster.name, cluster.namespace, cluster.instances, caSecret, rwLoadBalancer.name, network.operatorNamespace, network.otelNamespace, replication.commonName and databases with name, role and clientCNs; readLoadBalancer, when set, needs name and port";
+  "the desired state needs cluster.name, cluster.namespace, cluster.instances, caSecret, rwLoadBalancer.name, network.operatorNamespace, replication.commonName and databases with name, role and clientCNs";
 
 # The roles that hold each special right. CNPG's own roles: postgres is the
 # superuser, streaming_replica replicates and reads files for pg_rewind.
@@ -50,23 +48,20 @@ def role_rights:
 # CNPG's roles, cnpg_metrics_exporter logs in for metrics, and one role per database.
 def expected_roles: ["postgres", "streaming_replica", "cnpg_metrics_exporter"] + [.databases[].role];
 
-# Per database, and replication for physical replication: the owner, who
-# holds CONNECT (PostgreSQL's default: PUBLIC and the owner) and who logs in how.
-def expected_databases:
-  . as $values
-  | {os_users: ["postgres"]} as $over_socket
-  | {postgres: $over_socket, cnpg_metrics_exporter: $over_socket} as $cnpg_local
-  | {common_names: ([$values.replication.commonName, "streaming_replica"] | sort)} as $replica
-  | def database($owner; $logins): {owner: $owner, connect: (["PUBLIC", $owner] | sort), logins: $logins};
-    {
-      postgres: database("postgres"; $cnpg_local + {streaming_replica: $replica}),
-      template0: {owner: "postgres", allows_connections: false},
-      template1: database("postgres"; $cnpg_local),
-      replication: {logins: {streaming_replica: $replica}}
-    }
-    + ([$values.databases[]
-        | {key: .name, value: database(.role; $cnpg_local + {(.role): {common_names: (.clientCNs | sort)}})}]
-       | from_entries);
+# CNPG's databases and one per database of the values.
+def expected_databases: ["postgres", "template0", "template1"] + [.databases[].name];
+
+# The pg_hba lines that log in with a certificate, in matching order: CNPG
+# 1.30's fixed lines, then one line per database of the values. Each opens
+# one database to one role, whose certificate common names come from the
+# pg_ident lines of its map.
+def certificate_lines:
+  [
+    {database: "postgres", role: "streaming_replica", map: "cnpg_streaming_replica"},
+    {database: "replication", role: "streaming_replica", map: "cnpg_streaming_replica"},
+    {database: "all", role: "cnpg_pooler_pgbouncer", map: "cnpg_pooler_pgbouncer"},
+    (.databases[] | {database: .name, role, map: "clients"})
+  ];
 
 # pg_hba and pg_ident as the pg_hba_file_rules and pg_ident_file_mappings
 # views show them, in matching order: CNPG 1.30's fixed lines around the
@@ -75,69 +70,35 @@ def expected_pg_hba:
   [
     "local all cnpg_metrics_exporter peer map=cnpg_metrics_exporter",
     "local all all peer map=local",
-    "hostssl postgres streaming_replica all cert map=cnpg_streaming_replica clientcert=verify-full",
-    "hostssl replication streaming_replica all cert map=cnpg_streaming_replica clientcert=verify-full",
-    "hostssl all cnpg_pooler_pgbouncer all cert map=cnpg_pooler_pgbouncer clientcert=verify-full",
-    (.databases[] | "hostssl \(.name) \(.role) all cert map=clients clientcert=verify-full"),
+    (certificate_lines[] | "hostssl \(.database) \(.role) all cert map=\(.map) clientcert=verify-full"),
     "host all all all reject",
     "host all all all scram-sha-256"
   ];
 
-def expected_pg_ident:
+def expected_ident:
   [
-    "local postgres postgres",
-    "cnpg_streaming_replica streaming_replica streaming_replica",
-    "cnpg_pooler_pgbouncer cnpg_pooler_pgbouncer cnpg_pooler_pgbouncer",
-    "cnpg_metrics_exporter postgres cnpg_metrics_exporter",
-    "cnpg_streaming_replica \(.replication.commonName) streaming_replica",
-    (.databases[] | .role as $role | .clientCNs[] | "clients \(.) \($role)")
+    {map: "local", system_user: "postgres", role: "postgres"},
+    {map: "cnpg_streaming_replica", system_user: "streaming_replica", role: "streaming_replica"},
+    {map: "cnpg_pooler_pgbouncer", system_user: "cnpg_pooler_pgbouncer", role: "cnpg_pooler_pgbouncer"},
+    {map: "cnpg_metrics_exporter", system_user: "postgres", role: "cnpg_metrics_exporter"},
+    {map: "cnpg_streaming_replica", system_user: .replication.commonName, role: "streaming_replica"},
+    (.databases[] | .role as $role | .clientCNs[] | {map: "clients", system_user: ., role: $role})
   ];
 
-# Per source, the ports it may connect to on every instance pod.
-def network_sources:
-  {
-    outside: [5432],
-    "other nodes": [5432],
-    "own node": ["all"],
-    loadbalancer: [5432],
-    "pg pods": [5432, 8000],
-    "\(.network.operatorNamespace) operator": [8000],
-    (.network.otelNamespace): [9187],
-    "other namespaces": []
-  };
+def expected_pg_ident: expected_ident | map("\(.map) \(.system_user) \(.role)");
 
-# The Services that may send connections to the instance pods, as the ports
-# section shows them: CNPG's three ClusterIP Services (-ro only with a
-# replica to select), the rw LoadBalancer on 5432 to the primary and, when set, the read LoadBalancer on its port to the
-# instance on the same node. None has a node port or an external IP. Traffic
-# policy Local gives the read LoadBalancer a health check port, which answers
-# over HTTP and does not lead to PostgreSQL.
-def expected_services:
-  .cluster.namespace as $namespace
-  | .cluster.name as $cluster
-  | def selector($key; $value): "cnpg.io/cluster=\($cluster),\($key)=\($value)";
-    def service($type; $selector; $traffic_policy; $port):
-      {
-        type: $type,
-        selector: $selector,
-        traffic_policy: $traffic_policy,
-        ports: ["\($port) -> 5432"],
-        node_ports: [],
-        health_check_port: (if $traffic_policy == "Local" then "present" else "none" end),
-        external_ips: []
-      };
-    {
-      "\($namespace)/\($cluster)-rw": service("ClusterIP"; selector("cnpg.io/instanceRole"; "primary"); "none"; 5432),
-      "\($namespace)/\($cluster)-r": service("ClusterIP"; selector("cnpg.io/podRole"; "instance"); "none"; 5432),
-      "\($namespace)/\(.rwLoadBalancer.name)": service("LoadBalancer"; selector("cnpg.io/instanceRole"; "primary"); "Cluster"; 5432)
-    }
-    + if .cluster.instances < 2 then {}
-      else {"\($namespace)/\($cluster)-ro": service("ClusterIP"; selector("cnpg.io/instanceRole"; "replica"); "none"; 5432)}
-      end
-    + if .readLoadBalancer == null then {}
-      else {"\($namespace)/\(.readLoadBalancer.name)":
-              service("LoadBalancer"; selector("cnpg.io/podRole"; "instance"); "Local"; .readLoadBalancer.port)}
-      end;
+# Who logs in with a certificate, from pg_ident mappings and the certificate
+# lines: per mapping of a certificate line's map, its common name, its role,
+# and each database a certificate line opens to that role with that map, or
+# none.
+def certificate_logins($ident):
+  certificate_lines as $lines
+  | [$ident[] | . as $mapping
+     | select(any($lines[]; .map == $mapping.map))
+     | ([$lines[] | select(.map == $mapping.map and .role == $mapping.role) | .database]
+        | if . == [] then ["none"] else . end)[]
+     | {common_name: $mapping.system_user, role: $mapping.role, database: .}]
+  | unique;
 
 # The Kubernetes and k3s controllers, which create pods and other objects
 # from objects that other subjects write.
@@ -150,11 +111,15 @@ def controllers:
       "replicaset-controller", "replication-controller", "resourcequota-controller", "statefulset-controller"]
      | map("system:serviceaccount:kube-system:\(.)"));
 
-# The subjects that may hold a right that equals PostgreSQL superuser:
+# k3s installs Traefik with a Helm job per HelmChart, whose ServiceAccount
+# k3s binds to cluster-admin.
+def helm_install_jobs: ["helm-traefik", "helm-traefik-crd"] | map("system:serviceaccount:kube-system:\(.)");
+
+# The subjects that may hold the rights of the kubernetes section:
 # system:masters, the operator, the plugin, the instances, the API server,
-# cert-manager and its cainjector, and the controllers. The account names
-# are arguments so the violation tests can give their own; evidence.sh and
-# desired.sh give operator_account and plugin_account.
+# cert-manager and its cainjector, the controllers and k3s's Helm install
+# jobs. The account names are arguments so the violation tests can give
+# their own; evidence.sh and desired.sh give operator_account and plugin_account.
 def allowed_subjects($operator_account; $plugin_account):
   ["group:system:masters",
    "system:serviceaccount:\(.network.operatorNamespace):\($operator_account)",
@@ -162,19 +127,15 @@ def allowed_subjects($operator_account; $plugin_account):
    "system:serviceaccount:\(.cluster.namespace):\(.cluster.name)",
    "kube-apiserver",
    "system:serviceaccount:\(cert_manager_namespace):cert-manager",
-   "system:serviceaccount:\(cert_manager_namespace):cert-manager-cainjector"] + controllers;
+   "system:serviceaccount:\(cert_manager_namespace):cert-manager-cainjector"] + controllers + helm_install_jobs;
 
-# The subjects that may request certificates.
-def certificate_subjects: ["group:system:masters", "system:serviceaccount:\(cert_manager_namespace):cert-manager"] + controllers;
+# Also allowed to read the Secrets of the cluster's namespace: Traefik reads
+# Secrets in every namespace for the TLS certificates of the routes it serves.
+def secret_readers: ["system:serviceaccount:kube-system:traefik"];
 
-# Subjects allowed in one namespace only: in cert-manager's, its webhook may
-# also read and write Secrets, since it keeps its serving CA there.
-def allowed_in($namespace):
-  if $namespace == cert_manager_namespace then ["system:serviceaccount:\(cert_manager_namespace):cert-manager-webhook"]
-  else [] end;
-
-# The namespaces the evidence reads rights in: the cluster's, the operator's and cert-manager's.
-def component_namespaces: [.cluster.namespace, .network.operatorNamespace, cert_manager_namespace] | unique;
+# The subjects that may create certificates.
+def certificate_subjects:
+  ["group:system:masters", "system:serviceaccount:\(cert_manager_namespace):cert-manager"] + controllers + helm_install_jobs;
 
 # The namespaces where the operator and the plugin may read Secrets.
 def secret_namespaces: [.network.operatorNamespace, .cluster.namespace];

@@ -10,8 +10,7 @@ here=$(dirname "${BASH_SOURCE[0]}")
 source "$here/../lib/test.sh"
 
 values='{"cluster": {"name": "pg", "namespace": "databases", "instances": 3}, "caSecret": "client-ca",
-         "rwLoadBalancer": {"name": "pg-rw-lb"}, "readLoadBalancer": {"name": "pg-read-lb", "port": 5433},
-         "network": {"operatorNamespace": "cnpg-system", "otelNamespace": "otel"},
+         "rwLoadBalancer": {"name": "pg-rw-lb"}, "network": {"operatorNamespace": "cnpg-system"},
          "replication": {"commonName": "pg-replication"}, "databases": []}'
 
 # The node tools may be missing where the tests run.
@@ -41,11 +40,9 @@ done
 exits 'values that are not JSON' 'cluster: pg'
 same_text 'values that are not JSON say so' 1 "$(grep -c 'not JSON' <<<"$errors")"
 exits 'no values' ''
-same_text 'no values say they are not JSON' 1 "$(grep -c 'not JSON' <<<"$errors")"
+same_text 'no values say stdin is empty' 1 "$(grep -c 'stdin is empty' <<<"$errors")"
 exits 'values without the rw LoadBalancer' "$(jq -c 'del(.rwLoadBalancer)' <<<"$values")"
 same_text 'values without the rw LoadBalancer say what is needed' 1 "$(grep -c 'the desired state needs' <<<"$errors")"
-exits 'a read LoadBalancer without a port' "$(jq -c 'del(.readLoadBalancer.port)' <<<"$values")"
-same_text 'a read LoadBalancer without a port says what is needed' 1 "$(grep -c 'the desired state needs' <<<"$errors")"
 
 kubectl() { echo 'API denied' >&2; return 2; }
 export -f kubectl

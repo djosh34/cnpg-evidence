@@ -19,8 +19,6 @@ kubectl() {
       echo '{"items": [{"metadata": {"name": "databases"}}, {"metadata": {"name": "cnpg-system"}}]}' ;;
     "get nodes -o json")
       echo '{"items": [{"metadata": {"name": "node-a"}}]}' ;;
-    "get networkpolicies -n databases -o json")
-      echo '{"items": [{"metadata": {"name": "pg-ingress"}}]}' ;;
     "get secrets --all-namespaces -o json")
       echo '{"items": [{"metadata": {"namespace": "databases", "name": "pg-replication"}}]}' ;;
     "api-resources --api-group=traefik.io -o name") ;;
@@ -43,15 +41,15 @@ export -f kubectl
 section=$(bash "$here/kubernetes.sh" databases pg cnpg-system op plug cert-manager pg-1)
 
 same "alice, a spaced group and a quoted user read pg-replication" \
-  '{"pg-replication": ["alice", "group:db admins", "group:system:masters", "o'"'"'brien \"x\""], "all (list)": ["group:system:masters"], "all (watch)": ["group:system:masters"]}' \
-  "$(jq .namespaces.databases.read_secret <<<"$section")"
+  '["alice", "group:db admins", "group:system:masters", "o'"'"'brien \"x\""]' \
+  "$(jq .superuser_in_cluster_namespace <<<"$section")"
 same "cluster-admin holds every right" \
-  '["group:system:masters"]' "$(jq .namespaces.databases.exec_into_pods <<<"$section")"
+  '["group:system:masters"]' "$(jq .become_cluster_admin <<<"$section")"
 same "the operator reads no secrets" '[]' "$(jq .operator_reads_secrets_in <<<"$section")"
 same "the reasons name the bindings" \
   '{"alice": ["RBAC: allowed by RoleBinding \"read/databases\""], "group:db admins": ["RBAC: allowed by RoleBinding \"admins/databases\""],
     "group:system:masters": [""], "o'"'"'brien \"x\"": ["RBAC: allowed by RoleBinding \"read/databases\""]}' \
-  "$(jq '.granted_by.namespaces.databases.read_secret["pg-replication"]' <<<"$section")"
+  "$(jq '.granted_by.superuser_in_cluster_namespace' <<<"$section")"
 same "Traefik's IngressRoute and IngressRouteTCP are not served here" '["ingressroutes.traefik.io","ingressroutetcps.traefik.io"]' \
   "$(jq -c .not_served <<<"$section")"
 
@@ -63,7 +61,7 @@ kubectl() {
     "get clusterrolebindings -o json")
       echo '{"items": [{"metadata": {}, "subjects": [{"kind": "User", "name": "tcp-updater"}, {"kind": "User", "name": "tcp-patcher"}]}]}' ;;
     "get namespaces -o json") echo '{"items": [{"metadata": {"name": "databases"}}]}' ;;
-    "get nodes -o json" | "get networkpolicies -n databases -o json" | "get secrets --all-namespaces -o json") echo '{"items": []}' ;;
+    "get nodes -o json" | "get secrets --all-namespaces -o json") echo '{"items": []}' ;;
     "api-resources --api-group=traefik.io -o name")
       printf '%s\n' ingressroutes.traefik.io ingressroutetcps.traefik.io middlewares.traefik.io ;;
     "create -o json -f -")
@@ -76,8 +74,8 @@ kubectl() {
 }
 export -f kubectl
 section=$(bash "$here/kubernetes.sh" databases pg cnpg-system op plug cert-manager pg-1)
-same "an update-only and a patch-only holder of IngressRouteTCPs can open node ports" '["tcp-patcher","tcp-updater"]' \
-  "$(jq -c .can_open_node_ports <<<"$section")"
+same "an update-only and a patch-only holder of IngressRouteTCPs can write routes" '["tcp-patcher","tcp-updater"]' \
+  "$(jq -c .write_routes <<<"$section")"
 same "with both routes served, nothing is listed as not served" null "$(jq -c .not_served <<<"$section")"
 
 kubectl() {
@@ -104,6 +102,6 @@ kubectl() {
 }
 export -f kubectl
 same "no question, no review call" '[]' \
-  "$(bash "$here/kubernetes.sh" databases pg cnpg-system op plug cert-manager pg-1 | jq -c .impersonate)"
+  "$(bash "$here/kubernetes.sh" databases pg cnpg-system op plug cert-manager pg-1 | jq -c .become_cluster_admin)"
 
 finish

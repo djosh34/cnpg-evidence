@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs certificate and password login probes against every address of the
-# LoadBalancer Services.
-# Usage: login.sh NAMESPACE CLUSTER LB_SERVICE...
+# rw LoadBalancer Service.
+# Usage: login.sh NAMESPACE CLUSTER LB_SERVICE
 # Exit: 0 records collected (including failed probes), 2 collection error.
 set -euo pipefail
 shopt -s inherit_errexit
@@ -12,8 +12,7 @@ source "$here/../probe.sh"
 
 namespace=$1
 cluster=$2
-lb_services=("${@:3}")
-((${#lb_services[@]})) || die "no LoadBalancer Service given"
+lb_service=$3
 psql_command=(psql -w -X -At -c 'select current_user')
 
 cluster_state=$(kjson "$namespace" cluster "$cluster")
@@ -30,12 +29,9 @@ with_key() {
   printf '%s\n' "$key" | PGSSLCERT=/proc/self/fd/$certificate_fd python3 "$here/key.py" "$@"
 }
 
-targets=()
-for lb_service in "${lb_services[@]}"; do
-  service_targets=$(kjson "$namespace" service "$lb_service" | jq -r -f "$here/targets.jq")
-  [[ -n $service_targets ]] || die "service $lb_service has no load balancer address"
-  mapfile -t -O "${#targets[@]}" targets <<<"$service_targets"
-done
+service_targets=$(kjson "$namespace" service "$lb_service" | jq -r -f "$here/targets.jq")
+[[ -n $service_targets ]] || die "service $lb_service has no load balancer address"
+mapfile -t targets <<<"$service_targets"
 
 for target in "${targets[@]}"; do
   connection="host=${target%:*} port=${target##*:}"
@@ -49,9 +45,6 @@ for target in "${targets[@]}"; do
   deny "replication-cert-as-$role" "$target" "refused, the certificate CN does not map to $role" \
     "certificate authentication failed for user \"$role\"" \
     with_key "${psql_command[@]}" "$connection dbname=$database user=$role sslmode=require"
-  deny replication-cert-as-streaming_replica "$target" "refused by pg_hba reject for database $database" \
-    'pg_hba\.conf rejects connection' \
-    with_key "${psql_command[@]}" "$connection dbname=$database user=streaming_replica sslmode=require"
   allow control-replication-cert "$target" "logs in as streaming_replica to postgres (CNPG's fixed line)" \
     '^streaming_replica$' \
     with_key "${psql_command[@]}" "$connection dbname=postgres user=streaming_replica sslmode=require"
