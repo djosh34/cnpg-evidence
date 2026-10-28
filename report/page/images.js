@@ -1,39 +1,35 @@
-// Every evidence image: its file name, its words, its columns and how its rows
-// come from one side of a pair (see side() in compare.js).
+// Every evidence image: its file name, its words, its columns, its legend and
+// how its rows come from one side of a pair (see side() in compare.js).
 //
-// A row is {sort, cells}. Each cell is a list of values {text, state}; an empty
-// cell reads "None". The first cells name the row; their state marks the whole
-// row as extra or missing. Rows are sorted by sort on both sides, so a pair
-// keeps one row order. An image with inline: true writes the values of a
-// cell on one line, separated by commas.
+// A row is {cells}, with every: true when it stands for every instance. Each
+// cell is a list of values {text, state} or squares {mark, state}; an empty
+// cell reads "None". The first cells name the row; an extra row is red in
+// those cells only, and a missing row or value is not drawn. draw.js puts the
+// correct rows first and the rows with a red mark last, each group in
+// alphabetical order of its cells, and the values of a cell the same way. A
+// row with section comes in that section's place; a row with keep holds its
+// place in the order of keep instead.
+//
+// A column is a label, or {label, mark, group, wide} for a column of squares,
+// the columns of one group sharing a heading above them. A wide one has room
+// for names in place of a square. columns may be a
+// function of both documents, so both images of a pair get the same columns.
+// The legend lists, per side, the marks the image can show as [specimen,
+// words]. The specimen is a square 'on', 'off', 'on extra' or 'off extra',
+// {text} for a red value or {name} for a red row name.
 
-const KEY = 'Red: a value the desired image does not have. Red and struck through: a desired value missing here.';
 const NETWORK_SCOPE = 'This table covers ports 8000 and 9187. Database logins are shown in the login images.';
 const PLATFORM_DESIRED = 'The platform components that may hold these rights. Any other account must hold none of them.';
 const PLATFORM_ACTUAL = 'Every Kubernetes account that holds one of these rights, as the API server answers for it.';
-const SECRETS_NOTE = 'A namespace alone means every Secret in it.';
-const OBJECTS_NOTE = 'The objects are the cluster\'s CNPG objects, Endpoints, EndpointSlices and NetworkPolicies; All means every kind of them.';
+const SECRETS_NOTE = 'A square stands for every Secret in the namespace, a name for that Secret only.';
+const OBJECTS_NOTE = 'The objects are the cluster\'s CNPG objects, Endpoints, EndpointSlices and NetworkPolicies. A square stands for every kind of them, a name for that kind only.';
 
-const yes = state => [{ text: 'Yes', state }];
-const no = [{ text: 'No', state: '' }];
-const yesNo = state => (state === null ? no : yes(state));
+// Filled when the member is there, empty when it is not or only desired.
+const square = state => [{ mark: state !== null && state !== 'missing', state: state === 'missing' ? '' : state ?? '' }];
+const mark = label => ({ label, mark: true });
 const text = value => (typeof value === 'string' ? value : JSON.stringify(value));
 const entry = (value, state) => ({ text: text(value), state });
 const entries = list => list.map(item => entry(item.value, item.state));
-
-function byText(a, b) {
-  return a.text < b.text ? -1 : a.text > b.text ? 1 : 0;
-}
-
-// Rows sorted by their sort key, numbers before text.
-function sorted(rows) {
-  return rows.sort((a, b) => {
-    const x = a.sort;
-    const y = b.sort;
-    if (typeof x === 'number' && typeof y === 'number') return x - y;
-    return String(x) < String(y) ? -1 : String(x) > String(y) ? 1 : 0;
-  });
-}
 
 // --- evidence.sh ---
 
@@ -63,81 +59,92 @@ function accounts(s) {
         if (way.value === true) password.push(entry(`${db}, no password`, way.state));
       }
     }
+    const names = new Map();
+    for (const { key: db } of databases) {
+      for (const cn of s.items(['databases', db, 'logins', name, 'common_names'])) {
+        if (!names.has(cn.value)) names.set(cn.value, []);
+        names.get(cn.value).push(cn.state);
+      }
+    }
+    // A name is red only when none of its databases has it in the desired document.
+    const certificates = [...names].map(([cn, states]) => entry(cn, allState(states)));
     const rights = [];
     for (const [key, label] of RIGHTS) {
       const state = s.member(['postgres', key], name);
       if (state !== null) rights.push({ text: label, state });
     }
     return {
-      sort: name,
       cells: [
         [entry(name, role.state)],
-        yesNo(s.member(['postgres', 'can_log_in'], name)),
-        reaches.sort(byText),
-        owns.sort(byText),
-        yesNo(s.member(['postgres', 'superusers'], name)),
-        yesNo(s.member(['postgres', 'can_create_roles'], name)),
-        yesNo(s.member(['postgres', 'can_create_databases'], name)),
+        square(s.member(['postgres', 'can_log_in'], name)),
+        certificates,
+        reaches,
+        owns,
+        square(s.member(['postgres', 'superusers'], name)),
+        square(s.member(['postgres', 'can_create_roles'], name)),
+        square(s.member(['postgres', 'can_create_databases'], name)),
         rights,
-        yesNo(s.member(['postgres', 'have_password'], name)),
-        password.sort(byText),
+        square(s.member(['postgres', 'have_password'], name)),
+        password,
       ],
     };
   });
 }
 
-function certificateNames(s) {
-  const found = new Map();
-  for (const { key: db } of s.keys(['databases'])) {
-    for (const { key: role } of s.keys(['databases', db, 'logins'])) {
-      for (const cn of s.items(['databases', db, 'logins', role, 'common_names'])) {
-        const id = JSON.stringify([cn.value, role]);
-        if (!found.has(id)) found.set(id, { cn: cn.value, role, databases: [] });
-        found.get(id).databases.push(entry(db, cn.state));
-      }
-    }
-  }
-  return [...found.values()].map(({ cn, role, databases }) => {
-    const state = allState(databases.map(d => d.state));
-    return { sort: `${cn}\n${role}`, cells: [[entry(cn, state)], [entry(role, state)], databases.sort(byText)] };
-  });
-}
-
 function loginRules(s) {
   const rows = [];
-  const add = (file, order, item) => {
+  const parts = item => {
     const line = item.value;
     const number = line !== null && typeof line === 'object' && 'number' in line ? line.number : null;
     const words = line !== null && typeof line === 'object' && 'line' in line ? line.line : line;
-    rows.push({
-      // A desired line comes before the actual line that took its number.
-      sort: `${order}\n${String(number ?? '').padStart(6, '0')}\n${item.state === 'missing' ? 0 : 1}\n${text(words)}`,
-      cells: [[entry(file, item.state)], number === null ? [] : [entry(String(number), item.state)], [entry(words, item.state)]],
-    });
+    return { number, words: text(words), state: item.state };
   };
-  [['pg_hba', 1], ['pg_ident', 2]].forEach(([file, order]) => {
+  // pg_hba is known by number and words, so a new line and a line that moved
+  // are red there, and its rows keep their number order.
+  const hba = (file, items) => {
+    for (const { number, words, state } of items.map(parts)) {
+      if (state === 'missing') continue;
+      rows.push({
+        section: 1,
+        keep: `${file}\n${String(number ?? '').padStart(6, '0')}`,
+        cells: [[entry(file, '')], number === null ? [] : [entry(String(number), state)], [entry(words, state)]],
+      });
+    }
+  };
+  // PostgreSQL reads every line of a pg_ident map, so pg_ident is a list
+  // without numbers: only a line the desired side lacks is red.
+  const ident = (file, items) => {
+    const lines = items.map(parts);
+    const desired = new Set(lines.filter(l => l.state !== 'extra').map(l => l.words));
+    for (const { words, state } of lines) {
+      if (state === 'missing') continue;
+      rows.push({ section: 2, cells: [[entry(file, '')], [{ text: '', state: '' }], [entry(words, desired.has(words) ? '' : 'extra')]] });
+    }
+  };
+  [['pg_hba', hba], ['pg_ident', ident]].forEach(([file, add]) => {
     const path = ['details', file];
     // When the instances disagree, the lines come as one list per instance.
     if (Array.isArray(s.at(path)) || s.at(path) === undefined) {
-      s.items(path).forEach(item => add(file, order, item));
+      add(file, s.items(path));
     } else {
-      s.keys(path).forEach(({ key }) => s.items([...path, key]).forEach(item => add(`${file} on ${key}`, order, item)));
       // The one desired list the per-instance lists replace.
-      for (const { value, state } of s.values(path)) {
-        if (state === 'missing' && Array.isArray(value)) value.forEach(line => add(file, order, { value: line, state }));
-      }
+      const replaced = s.values(path).filter(v => v.state === 'missing' && Array.isArray(v.value)).flatMap(v => v.value.map(value => ({ value, state: 'missing' })));
+      s.keys(path).forEach(({ key }) => add(`${file} on ${key}`, [...s.items([...path, key]), ...replaced]));
     }
-    s.items(['details', `${file}_not_understood`]).forEach(item => add(`${file}, not understood`, order + 2, item));
   });
+  for (const [file, section] of [['pg_hba', 3], ['pg_ident', 4]]) {
+    for (const item of s.items(['details', `${file}_not_understood`])) {
+      if (item.state !== 'missing') rows.push({ section, cells: [[entry(`${file}, not understood`, '')], [], [entry(item.value, item.state)]] });
+    }
+  }
   return rows;
 }
 
 function clientCa(s) {
   const secret = entries(s.values(['client_ca', 'secret']));
   const certificates = s.items(['client_ca', 'certificates']);
-  if (!certificates.length) return [{ sort: '', cells: [secret, [], []] }];
+  if (!certificates.length) return [{ cells: [secret, [], []] }];
   return certificates.map(({ value, state }) => ({
-    sort: text(value.name),
     cells: [secret, [entry(value.name, state)], [entry(fingerprint(value.sha256_fingerprint), state)]],
   }));
 }
@@ -152,7 +159,7 @@ const instance = key => (key === '*' ? 'Every instance' : key);
 
 function encryption(s) {
   return s.keys(['tls']).map(pod => ({
-    sort: pod.key,
+    every: pod.key === '*',
     cells: [
       [entry(instance(pod.key), pod.state)],
       entries(s.values(['tls', pod.key, 'postgresql'])),
@@ -179,7 +186,7 @@ function network(s) {
       const ports = s.items(['network_policy', pod.key, source.key]).filter(p => mayReachScope(p.value));
       if (!ports.length) continue;
       rows.push({
-        sort: `${pod.key}\n${source.key}`,
+        every: pod.key === '*',
         cells: [
           [entry(instance(pod.key), pod.state)],
           [entry(source.key, source.state)],
@@ -191,13 +198,18 @@ function network(s) {
   return rows;
 }
 
+// Isolation is a protection: an empty square, a pod that shares the host's
+// ids, is red when the desired document does not allow it.
 function containerIsolation(s) {
-  const sharing = s.items(['pods_sharing_host_uids']);
+  const sharing = s.items(['pods_sharing_host_uids']).filter(p => p.state !== 'missing');
   const pods = s.desired ? ['*'] : s.items(['details', 'instances']).map(i => i.value);
   for (const pod of sharing) if (!pods.includes(pod.value)) pods.push(pod.value);
   return pods.map(pod => {
     const shares = sharing.filter(p => p.value === pod).map(p => p.state);
-    return { sort: pod, cells: [[entry(instance(pod), '')], shares.length ? [{ text: 'No', state: anyState(shares) }] : yes('')] };
+    return {
+      every: pod === '*',
+      cells: [[entry(instance(pod), '')], [{ mark: !shares.length, state: shares.length ? anyState(shares) : '' }]],
+    };
   });
 }
 
@@ -205,14 +217,14 @@ function operatorSecrets(s) {
   return [
     ['CNPG operator', 'operator_reads_secrets_in'],
     ['Backup plugin', 'plugin_reads_secrets_in'],
-  ].map(([who, key], i) => ({ sort: i, cells: [[entry(who, '')], entries(s.items(['kubernetes', key])).sort(byText)] }));
+  ].map(([who, key]) => ({ cells: [[entry(who, '')], entries(s.items(['kubernetes', key]))] }));
 }
 
 function versions(s) {
-  return s.keys(['software']).map(({ key }) => ({ sort: key, cells: [[entry(key, '')], entries(s.values(['software', key]))] }));
+  return s.keys(['software']).map(({ key }) => ({ cells: [[entry(key, '')], entries(s.values(['software', key]))] }));
 }
 
-// --- Kubernetes rights, one row per account ---
+// --- Kubernetes rights: one row per account, one square column per namespace under each right ---
 
 // An account as [name, namespace]: a ServiceAccount by its name and
 // namespace, a group or user by its name.
@@ -223,135 +235,140 @@ function account(subject) {
   return [subject, ''];
 }
 
-// Rows for the accounts that hold any right of columns. Each column gives, for
-// one subject, the values of its cell.
-function rightsTable(s, subjectsFrom, columns) {
-  const subjects = new Set();
-  for (const path of subjectsFrom(s)) for (const item of s.items(path)) subjects.add(item.value);
-  const rows = [];
-  for (const subject of subjects) {
-    const cells = columns.map(column => column(subject));
-    const held = cells.flat().filter(v => v.text !== 'No');
-    if (!held.length) continue;
-    const [name, ns] = account(subject);
-    const state = allState(held.map(v => v.state));
-    rows.push({ sort: `${ns}\n${name}`, cells: [[entry(name, state)], ns ? [entry(ns, state)] : [], ...cells] });
-  }
-  return rows;
-}
-
 const k8s = (...path) => ['kubernetes', ...path];
-const namespaces = s => s.keys(k8s('namespaces')).map(n => n.key);
+const held = state => state !== null && state !== 'missing';
 
-function inNamespaces(s, right) {
-  return subject => {
-    const out = [];
-    for (const ns of namespaces(s)) {
-      const state = s.member(k8s('namespaces', ns, right), subject);
-      if (state !== null) out.push(entry(ns, state));
-    }
-    return out;
-  };
-}
-
-// The Secrets of each namespace that subject can read or change. A namespace
-// alone stands for every Secret in it: a "*" in the desired document, one of
-// allKeys, or a right on each key the namespace has.
-function secrets(s, right, allKeys) {
-  return subject => {
-    const out = [];
-    for (const ns of namespaces(s)) {
-      const path = k8s('namespaces', ns, right);
-      const held = new Map();
-      for (const { key } of s.keys(path)) {
-        const state = s.member([...path, key], subject);
-        if (state !== null) held.set(key, state);
-      }
-      const keys = s.keys(path).map(k => k.key).filter(k => k !== '*' && !allKeys.includes(k));
-      const every = ['*', ...allKeys].some(k => held.has(k)) || (keys.length > 0 && keys.every(k => held.has(k)));
-      if (every) out.push({ text: ns, state: anyState([...held.values()]) });
-      else for (const key of keys) if (held.has(key)) out.push(entry(`${ns}: ${key === 'all (create)' ? 'new Secrets' : key}`, held.get(key)));
-    }
-    return out;
-  };
-}
-
-// The CNPG and network objects subject can change; "All" when it can change
-// every kind.
-function changeObjects(s) {
-  return subject => {
-    const out = [];
-    for (const ns of namespaces(s)) {
-      const kinds = s.keys(k8s('namespaces', ns, 'change'));
-      const held = [];
-      for (const { key } of kinds) {
-        const state = s.member(k8s('namespaces', ns, 'change', key), subject);
-        if (state !== null) held.push(entry(key, state));
-      }
-      if (held.length && held.length === kinds.length) out.push({ text: 'All', state: anyState(held.map(h => h.state)) });
-      else out.push(...held);
-    }
-    return out.sort(byText);
-  };
-}
-
-const holds = (s, key) => subject => yesNo(s.member(k8s(key), subject));
-
-// The paths whose subjects become rows.
-function namespaced(s, rights) {
-  const paths = [];
-  for (const ns of namespaces(s)) {
-    for (const right of rights) {
-      const path = k8s('namespaces', ns, right);
-      const value = s.at(path);
-      if (value === undefined || Array.isArray(value)) paths.push(path);
-      if (value === undefined || isObject(value)) for (const { key } of s.keys(path)) paths.push([...path, key]);
-    }
+// The namespaces of both documents that have right, so both images of a pair
+// have the same columns.
+function namespacesWith(docs, right) {
+  const found = new Set();
+  for (const doc of docs) {
+    for (const [ns, rights] of Object.entries(doc.kubernetes?.namespaces ?? {})) if (Object.hasOwn(rights, right)) found.add(ns);
   }
-  return paths;
+  return [...found].sort();
 }
 
-function platformPods(s) {
-  return rightsTable(s, () => namespaced(s, ['exec_into_pods', 'change_pods', 'run_pods']), [
-    inNamespaces(s, 'exec_into_pods'),
-    inNamespaces(s, 'change_pods'),
-    inNamespaces(s, 'run_pods'),
-  ]);
+// Every account a desired value lists: a list, an allowed set, or a map of them.
+function listedIn(value) {
+  if (Array.isArray(value)) return value;
+  if (isAllowedSet(value)) return value.allowed;
+  if (isObject(value)) return Object.values(value).flatMap(listedIn);
+  return [];
 }
 
-function platformSecrets(s) {
-  return rightsTable(s, () => namespaced(s, ['read_secret', 'write_secret', 'create_pg_tokens']), [
-    secrets(s, 'read_secret', ['all (list)', 'all (watch)']),
-    secrets(s, 'write_secret', []),
-    inNamespaces(s, 'create_pg_tokens'),
-  ]);
+// The accounts in the list at path, or in each list of the map at path.
+function subjectsAt(s, path) {
+  const lists = isObject(s.at(path)) ? s.keys(path).map(({ key }) => [...path, key]) : [path];
+  return lists.flatMap(list => s.items(list).map(item => item.value));
 }
 
-function platformSetup(s) {
-  return rightsTable(
-    s,
-    () => [...namespaced(s, ['change']), k8s('change_webhooks'), k8s('bind_or_escalate_roles'), k8s('impersonate')],
-    [changeObjects(s), holds(s, 'change_webhooks'), holds(s, 'bind_or_escalate_roles'), holds(s, 'impersonate')],
-  );
+// A right's cell, for one account and the right at path.
+const plainRight = (s, path, subject) => square(s.member(path, subject));
+
+// Filled when subject holds the right on every Secret of the namespace: a "*"
+// in the desired document, one of allKeys, or each Secret the namespace has.
+// Else the Secrets it holds the right on, or an empty square.
+function secretsRight(allKeys) {
+  return (s, path, subject) => {
+    const found = new Map();
+    for (const { key } of s.keys(path)) {
+      const state = s.member([...path, key], subject);
+      if (held(state)) found.set(key, state);
+    }
+    const keys = s.keys(path).map(k => k.key).filter(k => k !== '*' && !allKeys.includes(k));
+    if (['*', ...allKeys].some(k => found.has(k)) || (keys.length && keys.every(k => found.has(k)))) {
+      return [{ mark: true, state: anyState([...found.values()]) }];
+    }
+    const some = keys.filter(k => found.has(k)).map(k => entry(k === 'all (create)' ? 'new Secrets' : k, found.get(k)));
+    return some.length ? some : square(null);
+  };
 }
 
-function platformNodes(s) {
-  const rows = rightsTable(
-    s,
-    () => [k8s('can_open_node_ports'), k8s('proxy_to_nodes'), k8s('request_certificates')],
-    [holds(s, 'can_open_node_ports'), holds(s, 'proxy_to_nodes'), holds(s, 'request_certificates'), () => no],
-  );
+// Filled when subject can change every kind of object in the namespace, else
+// the kinds it can change, or an empty square.
+function objectsRight(s, path, subject) {
+  const kinds = s.keys(path);
+  const found = kinds.map(({ key }) => entry(key, s.member([...path, key], subject))).filter(e => held(e.state));
+  if (found.length && found.length === kinds.length) return [{ mark: true, state: anyState(found.map(e => e.state)) }];
+  return found.length ? found : square(null);
+}
+
+// A right is {key, label, namespaced, cell, wide}: a namespaced right gets a
+// column per namespace under its label, and a wide column has room for names.
+function rightColumns(rights) {
+  return docs => [
+    ...ACCOUNT_COLUMNS,
+    ...rights.flatMap(r => (r.namespaced ? namespacesWith(docs, r.key).map(ns => ({ ...mark(ns), group: r.label, wide: r.wide })) : [mark(r.label)])),
+  ];
+}
+
+// One row per account that holds any of rights. Only an account the desired
+// document does not list for any of them is red by name.
+function rightRows(rights) {
+  return (s, docs) => {
+    const paths = rights.flatMap(r => (r.namespaced ? namespacesWith(docs, r.key).map(ns => [r, k8s('namespaces', ns, r.key)]) : [[r, k8s(r.key)]]));
+    const known = new Set();
+    for (const r of rights) {
+      const values = r.namespaced ? Object.values(docs[0].kubernetes?.namespaces ?? {}).map(ns => ns[r.key]) : [docs[0].kubernetes?.[r.key]];
+      for (const value of values) for (const subject of listedIn(value)) known.add(subject);
+    }
+    const subjects = new Set(paths.flatMap(([, path]) => subjectsAt(s, path)));
+    const rows = [];
+    for (const subject of subjects) {
+      const cells = paths.map(([r, path]) => (r.cell ?? plainRight)(s, path, subject));
+      if (!cells.flat().some(v => v.mark || Object.hasOwn(v, 'text'))) continue;
+      const [name, ns] = account(subject);
+      const state = s.desired || known.has(subject) ? '' : 'extra';
+      rows.push({ cells: [[entry(name, state)], ns ? [entry(ns, state)] : [], ...cells] });
+    }
+    return rows;
+  };
+}
+
+const POD_RIGHTS = [
+  { key: 'exec_into_pods', label: 'Enter containers', namespaced: true },
+  { key: 'change_pods', label: 'Change pods', namespaced: true },
+  { key: 'run_pods', label: 'Start pods', namespaced: true },
+];
+
+const SECRET_RIGHTS = [
+  { key: 'read_secret', label: 'Read Secrets', namespaced: true, wide: true, cell: secretsRight(['all (list)', 'all (watch)']) },
+  { key: 'write_secret', label: 'Change Secrets', namespaced: true, wide: true, cell: secretsRight([]) },
+  { key: 'create_pg_tokens', label: 'Create tokens', namespaced: true },
+];
+
+const SETUP_RIGHTS = [
+  { key: 'change', label: 'Change objects', namespaced: true, wide: true, cell: objectsRight },
+  { key: 'change_webhooks', label: 'Change webhooks' },
+  { key: 'bind_or_escalate_roles', label: 'Grant rights' },
+  { key: 'impersonate', label: 'Impersonate' },
+];
+
+const NODE_RIGHTS = [
+  { key: 'can_open_node_ports', label: 'Open node ports' },
+  { key: 'proxy_to_nodes', label: 'Node agents' },
+  { key: 'request_certificates', label: 'Request certificates' },
+];
+
+// The accounts with node rights, then the host-network pods that can bind a
+// port below 1024.
+function platformNodes(s, docs) {
+  const off = square(null);
+  const rows = rightRows(NODE_RIGHTS)(s, docs).map(row => ({ cells: [...row.cells, off] }));
   for (const pod of s.items(['host_network_pods_that_can_bind_low_ports'])) {
     const [ns, name] = String(pod.value).includes('/') ? String(pod.value).split('/', 2) : ['', String(pod.value)];
-    rows.push({
-      sort: `${ns}\n${name}`,
-      cells: [[entry(`pod ${name}`, pod.state)], ns ? [entry(ns, pod.state)] : [], no, no, no, yes(pod.state)],
-    });
+    rows.push({ cells: [[entry(`pod ${name}`, pod.state)], ns ? [entry(ns, pod.state)] : [], off, off, off, square(pod.state)] });
   }
   return rows;
 }
 
 const ACCOUNT_COLUMNS = ['Account', 'Namespace'];
+
+// --- The legends: [specimen, words] per mark an image type can show ---
+
+const RED_VALUE = words => [{ text: 'Red value' }, words];
+const RED_ACCOUNT = [{ name: 'Red account' }, 'An account the desired image does not list'];
+const BEYOND = ['on extra', 'Holds the right, but the desired image does not allow it'];
 
 const EVIDENCE = [
   {
@@ -362,36 +379,38 @@ const EVIDENCE = [
     desired: 'The database accounts of desired.yaml and of CNPG, with the databases they reach and the rights they hold.',
     actual: 'Every database account in the primary\'s catalog, with the databases its login rules let it reach and the rights it holds.',
     noun: ['database account', 'database accounts'],
-    columns: ['Account', 'Logs in', 'Reaches', 'Owns', 'Superuser', 'Create roles', 'Create databases', 'Other rights', 'Password stored', 'Password login'],
+    columns: ['Account', mark('Logs in'), 'Certificate names', 'Reaches', 'Owns', mark('Superuser'), mark('Create roles'), mark('Create databases'), 'Other rights', mark('Password stored'), 'Password login'],
     names: 1,
     rows: accounts,
+    legend: {
+      desired: [['on', 'Holds the right'], ['off', 'Does not hold the right']],
+      actual: [
+        ['on', 'Holds the right'],
+        ['off', 'Does not hold the right'],
+        ['on extra', 'Holds the right, but the desired image does not give it'],
+        RED_VALUE('A certificate name, database or right the desired image does not give the account'),
+        [{ name: 'Red account' }, 'An account the desired image does not have'],
+      ],
+    },
   },
   {
-    name: '02-certificate-names',
-    sections: ['databases'],
-    title: 'Certificate names and the accounts they log in as',
-    control: 'A client certificate name maps to one account, and that account reaches one database.',
-    desired: 'The certificate names of desired.yaml and CNPG\'s replication name, with the account and databases each may log in to.',
-    actual: 'Every certificate name the login rules map to an account, with the databases it reaches.',
-    noun: ['certificate name', 'certificate names'],
-    columns: ['Certificate name', 'Account', 'Databases'],
-    names: 1,
-    rows: certificateNames,
-  },
-  {
-    name: '03-login-rules',
+    name: '02-login-rules',
     sections: ['details'],
     title: 'Login rules',
     control: 'PostgreSQL has only the approved login rules, in the approved order.',
-    desired: 'The pg_hba and pg_ident lines of CNPG and the sample chart, numbered in the order PostgreSQL matches them.',
-    actual: 'The pg_hba and pg_ident lines every instance has loaded, numbered in the order PostgreSQL matches them. The first matching pg_hba line decides a login.',
+    desired: 'The pg_hba and pg_ident lines of CNPG and the sample chart. The pg_hba lines are numbered in the order PostgreSQL matches them.',
+    actual: 'The pg_hba and pg_ident lines every instance has loaded. The pg_hba lines are numbered in the order PostgreSQL matches them, and the first matching line decides a login.',
     noun: ['line', 'lines'],
     columns: ['File', 'Number', 'Line'],
     names: 1,
     rows: loginRules,
+    legend: {
+      desired: [],
+      actual: [[{ text: 'Red line' }, 'A line the desired image does not have. A pg_hba line counts by its number, so a line that moved is red too.']],
+    },
   },
   {
-    name: '04-client-ca',
+    name: '03-client-ca',
     sections: ['client_ca'],
     title: 'Client certificate authority',
     control: 'Only the approved CA signs certificates that can log in.',
@@ -401,9 +420,10 @@ const EVIDENCE = [
     columns: ['Secret', 'Certificate', 'SHA-256 fingerprint'],
     names: 0,
     rows: clientCa,
+    legend: { desired: [], actual: [RED_VALUE('A Secret or certificate the desired image does not have')] },
   },
   {
-    name: '05-encryption',
+    name: '04-encryption',
     sections: ['tls'],
     title: 'Encrypted connections',
     control: 'Every instance accepts only TLS 1.3 on PostgreSQL and answers with TLS on metrics.',
@@ -413,9 +433,10 @@ const EVIDENCE = [
     columns: ['Instance', 'PostgreSQL 5432, lowest TLS', 'Metrics 9187, TLS'],
     names: 1,
     rows: encryption,
+    legend: { desired: [], actual: [RED_VALUE('A TLS version or answer the desired image does not have')] },
   },
   {
-    name: '06-network',
+    name: '05-network',
     sections: ['network_policy'],
     title: 'Network access to the instances',
     control: 'From other namespaces, only the CNPG operator reaches the instances on 8000, and only the OTel collectors on 9187.',
@@ -424,21 +445,29 @@ const EVIDENCE = [
     columns: ['Instance', 'Source', 'Ports'],
     names: 2,
     rows: network,
+    legend: {
+      desired: [],
+      actual: [RED_VALUE('A port the desired image does not allow from this source'), [{ name: 'Red source' }, 'A source the desired image does not have']],
+    },
   },
   {
-    name: '07-container-isolation',
+    name: '06-container-isolation',
     sections: ['pods_sharing_host_uids'],
     title: 'Container isolation',
     control: 'Each instance runs in its own user namespace, so its uid 26 is no user on the host.',
     desired: 'Every instance pod sets hostUsers: false.',
     actual: 'Every instance pod, and whether it sets hostUsers: false.',
     noun: ['instance', 'instances'],
-    columns: ['Instance', 'Own user namespace'],
+    columns: ['Instance', mark('Own user namespace')],
     names: 1,
     rows: containerIsolation,
+    legend: {
+      desired: [['on', 'Runs in its own user namespace']],
+      actual: [['on', 'Runs in its own user namespace'], ['off extra', 'Shares its user ids with the host']],
+    },
   },
   {
-    name: '08-operator-secrets',
+    name: '07-operator-secrets',
     sections: ['kubernetes'],
     title: 'Where the operator and the plugin read Secrets',
     control: 'The CNPG operator and the backup plugin read Secrets only in the operator\'s and the cluster\'s namespaces.',
@@ -447,60 +476,80 @@ const EVIDENCE = [
     columns: ['Component', 'Namespaces'],
     names: 1,
     rows: operatorSecrets,
+    legend: { desired: [], actual: [RED_VALUE('A namespace the desired image does not allow')] },
   },
   {
-    name: '09-platform-pods',
+    name: '08-platform-pods',
     sections: ['kubernetes'],
     title: 'Platform access: containers and pods',
     control: 'Only approved platform components can enter the instance containers, change their pods or start pods next to them.',
     desired: PLATFORM_DESIRED,
     actual: PLATFORM_ACTUAL,
     noun: ['account', 'accounts'],
-    inline: true,
-    columns: [...ACCOUNT_COLUMNS, 'Enter containers', 'Change pods', 'Start pods'],
+    columns: rightColumns(POD_RIGHTS),
     names: 2,
-    rows: platformPods,
+    rows: rightRows(POD_RIGHTS),
+    legend: {
+      desired: [['on', 'May hold the right in this namespace'], ['off', 'Must not hold the right in this namespace']],
+      actual: [['on', 'Holds the right in this namespace'], ['off', 'Does not hold the right in this namespace'], BEYOND, RED_ACCOUNT],
+    },
   },
   {
-    name: '10-platform-secrets',
+    name: '09-platform-secrets',
     sections: ['kubernetes'],
     title: 'Platform access: Secrets',
     control: 'Only approved platform components can read or change the cluster\'s Secrets or create tokens for its account.',
     desired: `${PLATFORM_DESIRED} ${SECRETS_NOTE}`,
     actual: `${PLATFORM_ACTUAL} ${SECRETS_NOTE}`,
     noun: ['account', 'accounts'],
-    inline: true,
-    columns: [...ACCOUNT_COLUMNS, 'Read Secrets', 'Change Secrets', 'Create tokens'],
+    columns: rightColumns(SECRET_RIGHTS),
     names: 2,
-    rows: platformSecrets,
+    rows: rightRows(SECRET_RIGHTS),
+    legend: {
+      desired: [['on', 'May hold the right in this namespace'], ['off', 'Must not hold the right in this namespace']],
+      actual: [
+        ['on', 'Holds the right in this namespace'],
+        ['off', 'Does not hold the right in this namespace'],
+        BEYOND,
+        RED_VALUE('A Secret the desired image does not allow the account'),
+        RED_ACCOUNT,
+      ],
+    },
   },
   {
-    name: '11-platform-setup',
+    name: '10-platform-setup',
     sections: ['kubernetes'],
     title: 'Platform access: cluster setup',
     control: 'Only approved platform components can change the CNPG objects, the webhooks or role bindings, or act as another account.',
     desired: `${PLATFORM_DESIRED} ${OBJECTS_NOTE}`,
     actual: `${PLATFORM_ACTUAL} ${OBJECTS_NOTE}`,
     noun: ['account', 'accounts'],
-    inline: true,
-    columns: [...ACCOUNT_COLUMNS, 'Change objects', 'Change webhooks', 'Grant rights', 'Impersonate'],
+    columns: rightColumns(SETUP_RIGHTS),
     names: 2,
-    rows: platformSetup,
+    rows: rightRows(SETUP_RIGHTS),
+    legend: {
+      desired: [['on', 'May hold the right'], ['off', 'Must not hold the right']],
+      actual: [['on', 'Holds the right'], ['off', 'Does not hold the right'], BEYOND, RED_VALUE('A kind of object the desired image does not allow the account'), RED_ACCOUNT],
+    },
   },
   {
-    name: '12-platform-nodes-certificates',
+    name: '11-platform-nodes-certificates',
     sections: ['kubernetes', 'host_network_pods_that_can_bind_low_ports'],
     title: 'Platform access: nodes and certificates',
     control: 'Only approved platform components can open ports on the nodes, reach the node agents or request certificates. No host-network pod can bind a port below 1024.',
     desired: PLATFORM_DESIRED,
     actual: `${PLATFORM_ACTUAL} Host-network pods that can bind a port below 1024 are listed as pods.`,
     noun: ['account or pod', 'accounts and pods'],
-    columns: [...ACCOUNT_COLUMNS, 'Open node ports', 'Node agents', 'Request certificates', 'Bind low ports'],
+    columns: docs => [...rightColumns(NODE_RIGHTS)(docs), mark('Bind low ports')],
     names: 2,
     rows: platformNodes,
+    legend: {
+      desired: [['on', 'May hold the right'], ['off', 'Must not hold the right']],
+      actual: [['on', 'Holds the right'], ['off', 'Does not hold the right'], BEYOND, [{ name: 'Red account or pod' }, 'An account or pod the desired image does not list']],
+    },
   },
   {
-    name: '13-versions',
+    name: '12-versions',
     sections: ['software'],
     actualOnly: true,
     title: 'Versions',
@@ -509,6 +558,7 @@ const EVIDENCE = [
     columns: ['Software', 'Version'],
     names: 1,
     rows: versions,
+    legend: { actual: [] },
   },
 ];
 
@@ -543,10 +593,14 @@ function hostCheckImage(id) {
     columns: ['Check', 'Value'],
     names: 1,
     raw: ['checks', id, 'raw'],
+    legend: {
+      desired: [],
+      actual: [RED_VALUE('A value other than the one the check passes with'), [{ name: 'Red check' }, 'A check the desired image does not have']],
+    },
     rows: s => {
       const row = s.items(['checks']).find(r => r.value?.id === id);
       if (!row) return [];
-      return [{ sort: id, cells: [[entry(id, row.state)], entries(s.values(['checks', id, 'value']))] }];
+      return [{ cells: [[entry(id, row.state)], entries(s.values(['checks', id, 'value']))] }];
     },
   };
 }
@@ -565,7 +619,6 @@ function probes(group) {
     .map(row => {
       const name = row.value.probe;
       return {
-        sort: name,
         cells: [[entry(name, row.state)], entries(s.values(['probes', name, 'expected'])), entries(s.values(['probes', name, 'value']))],
       };
     });
@@ -598,6 +651,10 @@ const PROVE = [
   columns: ['Attempt', 'Must be', 'Result'],
   names: 1,
   rows: probes(image.name),
+  legend: {
+    desired: [],
+    actual: [RED_VALUE('A result other than the one the attempt must get'), [{ name: 'Red attempt' }, 'An attempt the desired image does not have']],
+  },
 }));
 
 // The images of a source. host-check has one per check, from both documents.

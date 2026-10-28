@@ -62,7 +62,7 @@ bash scripts/test.sh
 - `host-check.sh` reads one node: accounts with the postgres uid or gid, sudoers, directory modes, SELinux, subordinate ids and low ports. It shows the host side of rule 6. It only reads.
 - `prove.sh` tries what rules 1, 2, 5 and 6 forbid: password logins, certificate logins as the wrong role, connections from a pod in another namespace, and file and socket access as the host postgres uid. Each attempt must fail with the expected denial, and two control attempts must succeed.
 - `desired.sh` builds, from `desired.yaml` alone, a document of the same shape as each script's output that holds the desired values. `compare.sh` lists where an actual document differs from it. The scripts' own checks stay the verdict.
-- `cnpg-report` draws one desired and one actual document of the same script as PNG images, a desired and an actual image for each piece of evidence. On the actual image, a value only the actual document has is red, and a desired value the actual document lacks is red and struck through. It needs no cluster, network or OS library, so the scripts can run on the cluster and the images can be drawn elsewhere from the JSON files.
+- `cnpg-report` draws one desired and one actual document of the same script as PNG images, a desired and an actual image for each piece of evidence. On the actual image, every value or right beyond the desired document is red, and the image says Passed or Failed. It needs no cluster, network or OS library, so the scripts can run on the cluster and the images can be drawn elsewhere from the JSON files.
 
 ## Files
 

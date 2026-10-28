@@ -6,7 +6,7 @@ How to get, run and read `cnpg-report` is in [report.md](../docs/report.md). Thi
 
 The page is plain HTML, one CSS file and plain JS, with no build step. A caller loads `page/index.html` in Chrome, passes it the documents of one script, and saves each sheet the page draws as one PNG.
 
-Each image is one table. A desired image shows the values of a desired document from `scripts/desired/desired.sh`; its actual image shows the values of the script's actual document in the same columns and row order. On the actual image, a value only the actual document has is red, and a desired value it lacks is red and struck through. A difference marks a value, not a failed check: the scripts' own checks stay the verdict, and no image says passed or failed.
+Each image is one table. A desired image shows the values of a desired document from `scripts/desired/desired.sh`; its actual image shows the values of the script's actual document in the same columns. Every yes or no is a square. On the actual image, a value or held right beyond the desired document is red, an extra row has a red name, and a protection that is off is a red empty square. What the actual document lacks is not drawn. Each actual image says Failed when it shows a red mark and Passed when it shows none, and each image has a legend of the marks it can show. [report.md](../docs/report.md#reading-the-images) describes the marks for the reader.
 
 ## Files
 
@@ -15,8 +15,8 @@ Each image is one table. A desired image shows the values of a desired document 
 | `page/index.html` | The page; loads the CSS and the three scripts |
 | `page/styles.css` | The look of every image |
 | `page/compare.js` | The comparison of a desired and an actual document, and the reader the images use |
-| `page/images.js` | Every image: file name, words, columns and rows |
-| `page/draw.js` | `draw()`: checks the documents, draws the sheets and lines up each pair |
+| `page/images.js` | Every image: file name, words, columns, legend and rows |
+| `page/draw.js` | `draw()`: checks the documents, leaves out what actual lacks, orders the rows, sets Passed or Failed, draws the sheets and lines up each pair |
 | `page/fonts/` | Sofia Sans, Sofia Sans Semi Condensed and Sofia Sans Condensed, with their licence `OFL.txt` |
 | `samples/` | Example documents: desired, clean and failing for each script. All values are invented. |
 | `test/` | Unit tests of the comparison and the images, and the test of the built binary |
@@ -64,21 +64,20 @@ Both images of a pair take their column widths from the desired table, so a pair
 
 ## Images
 
-`evidence.sh`, 12 pairs and one actual image:
+`evidence.sh`, 11 pairs and one actual image:
 
-- `evidence-01-accounts-desired.png`, `evidence-01-accounts-actual.png`
-- `evidence-02-certificate-names-desired.png`, `-actual.png`
-- `evidence-03-login-rules-desired.png`, `-actual.png`
-- `evidence-04-client-ca-desired.png`, `-actual.png`
-- `evidence-05-encryption-desired.png`, `-actual.png`
-- `evidence-06-network-desired.png`, `-actual.png`
-- `evidence-07-container-isolation-desired.png`, `-actual.png`
-- `evidence-08-operator-secrets-desired.png`, `-actual.png`
-- `evidence-09-platform-pods-desired.png`, `-actual.png`
-- `evidence-10-platform-secrets-desired.png`, `-actual.png`
-- `evidence-11-platform-setup-desired.png`, `-actual.png`
-- `evidence-12-platform-nodes-certificates-desired.png`, `-actual.png`
-- `evidence-13-versions-actual.png` only: versions have no desired value.
+- `evidence-01-accounts-desired.png`, `evidence-01-accounts-actual.png`: with the certificate names that log in as each account.
+- `evidence-02-login-rules-desired.png`, `-actual.png`
+- `evidence-03-client-ca-desired.png`, `-actual.png`
+- `evidence-04-encryption-desired.png`, `-actual.png`
+- `evidence-05-network-desired.png`, `-actual.png`
+- `evidence-06-container-isolation-desired.png`, `-actual.png`
+- `evidence-07-operator-secrets-desired.png`, `-actual.png`
+- `evidence-08-platform-pods-desired.png`, `-actual.png`
+- `evidence-09-platform-secrets-desired.png`, `-actual.png`
+- `evidence-10-platform-setup-desired.png`, `-actual.png`
+- `evidence-11-platform-nodes-certificates-desired.png`, `-actual.png`
+- `evidence-12-versions-actual.png` only: versions have no desired value.
 
 `host-check.sh`, one pair per check of the node file, named with its `node` and the check `id`:
 
@@ -94,7 +93,15 @@ The network images cover ports 8000 and 9187 and say so; logins on 5432 are in t
 
 ## The comparison
 
-`page/compare.js` follows the rule of `scripts/desired/compare.jq`, described in [desired.md](../docs/desired.md#the-comparison): skipped top-level keys and `raw`, allowed sets, `"*"` maps, and rows compared by identity, so an extra row is red, a missing row is struck through, and a moved pg_hba or pg_ident line shows as one missing and one extra row for each line whose number changed. The tests check that it finds the same differences as `compare.sh` on every sample and on each test case.
+`page/compare.js` follows the rule of `scripts/desired/compare.jq`, described in [desired.md](../docs/desired.md#the-comparison): skipped top-level keys and `raw`, allowed sets, `"*"` maps, and rows compared by identity. The tests check that it finds the same differences as `compare.sh` on every sample and on each test case.
+
+The images then apply the rules of the report on top of those differences:
+
+- `draw.js` leaves out every row and value that only the desired document has.
+- A square is red when its right is held and the comparison found it extra. An allowed right that is not held stays a normal empty square. The container isolation square is a protection: a pod that shares the host's ids is a red empty square.
+- An extra row is red only in the cells that name it. On the platform images an account counts as extra when the desired document lists it for none of the image's rights.
+- `draw.js` puts the correct rows first and the rows with a red mark last, each group sorted by its cells from the first column on, and sorts the values of each cell the same way. pg_hba rows keep their line-number order. pg_ident lines are compared as a list without numbers, so only a line the desired document lacks is red.
+- An actual image is Failed when any value on it is red, else Passed.
 
 ## Tests
 
