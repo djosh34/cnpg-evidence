@@ -10,7 +10,7 @@ kubectl() {
   local pod=pg-2
   [[ " $* " != *" pg-1 "* ]] || pod=pg-1
   case "$*" in
-    "exec -i -n databases "*" -c postgres -- psql "*)
+    "exec -i -n databases "*" -c postgres -- env -i psql "*)
       grep -q "ssl_min_protocol_version" || return 1
       if [[ $pod == pg-1 ]]; then echo '{"ssl": "on", "min_protocol_version": "TLSv1.3"}'
       else echo '{"ssl": "off", "min_protocol_version": "TLSv1.2"}'; fi ;;

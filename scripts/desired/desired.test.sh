@@ -50,7 +50,7 @@ evidence=$(bash "$here/desired.sh" --ca <(echo "$ca") <<<"$values")
 same "evidence: what it is" '{"kind": "desired", "source": "evidence", "cluster": {"name": "pg", "namespace": "databases"}}' \
   "$(jq '{kind, source, cluster}' <<<"$evidence")"
 same_text "evidence: no verdict, no collection time and no versions" \
-  "cluster postgres databases client_ca tls network_policy kubernetes pods_sharing_host_uids host_network_pods_that_can_bind_low_ports details" \
+  "cluster postgres databases client_ca tls network_policy ports kubernetes pods_sharing_host_uids host_network_pods_that_can_bind_low_ports details" \
   "$(jq -r 'del(.kind, .source) | keys_unsorted | join(" ")' <<<"$evidence")"
 same "evidence: every role of the values, and only CNPG's roles hold rights" \
   '{"roles": ["billing", "cnpg_metrics_exporter", "orders", "postgres", "streaming_replica"], "have_password": [],
@@ -67,6 +67,17 @@ same "evidence: every instance pod under *" '{"*": {"postgresql": "TLSv1.3", "me
 same "evidence: network sources under *" '["*"]' "$(jq '.network_policy | keys' <<<"$evidence")"
 same "evidence: the operator's and OTel's sources are named from the values" '{"cnpg-system operator": [8000], "otel": [9187]}' \
   "$(jq '.network_policy["*"] | {"cnpg-system operator", otel}' <<<"$evidence")"
+same "evidence: CNPG's Services and the rw LoadBalancer, no node port, no host port" \
+  '{"services": {"databases/pg-rw-lb": {"type": "LoadBalancer", "selector": "cnpg.io/cluster=pg,cnpg.io/instanceRole=primary",
+                  "traffic_policy": "Cluster", "ports": ["5432 -> 5432"], "node_ports": [], "health_check_port": "none", "external_ips": []}},
+    "names": ["databases/pg-r", "databases/pg-ro", "databases/pg-rw", "databases/pg-rw-lb"], "host_ports": {"*": []}}' \
+  "$(jq '.ports | {services: {"databases/pg-rw-lb": .services["databases/pg-rw-lb"]}, names: (.services | keys), host_ports}' <<<"$evidence")"
+same "evidence: the read LoadBalancer on its port to every instance, with a health check port" \
+  '{"type": "LoadBalancer", "selector": "cnpg.io/cluster=pg,cnpg.io/podRole=instance", "traffic_policy": "Local",
+    "ports": ["5433 -> 5432"], "node_ports": [], "health_check_port": "present", "external_ips": []}' \
+  "$(jq -c '.readLoadBalancer = {name: "pg-read-lb", port: 5433}' <<<"$values" | bash "$here/desired.sh" --ca <(echo "$ca") |
+     jq '.ports.services["databases/pg-read-lb"]')"
+exits "a read LoadBalancer without a port" 2 "$(jq -c '.readLoadBalancer = {name: "pg-read-lb"}' <<<"$values")" --ca <(echo "$ca")
 same "evidence: rights are allowed sets" \
   '{"exec": true, "secrets": true, "webhook only in cert-manager": {"cert-manager": true, "cnpg-system": false, "databases": false}, "operator": ["cnpg-system", "databases"]}' \
   "$(jq '.kubernetes as $k | {
@@ -74,7 +85,7 @@ same "evidence: rights are allowed sets" \
       secrets: ($k.namespaces.databases.read_secret["*"].allowed | index("group:system:masters") != null),
       "webhook only in cert-manager": ($k.namespaces | map_values(.run_pods.allowed | any(endswith("cert-manager-webhook")))),
       operator: $k.operator_reads_secrets_in.allowed}' <<<"$evidence")"
-same_text "evidence: rights in the cluster's namespace only" "change create_pg_tokens" \
+same_text "evidence: rights in the cluster's namespace only" "change create_pg_tokens port_forward" \
   "$(jq -r '[.kubernetes.namespaces | .databases, .["cnpg-system"] | keys - ["exec_into_pods", "change_pods", "run_pods", "read_secret", "write_secret"] | .[]] | join(" ")' <<<"$evidence")"
 same "evidence: numbered pg_hba lines with the values' lines before the reject" \
   '[{"number": 6, "line": "hostssl orders orders all cert map=clients clientcert=verify-full"},

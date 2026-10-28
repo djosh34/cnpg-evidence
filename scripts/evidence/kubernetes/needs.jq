@@ -17,7 +17,7 @@
 # Input: {subjects, named_in, namespaces, namespace, cluster, component_namespaces,
 #         secrets: {<namespace>: [name]}, instance_pods, network_policies, nodes,
 #         accounts: [{namespace, name}], operator_namespace, operator_account,
-#         plugin_account, ingress_routes}
+#         plugin_account, ingress_routes: the Traefik route resources the cluster serves}
 
 def write: "create", "update", "patch";
 
@@ -36,13 +36,15 @@ def rights_in_component_namespace($secrets):
 
 # The instance pods, their ServiceAccount token, the objects that configure
 # the cluster, and the Endpoints and EndpointSlices, which decide where the
-# cluster's Services send connections, in the cluster's namespace.
+# cluster's Services send connections, in the cluster's namespace. A
+# port-forward is opened by the kubelet inside the pod, past the NetworkPolicy.
 def rights_in_cluster_namespace($cluster; $pods; $policies):
   [
     ($pods[]
      | {right: "exec_into_pods", verb: ("get", "create"), resource: "pods/\(.)", subresource: ("exec", "attach")},
        {right: "exec_into_pods", verb: "patch", resource: "pods/\(.)", subresource: "ephemeralcontainers"},
-       {right: "change_pods", verb: ("update", "patch"), resource: "pods/\(.)"}),
+       {right: "change_pods", verb: ("update", "patch"), resource: "pods/\(.)"},
+       {right: "port_forward", verb: ("get", "create"), resource: "pods/\(.)", subresource: "portforward"}),
     {right: "create_pg_tokens", verb: "create", resource: "serviceaccounts/\($cluster)", subresource: "token"},
     {right: "change clusters", verb: "create", resource: "clusters.postgresql.cnpg.io"},
     {right: "change clusters", verb: ("update", "patch"), resource: "clusters.postgresql.cnpg.io/\($cluster)"},
@@ -74,8 +76,8 @@ def impersonate_account: {right: "impersonate", verb: "impersonate", resource: "
 
 # A pod can listen on a node port (hostPort, hostNetwork); a Service of type
 # LoadBalancer gets a port on every node from servicelb; an Ingress or a
-# Traefik IngressRoute is served on the ingress controller's ports on the
-# nodes. A changed workload can do the same as a new one.
+# Traefik IngressRoute or IngressRouteTCP is served on the ingress
+# controller's ports on the nodes. A changed workload can do the same as a new one.
 def rights_in_every_namespace($ingress_routes):
   [
     {right: "run_pods", verb: write,
@@ -83,7 +85,7 @@ def rights_in_every_namespace($ingress_routes):
                 "replicasets.apps", "jobs.batch", "cronjobs.batch")},
     {right: "change_services", verb: write, resource: "services"},
     {right: "change_ingresses", verb: write,
-     resource: ("ingresses.networking.k8s.io", if $ingress_routes then "ingressroutes.traefik.io" else empty end)},
+     resource: ("ingresses.networking.k8s.io", $ingress_routes[])},
     {right: "create_certificates", verb: "create",
      resource: ("certificates.cert-manager.io", "certificaterequests.cert-manager.io")},
     {right: "create_certificates", verb: ("update", "patch"), resource: "certificates.cert-manager.io"}

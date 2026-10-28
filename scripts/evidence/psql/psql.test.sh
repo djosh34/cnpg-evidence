@@ -14,12 +14,12 @@ export -f kubectl
 actual=$(echo 'SELECT 1;' | bash "$here/psql.sh" databases pg-1)
 expected=$(cat <<'EOF'
 {
-  "args": "exec -i -n databases pg-1 -c postgres -- psql -XAtq -v ON_ERROR_STOP=1 -d postgres",
+  "args": "exec -i -n databases pg-1 -c postgres -- env -i psql -XAtq -v ON_ERROR_STOP=1 -h /controller/run -p 5432 -U postgres -d postgres",
   "sql": "SELECT 1;"
 }
 EOF
 )
-same "runs psql as postgres in the pod with the SQL on stdin" "$expected" "$actual"
+same "runs psql in the pod with an empty environment, as postgres on the socket, with the SQL on stdin" "$expected" "$actual"
 
 kubectl() { echo 'not json'; }
 export -f kubectl

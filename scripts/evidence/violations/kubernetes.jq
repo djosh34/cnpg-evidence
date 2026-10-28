@@ -1,7 +1,8 @@
-# Rules 7 and 8 for the kubernetes section: only the allowed subjects hold a
-# right that equals PostgreSQL superuser, in the namespaces of the cluster,
-# the operator and cert-manager or anywhere, and the operator and the plugin
-# read secrets only in their own and the cluster's namespace.
+# Rules 7, 8 and 9 for the kubernetes section: only the allowed subjects hold
+# a right that equals PostgreSQL superuser, in the namespaces of the cluster,
+# the operator and cert-manager or anywhere, or can port-forward to the
+# instance pods, and the operator and the plugin read secrets only in their
+# own and the cluster's namespace.
 #
 # Input: {facts, values, granted_by, operator_account, plugin_account}, granted_by
 # from kubernetes/kubernetes.jq and optional. Output: a list of sentences.
@@ -26,8 +27,9 @@ include "expected";
     [$granted_by | getpath($path + [$holder])? // [] | .[] | ltrimstr("RBAC: ") | select(. != "")]
     | if . == [] then "" else " (\(join("; ")))" end;
 
-  def not_allowed($path; $allowed_subjects; $says):
-    $k | getpath($path) // [] | extra($allowed_subjects) | "rule 8: \(.) can \($says)\(because($path; .))";
+  def not_allowed_by($rule; $path; $allowed_subjects; $says):
+    $k | getpath($path) // [] | extra($allowed_subjects) | "rule \($rule): \(.) can \($says)\(because($path; .))";
+  def not_allowed($path; $allowed_subjects; $says): not_allowed_by(8; $path; $allowed_subjects; $says);
 
   def secret_violations($rights; $allowed_subjects; $namespace):
     ($rights.read_secret | keys_unsorted[]
@@ -54,6 +56,7 @@ include "expected";
        not_allowed(["namespaces", $in, "change_pods"]; $allowed_here; "change pods in \($in)"),
        not_allowed(["namespaces", $in, "run_pods"]; $allowed_here; "create or change pods or workloads in \($in)"),
        secret_violations($rights; $allowed_here; $in),
+       not_allowed_by(9; ["namespaces", $in, "port_forward"]; $allowed_here; "port-forward to the instance pods in \($in)"),
        not_allowed(["namespaces", $in, "create_pg_tokens"]; $allowed_here; "create tokens for ServiceAccount \($cluster) in \($in)"),
        ($rights.change // {} | keys_unsorted[] | not_allowed(["namespaces", $in, "change", .]; $allowed_here; "change \(.) in \($in)"))),
     not_allowed(["request_certificates"]; $certificate_allowed; "request certificates"),

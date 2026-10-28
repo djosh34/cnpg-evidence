@@ -21,6 +21,7 @@ Sample manifests for a CloudNativePG (CNPG) cluster that accepts only certificat
 6. A host user with the postgres uid cannot reach the socket, the data or the ServiceAccount token of an instance.
 7. The CNPG operator and the barman-cloud plugin cannot read Secrets outside the operator's and the cluster's namespaces.
 8. Only `system:masters`, CNPG's components, cert-manager and its cainjector, the API server and the Kubernetes and k3s controllers hold a right that equals PostgreSQL superuser or opens a port on the nodes. Rights that equal superuser include exec into the instance pods, reading or writing their Secrets and changing CNPG objects. Of these subjects, only `system:masters`, cert-manager and the controllers can request certificates. No hostNetwork pod can bind a port below 1024.
+9. Besides a login, PostgreSQL is reached only through CNPG's three ClusterIP Services, the rw LoadBalancer on 5432 and, when `desired.yaml` sets it, the read LoadBalancer on its port. No Service that reaches an instance pod has a database NodePort or an external IP, no instance pod has a host port, and only the subjects of rule 8 can port-forward to the instance pods.
 
 ## Run
 
@@ -28,7 +29,7 @@ All three scripts print one JSON document on stdout and logs on stderr. Exit 0 m
 
 ```bash
 # Anywhere with a cluster-admin kubeconfig (on a k3s server node,
-# KUBECONFIG=/etc/rancher/k3s/k3s.yaml). Rules 1 to 5, 7, 8 and the pod side of 6.
+# KUBECONFIG=/etc/rancher/k3s/k3s.yaml). Rules 1 to 5, 7 to 9 and the pod side of 6.
 yq -o=json desired.yaml | bash scripts/evidence/evidence.sh --ca client-ca.pem > evidence.json
 
 # On every node, as root. The host side of rule 6, and who can bind low ports.
@@ -57,7 +58,7 @@ bash scripts/test.sh
 
 ## How the scripts fit together
 
-- `evidence.sh` reads the live state through the API server and PostgreSQL, and compares it with `desired.yaml`. It shows rules 1 to 5, 7 and 8, and the pod side of rule 6. It only reads.
+- `evidence.sh` reads the live state through the API server and PostgreSQL, and compares it with `desired.yaml`. It shows rules 1 to 5, 7 to 9, and the pod side of rule 6. It only reads.
 - `host-check.sh` reads one node: accounts with the postgres uid or gid, sudoers, directory modes, SELinux, subordinate ids and low ports. It shows the host side of rule 6. It only reads.
 - `prove.sh` tries what rules 1, 2, 5 and 6 forbid: password logins, certificate logins as the wrong role, connections from a pod in another namespace, and file and socket access as the host postgres uid. Each attempt must fail with the expected denial, and two control attempts must succeed.
 - `desired.sh` builds, from `desired.yaml` alone, a document of the same shape as each script's output that holds the desired values. `compare.sh` lists where an actual document differs from it. The scripts' own checks stay the verdict.

@@ -24,6 +24,7 @@ needs=$(
   need "write_secret cnpg-ca-secret" cnpg-system bob patch secrets/cnpg-ca-secret -
   need "change clusters" databases alice patch clusters.postgresql.cnpg.io/pg databases
   need change_pods databases carol patch pods/pg-1 -
+  need port_forward databases dave create pods/pg-1 -
   need create_certificates otel system:serviceaccount:otel:collector create certificates.cert-manager.io otel
   need run_pods otel bob create pods -
   need run_pods databases bob create pods -
@@ -40,6 +41,7 @@ answers=$(
   answer bob patch secrets/cnpg-ca-secret - true
   answer alice patch clusters.postgresql.cnpg.io/pg databases true
   answer carol patch pods/pg-1 - true
+  answer dave create pods/pg-1 - true
   answer system:serviceaccount:otel:collector create certificates.cert-manager.io otel true
   answer bob create pods - true
   answer carol create pods otel false
@@ -68,6 +70,7 @@ expected=$(cat <<'EOF'
       "exec_into_pods": [], "change_pods": ["carol"], "run_pods": ["bob"],
       "read_secret": {"pg-replication": ["alice"]},
       "write_secret": {},
+      "port_forward": ["dave"],
       "create_pg_tokens": [],
       "change": {"clusters": ["alice"]}
     }

@@ -25,7 +25,7 @@ bash scripts/desired/compare.sh evidence.desired.json evidence.actual.json
 
 ## Where the desired values come from
 
-- **evidence:** every expected value that `evidence.sh` checks against is in `scripts/evidence/violations/expected.jq`: the fixed CNPG roles and their rights, the databases and their logins, the pg_hba and pg_ident lines, the TLS minimum, the network sources and ports, the allowed Kubernetes subjects and the Secret namespaces of the operator and the plugin. The violation sections and `desired.sh` both read this file, so the checks and the desired document cannot disagree.
+- **evidence:** every expected value that `evidence.sh` checks against is in `scripts/evidence/violations/expected.jq`: the fixed CNPG roles and their rights, the databases and their logins, the pg_hba and pg_ident lines, the TLS minimum, the network sources and ports, the Services that may reach the instance pods, the allowed Kubernetes subjects and the Secret namespaces of the operator and the plugin. The violation sections and `desired.sh` both read this file, so the checks and the desired document cannot disagree.
 - **host-check:** each check with the value it has when it passes, as in the table in [host-check.md](host-check.md#checks). `checks.test.sh` checks that the list has every check of `host-check.sh` in its order.
 - **prove:** each probe with the text `prove.sh` writes for it and the value it has when it passes. The application login is the first database of `desired.yaml`, whose pg_hba line the sample chart writes first. The login, pod and uid tests check that the names, texts and values match.
 
@@ -42,6 +42,7 @@ databases: {orders: {owner: orders, connect: [PUBLIC, orders], logins: {orders: 
 client_ca: {secret: client-ca, certificates: [{name: CN=example-ca, sha256_fingerprint: "2E:18:..."}]}
 tls: {"*": {postgresql: TLSv1.3, metrics: TLSv1.3}}
 network_policy: {"*": {outside: [5432], other nodes: [5432], own node: [all], ...}}
+ports: {services: {databases/pg-rw-lb: {type: LoadBalancer, selector: "cnpg.io/cluster=pg,cnpg.io/instanceRole=primary", ...}, ...}, host_ports: {"*": []}}
 kubernetes: {namespaces: {databases: {exec_into_pods: {allowed: [group:system:masters, ...]}, read_secret: {"*": {allowed: [...]}}, ...}}, ...}
 pods_sharing_host_uids: []
 host_network_pods_that_can_bind_low_ports: []
@@ -50,8 +51,8 @@ details: {pg_hba: [{number: 1, line: local all cnpg_metrics_exporter peer map=cn
 
 Two forms appear only in desired documents:
 
-- `{"allowed": [...]}` in place of a list: an allowed set. The actual list may hold any of these members and no other; a member it lacks, or a missing list, is no difference. Used for the Kubernetes subjects of every right, the namespaces where the operator and the plugin may read Secrets, and `not_served`, which a cluster with Traefik does not have. Every other list is exact.
-- A map with the one key `"*"`: the value every key of the actual map must have. Used where only a live cluster knows the keys: the instance pods in `tls` and `network_policy`, and the Secret names under `read_secret` and `write_secret`.
+- `{"allowed": [...]}` in place of a list: an allowed set. The actual list may hold any of these members and no other; a member it lacks, or a missing list, is no difference. Used for the Kubernetes subjects of every right, the namespaces where the operator and the plugin may read Secrets, and `not_served`, which is shorter or absent on a cluster with Traefik. Every other list is exact.
+- A map with the one key `"*"`: the value every key of the actual map must have. Used where only a live cluster knows the keys: the instance pods in `tls`, `network_policy` and `ports.host_ports`, and the Secret names under `read_secret` and `write_secret`.
 
 The evidence document gives `connect` as PostgreSQL's default, `PUBLIC` and the owner; `evidence.sh` reports it but does not check it. The pg_hba and pg_ident lines are CNPG 1.30's fixed lines around the lines the sample chart writes, as the `pg_hba_file_rules` and `pg_ident_file_mappings` views show them, numbered in matching order.
 

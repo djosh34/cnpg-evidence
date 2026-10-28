@@ -24,10 +24,12 @@ def valid_values:
     and (.cluster.instances | type == "number")
     and (.databases | type == "array")
     and all(.databases[]; (.name, .role | type == "string") and (.clientCNs | type == "array"))
+    and (.readLoadBalancer == null
+         or ((.readLoadBalancer.name | type == "string" and . != "") and (.readLoadBalancer.port | type == "number")))
   ) catch false;
 
 def values_needed:
-  "the desired state needs cluster.name, cluster.namespace, cluster.instances, caSecret, rwLoadBalancer.name, network.operatorNamespace, network.otelNamespace, replication.commonName and databases with name, role and clientCNs";
+  "the desired state needs cluster.name, cluster.namespace, cluster.instances, caSecret, rwLoadBalancer.name, network.operatorNamespace, network.otelNamespace, replication.commonName and databases with name, role and clientCNs; readLoadBalancer, when set, needs name and port";
 
 # The roles that hold each special right. CNPG's own roles: postgres is the
 # superuser, streaming_replica replicates and reads files for pg_rewind.
@@ -103,6 +105,37 @@ def network_sources:
     (.network.otelNamespace): [9187],
     "other namespaces": []
   };
+
+# The Services that may send connections to the instance pods, as the ports
+# section shows them: CNPG's three ClusterIP Services, the rw LoadBalancer on
+# 5432 to the primary and, when set, the read LoadBalancer on its port to the
+# instance on the same node. None has a node port or an external IP. Traffic
+# policy Local gives the read LoadBalancer a health check port, which answers
+# over HTTP and does not lead to PostgreSQL.
+def expected_services:
+  .cluster.namespace as $namespace
+  | .cluster.name as $cluster
+  | def selector($key; $value): "cnpg.io/cluster=\($cluster),\($key)=\($value)";
+    def service($type; $selector; $traffic_policy; $port):
+      {
+        type: $type,
+        selector: $selector,
+        traffic_policy: $traffic_policy,
+        ports: ["\($port) -> 5432"],
+        node_ports: [],
+        health_check_port: (if $traffic_policy == "Local" then "present" else "none" end),
+        external_ips: []
+      };
+    {
+      "\($namespace)/\($cluster)-rw": service("ClusterIP"; selector("cnpg.io/instanceRole"; "primary"); "none"; 5432),
+      "\($namespace)/\($cluster)-ro": service("ClusterIP"; selector("cnpg.io/instanceRole"; "replica"); "none"; 5432),
+      "\($namespace)/\($cluster)-r": service("ClusterIP"; selector("cnpg.io/podRole"; "instance"); "none"; 5432),
+      "\($namespace)/\(.rwLoadBalancer.name)": service("LoadBalancer"; selector("cnpg.io/instanceRole"; "primary"); "Cluster"; 5432)
+    }
+    + if .readLoadBalancer == null then {}
+      else {"\($namespace)/\(.readLoadBalancer.name)":
+              service("LoadBalancer"; selector("cnpg.io/podRole"; "instance"); "Local"; .readLoadBalancer.port)}
+      end;
 
 # The Kubernetes and k3s controllers, which create pods and other objects
 # from objects that other subjects write.

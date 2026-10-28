@@ -18,7 +18,7 @@ input=$(cat <<'EOF'
   "accounts": [{"namespace": "databases", "name": "pg"}, {"namespace": "cnpg-system", "name": "op"}],
   "namespace": "databases", "cluster": "pg",
   "operator_namespace": "cnpg-system", "operator_account": "op", "plugin_account": "plug",
-  "ingress_routes": false
+  "ingress_routes": []
 }
 EOF
 )
@@ -46,6 +46,10 @@ same "exec into each instance pod by name" \
     ["patch","pods/pg-1","ephemeralcontainers"],["patch","pods/pg-2","ephemeralcontainers"],
     ["create","pods","attach"],["create","pods","exec"],["get","pods","attach"],["get","pods","exec"],["patch","pods","ephemeralcontainers"]]' \
   "$(jq -c 'select(.right == "exec_into_pods" and .subject == "alice") | [.ask.verb, .ask.resource, .ask.subresource]' <<<"$needs" | jq -sc 'unique_by(.) | sort_by(.[1] == "pods", .)')"
+same "port-forward to each instance pod by name, in the cluster's namespace only" \
+  '[["databases","create","pods/pg-1","portforward"],["databases","create","pods/pg-2","portforward"],
+    ["databases","get","pods/pg-1","portforward"],["databases","get","pods/pg-2","portforward"]]' \
+  "$(jq -c 'select(.right == "port_forward" and .subject == "alice") | [.in, .ask.verb, .ask.resource, .ask.subresource]' <<<"$needs" | jq -sc 'unique')"
 same "the instance pods and the operator's pods may be changed" \
   '[["cnpg-system","patch","pods"],["cnpg-system","update","pods"],["databases","patch","pods"],["databases","patch","pods/pg-1"],["databases","patch","pods/pg-2"],
     ["databases","update","pods"],["databases","update","pods/pg-1"],["databases","update","pods/pg-2"]]' \
@@ -88,9 +92,12 @@ same "Services and certificates are changed too" \
 same "Ingresses always, IngressRoutes only where Traefik serves them" \
   '["ingresses.networking.k8s.io"]' \
   "$(jq -c 'select(.right == "change_ingresses") | .ask.resource' <<<"$needs" | jq -sc 'unique')"
-same "with Traefik, IngressRoutes too" \
-  '["ingresses.networking.k8s.io","ingressroutes.traefik.io"]' \
-  "$(jq '.ingress_routes = true' <<<"$input" | jq -c -f "$here/needs.jq" | jq -c 'select(.right == "change_ingresses") | .ask.resource' | jq -sc 'unique')"
+same "with Traefik, IngressRoutes and IngressRouteTCPs too, created or changed" \
+  '[["create","ingresses.networking.k8s.io"],["create","ingressroutes.traefik.io"],["create","ingressroutetcps.traefik.io"],
+    ["patch","ingresses.networking.k8s.io"],["patch","ingressroutes.traefik.io"],["patch","ingressroutetcps.traefik.io"],
+    ["update","ingresses.networking.k8s.io"],["update","ingressroutes.traefik.io"],["update","ingressroutetcps.traefik.io"]]' \
+  "$(jq '.ingress_routes = ["ingressroutes.traefik.io", "ingressroutetcps.traefik.io"]' <<<"$input" | jq -c -f "$here/needs.jq" |
+     jq -c 'select(.right == "change_ingresses" and .subject == "alice" and .in == "otel") | [.ask.verb, .ask.resource]' | jq -sc 'unique')"
 
 same "the operator is asked to get, list and watch Secrets in every namespace, and to get each by name" \
   '[["cnpg-system","get","secrets"],["cnpg-system","get","secrets/cnpg-ca-secret"],["cnpg-system","list","secrets"],["cnpg-system","watch","secrets"],
