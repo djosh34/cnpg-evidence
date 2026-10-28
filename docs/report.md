@@ -126,11 +126,31 @@ Each call unpacks about 300 MB into a new directory under `TMPDIR` (default `/tm
 TMPDIR=/var/tmp cnpg-report --desired evidence.desired.json --out images/ evidence.json
 ```
 
+### In a container
+
+The image runs `cnpg-report` directly, with no copy out. Put every file the call reads in one directory, here `report-input/`:
+
+- `evidence.json`: the actual document of `evidence.sh`.
+- `evidence.desired.json`: its desired document from `desired.sh`.
+
+Then, from the directory that holds `report-input/`:
+
+```bash
+mkdir -p images
+docker run --rm --platform linux/amd64 --network none --user "$(id -u):$(id -g)" \
+  --tmpfs /tmp:exec,mode=1777 \
+  -v "$PWD/report-input:/in:ro" -v "$PWD/images:/out" \
+  "ghcr.io/djosh34/cnpg-report:$version" \
+  /cnpg-report --desired /in/evidence.desired.json --out /out /in/evidence.json
+```
+
+The images land in `images/`, owned by you. The image holds nothing but `/cnpg-report`, so `--tmpfs /tmp:exec` gives it the space it unpacks into, which must allow running files. podman takes the same command. On a host of another architecture, such as Apple silicon, Docker runs the amd64 image under emulation. For the other documents, put their files in `report-input/` and change the file names in the last line. The CI and release workflows run this command on the samples.
+
 ## Output file names
 
 Each image is one PNG, named after the script, the piece of evidence and the side.
 
-`evidence.sh`, 11 pairs and one actual image:
+`evidence.sh`, 12 pairs and one actual image:
 
 | Image | Files |
 |---|---|
@@ -139,17 +159,22 @@ Each image is one PNG, named after the script, the piece of evidence and the sid
 | Client CA | `evidence-03-client-ca-desired.png`, `evidence-03-client-ca-actual.png` |
 | Encryption | `evidence-04-encryption-desired.png`, `evidence-04-encryption-actual.png` |
 | Network | `evidence-05-network-desired.png`, `evidence-05-network-actual.png` |
-| Container isolation | `evidence-06-container-isolation-desired.png`, `evidence-06-container-isolation-actual.png` |
-| Operator Secrets | `evidence-07-operator-secrets-desired.png`, `evidence-07-operator-secrets-actual.png` |
-| Platform pods | `evidence-08-platform-pods-desired.png`, `evidence-08-platform-pods-actual.png` |
-| Platform Secrets | `evidence-09-platform-secrets-desired.png`, `evidence-09-platform-secrets-actual.png` |
-| Platform setup | `evidence-10-platform-setup-desired.png`, `evidence-10-platform-setup-actual.png` |
-| Nodes and certificates | `evidence-11-platform-nodes-certificates-desired.png`, `evidence-11-platform-nodes-certificates-actual.png` |
-| Versions | `evidence-12-versions-actual.png` only, since versions have no desired value |
+| Services and host ports | `evidence-06-ports-desired.png`, `evidence-06-ports-actual.png` |
+| Container isolation | `evidence-07-container-isolation-desired.png`, `evidence-07-container-isolation-actual.png` |
+| Operator Secrets | `evidence-08-operator-secrets-desired.png`, `evidence-08-operator-secrets-actual.png` |
+| Platform pods | `evidence-09-platform-pods-desired.png`, `evidence-09-platform-pods-actual.png` |
+| Platform Secrets | `evidence-10-platform-secrets-desired.png`, `evidence-10-platform-secrets-actual.png` |
+| Platform setup | `evidence-11-platform-setup-desired.png`, `evidence-11-platform-setup-actual.png` |
+| Nodes and certificates | `evidence-12-platform-nodes-certificates-desired.png`, `evidence-12-platform-nodes-certificates-actual.png` |
+| Versions | `evidence-13-versions-actual.png` only, since versions have no desired value |
 
 The four platform images are grids: one row per account that holds one of their rights, and one square column per namespace under each right. On the Secrets and setup images, a cell names the Secrets or kinds of object when the account holds the right on only some of them.
 
 The network images cover the status and metrics ports, 8000 and 9187, and say so. Logins on 5432 are in the login images.
+
+The ports images list every Service in any namespace that reaches an instance pod, by its selector or by an address in its EndpointSlices, with its type, selector, traffic policy, ports, node ports, health check port and external IPs, and then the host ports of each instance pod. An extra Service is red by its name and namespace, and its node ports and external IPs are red too, since no Service may have them.
+
+The platform pods grid has a Port-forward column for the cluster's namespace. Open node ports on the nodes image covers starting pods and changing Services, Ingresses, and the Traefik IngressRoutes and IngressRouteTCPs (`ingressroutetcps.traefik.io`) where the cluster serves them.
 
 `host-check.sh`, one pair per check of the node file, named with the document's `node` and the check's `id`:
 
@@ -162,6 +187,8 @@ The network images cover the status and metrics ports, 8000 and 9187, and say so
 | Logins from the node | `prove-01-login-attempts-desired.png`, `prove-01-login-attempts-actual.png` |
 | Connections from another namespace | `prove-02-other-namespace-desired.png`, `prove-02-other-namespace-actual.png` |
 | Access as the host postgres uid | `prove-03-host-uid-desired.png`, `prove-03-host-uid-actual.png` |
+
+Each prove image has a Tried on column. On the actual image it lists each address an attempt went to, with its ports, or the pod for an attempt as the uid, so the login attempts and `other-namespace-lb` show the rw LoadBalancer port 5432 and the read LoadBalancer port on every node. The desired image says where `prove.sh` makes each attempt.
 
 Each image is as wide as its table plus 88 px margins, and as high as its content. Its header gives the title, the control, a Desired or Actual tag, the cluster or node, and who made the document. An actual image adds the collection time and Passed or Failed. A legend of the marks sits above the table.
 

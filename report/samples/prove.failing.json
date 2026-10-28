@@ -16,6 +16,31 @@
           "target": "192.0.2.10:5432",
           "value": "denied",
           "actual": "FATAL: pg_hba.conf rejects connection"
+        },
+        {
+          "target": "192.0.2.10:5433",
+          "value": "denied",
+          "actual": "FATAL: pg_hba.conf rejects connection"
+        },
+        {
+          "target": "192.0.2.11:5432",
+          "value": "denied",
+          "actual": "FATAL: pg_hba.conf rejects connection"
+        },
+        {
+          "target": "192.0.2.11:5433",
+          "value": "denied",
+          "actual": "FATAL: pg_hba.conf rejects connection"
+        },
+        {
+          "target": "192.0.2.12:5432",
+          "value": "denied",
+          "actual": "FATAL: pg_hba.conf rejects connection"
+        },
+        {
+          "target": "192.0.2.12:5433",
+          "value": "denied",
+          "actual": "FATAL: pg_hba.conf rejects connection"
         }
       ]
     },
@@ -27,6 +52,31 @@
       "raw": [
         {
           "target": "192.0.2.10:5432",
+          "value": "allowed",
+          "actual": "succeeded: logged in as postgres"
+        },
+        {
+          "target": "192.0.2.10:5433",
+          "value": "allowed",
+          "actual": "succeeded: logged in as postgres"
+        },
+        {
+          "target": "192.0.2.11:5432",
+          "value": "allowed",
+          "actual": "succeeded: logged in as postgres"
+        },
+        {
+          "target": "192.0.2.11:5433",
+          "value": "allowed",
+          "actual": "succeeded: logged in as postgres"
+        },
+        {
+          "target": "192.0.2.12:5432",
+          "value": "allowed",
+          "actual": "succeeded: logged in as postgres"
+        },
+        {
+          "target": "192.0.2.12:5433",
           "value": "allowed",
           "actual": "succeeded: logged in as postgres"
         }
@@ -42,6 +92,31 @@
           "target": "192.0.2.10:5432",
           "value": "denied",
           "actual": "FATAL: connection requires a valid client certificate"
+        },
+        {
+          "target": "192.0.2.10:5433",
+          "value": "denied",
+          "actual": "FATAL: connection requires a valid client certificate"
+        },
+        {
+          "target": "192.0.2.11:5432",
+          "value": "denied",
+          "actual": "FATAL: connection requires a valid client certificate"
+        },
+        {
+          "target": "192.0.2.11:5433",
+          "value": "denied",
+          "actual": "FATAL: connection requires a valid client certificate"
+        },
+        {
+          "target": "192.0.2.12:5432",
+          "value": "denied",
+          "actual": "FATAL: connection requires a valid client certificate"
+        },
+        {
+          "target": "192.0.2.12:5433",
+          "value": "denied",
+          "actual": "FATAL: connection requires a valid client certificate"
         }
       ]
     },
@@ -53,6 +128,31 @@
       "raw": [
         {
           "target": "192.0.2.10:5432",
+          "value": "denied",
+          "actual": "FATAL: pg_hba.conf rejects connection"
+        },
+        {
+          "target": "192.0.2.10:5433",
+          "value": "denied",
+          "actual": "FATAL: pg_hba.conf rejects connection"
+        },
+        {
+          "target": "192.0.2.11:5432",
+          "value": "denied",
+          "actual": "FATAL: pg_hba.conf rejects connection"
+        },
+        {
+          "target": "192.0.2.11:5433",
+          "value": "denied",
+          "actual": "FATAL: pg_hba.conf rejects connection"
+        },
+        {
+          "target": "192.0.2.12:5432",
+          "value": "denied",
+          "actual": "FATAL: pg_hba.conf rejects connection"
+        },
+        {
+          "target": "192.0.2.12:5433",
           "value": "denied",
           "actual": "FATAL: pg_hba.conf rejects connection"
         }
@@ -68,6 +168,31 @@
           "target": "192.0.2.10:5432",
           "value": "denied",
           "actual": "FATAL: pg_hba.conf rejects connection"
+        },
+        {
+          "target": "192.0.2.10:5433",
+          "value": "denied",
+          "actual": "FATAL: pg_hba.conf rejects connection"
+        },
+        {
+          "target": "192.0.2.11:5432",
+          "value": "denied",
+          "actual": "FATAL: pg_hba.conf rejects connection"
+        },
+        {
+          "target": "192.0.2.11:5433",
+          "value": "denied",
+          "actual": "FATAL: pg_hba.conf rejects connection"
+        },
+        {
+          "target": "192.0.2.12:5432",
+          "value": "denied",
+          "actual": "FATAL: pg_hba.conf rejects connection"
+        },
+        {
+          "target": "192.0.2.12:5433",
+          "value": "denied",
+          "actual": "FATAL: pg_hba.conf rejects connection"
         }
       ]
     },
@@ -79,6 +204,31 @@
       "raw": [
         {
           "target": "192.0.2.10:5432",
+          "value": "allowed",
+          "actual": "logged in"
+        },
+        {
+          "target": "192.0.2.10:5433",
+          "value": "allowed",
+          "actual": "logged in"
+        },
+        {
+          "target": "192.0.2.11:5432",
+          "value": "allowed",
+          "actual": "logged in"
+        },
+        {
+          "target": "192.0.2.11:5433",
+          "value": "allowed",
+          "actual": "logged in"
+        },
+        {
+          "target": "192.0.2.12:5432",
+          "value": "allowed",
+          "actual": "logged in"
+        },
+        {
+          "target": "192.0.2.12:5433",
           "value": "allowed",
           "actual": "logged in"
         }
@@ -104,17 +254,17 @@
       "ok": true,
       "raw": [
         {
-          "target": "pg-1 198.51.100.11:5432",
+          "target": "198.51.100.11:5432",
           "value": "denied",
           "actual": "timeout after 3 s"
         },
         {
-          "target": "pg-2 198.51.100.12:5432",
+          "target": "198.51.100.12:5432",
           "value": "denied",
           "actual": "timeout after 3 s"
         },
         {
-          "target": "pg-3 198.51.100.13:5432",
+          "target": "198.51.100.13:5432",
           "value": "denied",
           "actual": "timeout after 3 s"
         }
@@ -127,17 +277,17 @@
       "ok": true,
       "raw": [
         {
-          "target": "pg-1 198.51.100.11:8000",
+          "target": "198.51.100.11:8000",
           "value": "denied",
           "actual": "timeout after 3 s"
         },
         {
-          "target": "pg-2 198.51.100.12:8000",
+          "target": "198.51.100.12:8000",
           "value": "denied",
           "actual": "timeout after 3 s"
         },
         {
-          "target": "pg-3 198.51.100.13:8000",
+          "target": "198.51.100.13:8000",
           "value": "denied",
           "actual": "timeout after 3 s"
         }
@@ -150,17 +300,17 @@
       "ok": false,
       "raw": [
         {
-          "target": "pg-1 198.51.100.11:9187",
+          "target": "198.51.100.11:9187",
           "value": "denied",
           "actual": "timeout after 3 s"
         },
         {
-          "target": "pg-2 198.51.100.12:9187",
+          "target": "198.51.100.12:9187",
           "value": "denied",
           "actual": "timeout after 3 s"
         },
         {
-          "target": "pg-3 198.51.100.13:9187",
+          "target": "198.51.100.13:9187",
           "value": "allowed",
           "actual": "connected"
         }
@@ -176,6 +326,31 @@
           "target": "192.0.2.10:5432",
           "value": "denied",
           "actual": "FATAL: pg_hba.conf rejects connection"
+        },
+        {
+          "target": "192.0.2.10:5433",
+          "value": "denied",
+          "actual": "FATAL: pg_hba.conf rejects connection"
+        },
+        {
+          "target": "192.0.2.11:5432",
+          "value": "denied",
+          "actual": "FATAL: pg_hba.conf rejects connection"
+        },
+        {
+          "target": "192.0.2.11:5433",
+          "value": "denied",
+          "actual": "FATAL: pg_hba.conf rejects connection"
+        },
+        {
+          "target": "192.0.2.12:5432",
+          "value": "denied",
+          "actual": "FATAL: pg_hba.conf rejects connection"
+        },
+        {
+          "target": "192.0.2.12:5433",
+          "value": "denied",
+          "actual": "FATAL: pg_hba.conf rejects connection"
         }
       ]
     },
@@ -186,7 +361,7 @@
       "ok": true,
       "raw": [
         {
-          "target": "pg-1 uid 26",
+          "target": "pg-1",
           "value": "denied",
           "actual": "Permission denied"
         }
@@ -199,7 +374,7 @@
       "ok": true,
       "raw": [
         {
-          "target": "pg-1 uid 26",
+          "target": "pg-1",
           "value": "denied",
           "actual": "Permission denied"
         }
@@ -212,7 +387,7 @@
       "ok": false,
       "raw": [
         {
-          "target": "pg-1 uid 26",
+          "target": "pg-1",
           "value": "allowed",
           "actual": "read 1 byte"
         }
@@ -225,7 +400,7 @@
       "ok": true,
       "raw": [
         {
-          "target": "pg-1 uid 26",
+          "target": "pg-1",
           "value": "denied",
           "actual": "Permission denied"
         }
@@ -238,7 +413,7 @@
       "ok": true,
       "raw": [
         {
-          "target": "pg-1 uid 26",
+          "target": "pg-1",
           "value": "denied",
           "actual": "Permission denied"
         }
@@ -251,7 +426,7 @@
       "ok": true,
       "raw": [
         {
-          "target": "pg-1 uid 26",
+          "target": "pg-1",
           "value": "denied",
           "actual": "Permission denied"
         }
@@ -264,7 +439,7 @@
       "ok": true,
       "raw": [
         {
-          "target": "pg-1 uid 26",
+          "target": "pg-1 uid 165562",
           "value": "denied",
           "actual": "Permission denied"
         }

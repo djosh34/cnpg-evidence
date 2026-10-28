@@ -91,6 +91,15 @@ jobs:
               <(cd "images/$source" && LC_ALL=C ls)
             echo "ok: $source clean sample"
           done
+      - name: Run the container example on the pushed image
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          docker --version
+          echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          bash report/test/docker-example.sh "$VERSION" docker-example
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-images

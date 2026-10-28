@@ -171,7 +171,7 @@
     "certificates": [
       {
         "name": "CN=example-ca",
-        "sha256_fingerprint": "93:95:89:07:E0:F8:9E:07:0E:12:96:7F:B9:C7:F3:C9:54:B3:8B:06:41:C9:BE:27:BF:E5:40:DB:C7:6C:16:30"
+        "sha256_fingerprint": "2E:18:DB:8B:38:5D:21:DA:E1:BB:0C:63:A0:4F:1F:E1:4B:9F:1F:D9:D3:9D:44:C5:69:13:1D:63:9A:66:27:AE"
       }
     ]
   },
@@ -637,7 +637,12 @@
             "group:system:masters",
             "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg"
           ]
-        }
+        },
+        "port_forward": [
+          "group:system:masters",
+          "system:serviceaccount:kube-system:generic-garbage-collector",
+          "system:serviceaccount:kube-system:namespace-controller"
+        ]
       }
     },
     "request_certificates": [
@@ -787,5 +792,69 @@
     "cnpg_operator": "1.30.1",
     "barman_cloud_plugin": "v0.15.0",
     "postgresql": "18.1"
+  },
+  "ports": {
+    "services": {
+      "databases/pg-rw": {
+        "type": "ClusterIP",
+        "selector": "cnpg.io/cluster=pg,cnpg.io/instanceRole=primary",
+        "traffic_policy": "none",
+        "ports": [
+          "5432 -> 5432"
+        ],
+        "node_ports": [],
+        "health_check_port": "none",
+        "external_ips": []
+      },
+      "databases/pg-r": {
+        "type": "ClusterIP",
+        "selector": "cnpg.io/cluster=pg,cnpg.io/podRole=instance",
+        "traffic_policy": "none",
+        "ports": [
+          "5432 -> 5432"
+        ],
+        "node_ports": [],
+        "health_check_port": "none",
+        "external_ips": []
+      },
+      "databases/pg-rw-lb": {
+        "type": "LoadBalancer",
+        "selector": "cnpg.io/cluster=pg,cnpg.io/instanceRole=primary",
+        "traffic_policy": "Cluster",
+        "ports": [
+          "5432 -> 5432"
+        ],
+        "node_ports": [],
+        "health_check_port": "none",
+        "external_ips": []
+      },
+      "databases/pg-ro": {
+        "type": "ClusterIP",
+        "selector": "cnpg.io/cluster=pg,cnpg.io/instanceRole=replica",
+        "traffic_policy": "none",
+        "ports": [
+          "5432 -> 5432"
+        ],
+        "node_ports": [],
+        "health_check_port": "none",
+        "external_ips": []
+      },
+      "databases/pg-read-lb": {
+        "type": "LoadBalancer",
+        "selector": "cnpg.io/cluster=pg,cnpg.io/podRole=instance",
+        "traffic_policy": "Local",
+        "ports": [
+          "5433 -> 5432"
+        ],
+        "node_ports": [],
+        "health_check_port": "present",
+        "external_ips": []
+      }
+    },
+    "host_ports": {
+      "pg-1": [],
+      "pg-2": [],
+      "pg-3": []
+    }
   }
 }

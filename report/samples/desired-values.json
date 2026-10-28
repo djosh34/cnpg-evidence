@@ -1,0 +1,43 @@
+{
+  "cluster": {
+    "name": "pg",
+    "namespace": "databases",
+    "instances": 3
+  },
+  "caSecret": "client-ca",
+  "rwLoadBalancer": {
+    "name": "pg-rw-lb"
+  },
+  "readLoadBalancer": {
+    "name": "pg-read-lb",
+    "port": 5433
+  },
+  "network": {
+    "operatorNamespace": "cnpg-system",
+    "otelNamespace": "otel"
+  },
+  "replication": {
+    "commonName": "pg-replication",
+    "dnsNames": [
+      "pg-rw",
+      "pg-rw.databases.svc"
+    ]
+  },
+  "databases": [
+    {
+      "name": "orders",
+      "role": "orders",
+      "clientCNs": [
+        "orders-app.test"
+      ]
+    },
+    {
+      "name": "billing",
+      "role": "billing",
+      "clientCNs": [
+        "billing-app.test",
+        "billing-report.test"
+      ]
+    }
+  ]
+}

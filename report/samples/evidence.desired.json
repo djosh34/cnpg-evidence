@@ -168,7 +168,7 @@
     "certificates": [
       {
         "name": "CN=example-ca",
-        "sha256_fingerprint": "93:95:89:07:E0:F8:9E:07:0E:12:96:7F:B9:C7:F3:C9:54:B3:8B:06:41:C9:BE:27:BF:E5:40:DB:C7:6C:16:30"
+        "sha256_fingerprint": "2E:18:DB:8B:38:5D:21:DA:E1:BB:0C:63:A0:4F:1F:E1:4B:9F:1F:D9:D3:9D:44:C5:69:13:1D:63:9A:66:27:AE"
       }
     ]
   },
@@ -203,6 +203,68 @@
         9187
       ],
       "other namespaces": []
+    }
+  },
+  "ports": {
+    "services": {
+      "databases/pg-rw": {
+        "type": "ClusterIP",
+        "selector": "cnpg.io/cluster=pg,cnpg.io/instanceRole=primary",
+        "traffic_policy": "none",
+        "ports": [
+          "5432 -> 5432"
+        ],
+        "node_ports": [],
+        "health_check_port": "none",
+        "external_ips": []
+      },
+      "databases/pg-r": {
+        "type": "ClusterIP",
+        "selector": "cnpg.io/cluster=pg,cnpg.io/podRole=instance",
+        "traffic_policy": "none",
+        "ports": [
+          "5432 -> 5432"
+        ],
+        "node_ports": [],
+        "health_check_port": "none",
+        "external_ips": []
+      },
+      "databases/pg-rw-lb": {
+        "type": "LoadBalancer",
+        "selector": "cnpg.io/cluster=pg,cnpg.io/instanceRole=primary",
+        "traffic_policy": "Cluster",
+        "ports": [
+          "5432 -> 5432"
+        ],
+        "node_ports": [],
+        "health_check_port": "none",
+        "external_ips": []
+      },
+      "databases/pg-ro": {
+        "type": "ClusterIP",
+        "selector": "cnpg.io/cluster=pg,cnpg.io/instanceRole=replica",
+        "traffic_policy": "none",
+        "ports": [
+          "5432 -> 5432"
+        ],
+        "node_ports": [],
+        "health_check_port": "none",
+        "external_ips": []
+      },
+      "databases/pg-read-lb": {
+        "type": "LoadBalancer",
+        "selector": "cnpg.io/cluster=pg,cnpg.io/podRole=instance",
+        "traffic_policy": "Local",
+        "ports": [
+          "5433 -> 5432"
+        ],
+        "node_ports": [],
+        "health_check_port": "present",
+        "external_ips": []
+      }
+    },
+    "host_ports": {
+      "*": []
     }
   },
   "kubernetes": {
@@ -678,6 +740,36 @@
               "system:serviceaccount:kube-system:statefulset-controller"
             ]
           }
+        },
+        "port_forward": {
+          "allowed": [
+            "group:system:masters",
+            "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
+            "system:serviceaccount:cnpg-system:barman-cloud-plugin-barman-cloud",
+            "system:serviceaccount:databases:pg",
+            "kube-apiserver",
+            "system:serviceaccount:cert-manager:cert-manager",
+            "system:serviceaccount:cert-manager:cert-manager-cainjector",
+            "system:kube-controller-manager",
+            "k3s-cloud-controller-manager",
+            "system:serviceaccount:kube-system:clusterrole-aggregation-controller",
+            "system:serviceaccount:kube-system:cronjob-controller",
+            "system:serviceaccount:kube-system:daemon-set-controller",
+            "system:serviceaccount:kube-system:deployment-controller",
+            "system:serviceaccount:kube-system:endpoint-controller",
+            "system:serviceaccount:kube-system:endpointslice-controller",
+            "system:serviceaccount:kube-system:endpointslicemirroring-controller",
+            "system:serviceaccount:kube-system:generic-garbage-collector",
+            "system:serviceaccount:kube-system:job-controller",
+            "system:serviceaccount:kube-system:legacy-service-account-token-cleaner",
+            "system:serviceaccount:kube-system:local-path-provisioner-service-account",
+            "system:serviceaccount:kube-system:namespace-controller",
+            "system:serviceaccount:kube-system:persistent-volume-binder",
+            "system:serviceaccount:kube-system:replicaset-controller",
+            "system:serviceaccount:kube-system:replication-controller",
+            "system:serviceaccount:kube-system:resourcequota-controller",
+            "system:serviceaccount:kube-system:statefulset-controller"
+          ]
         },
         "create_pg_tokens": {
           "allowed": [
@@ -1172,7 +1264,8 @@
     },
     "not_served": {
       "allowed": [
-        "ingressroutes.traefik.io"
+        "ingressroutes.traefik.io",
+        "ingressroutetcps.traefik.io"
       ]
     }
   },
