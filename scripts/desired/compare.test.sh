@@ -64,14 +64,14 @@ compare "a section only the desired document has is missing" '[{"path": ["tls"],
   . 'del(.tls)'
 compare "a section the desired document lacks is skipped" '[]' 'del(.tls)' .
 
-host_desired='{"kind": "desired", "source": "host-check", "checks": [{"id": "selinux-enforcing", "ok": true, "value": "enforcing"},
-  {"id": "unprivileged-port-start", "ok": true, "value": "1024 or higher"}]}'
+host_desired='{"kind": "desired", "source": "host-check", "checks": [{"id": "selinux", "ok": true, "value": "enforcing, enable_selinux true"},
+  {"id": "low-ports", "ok": true, "value": "none"}]}'
 host_actual='{"kind": "actual", "source": "host-check", "node": "node-a", "collected": {"selinux": "disabled"},
-  "checks": [{"id": "unprivileged-port-start", "ok": true, "value": "1024 or higher", "raw": "ip_unprivileged_port_start = 1024"},
-             {"id": "selinux-enforcing", "ok": false, "value": "disabled", "raw": "/sys/fs/selinux/enforce missing"}]}'
+  "checks": [{"id": "low-ports", "ok": true, "value": "none", "raw": "ip_unprivileged_port_start = 1024"},
+             {"id": "selinux", "ok": false, "value": "disabled; enable_selinux unset", "raw": "/sys/fs/selinux/enforce missing"}]}'
 same "rows with an id are compared key by key, raw skipped" \
-  '[{"path": ["checks", "selinux-enforcing", "ok"], "extra": false}, {"path": ["checks", "selinux-enforcing", "ok"], "missing": true},
-    {"path": ["checks", "selinux-enforcing", "value"], "extra": "disabled"}, {"path": ["checks", "selinux-enforcing", "value"], "missing": "enforcing"}]' \
+  '[{"path": ["checks", "selinux", "ok"], "extra": false}, {"path": ["checks", "selinux", "ok"], "missing": true},
+    {"path": ["checks", "selinux", "value"], "extra": "disabled; enable_selinux unset"}, {"path": ["checks", "selinux", "value"], "missing": "enforcing, enable_selinux true"}]' \
   "$(bash "$here/compare.sh" <(echo "$host_desired") <(echo "$host_actual"))"
 
 prove_desired='{"kind": "desired", "source": "prove", "namespace": "databases", "probes": [{"probe": "password-tls", "expected": "refused", "value": "denied", "ok": true}]}'

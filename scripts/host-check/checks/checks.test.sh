@@ -26,7 +26,7 @@ bash() {
 }
 export -f bash
 actual=$(/bin/bash "$here/checks.sh" 26 26 /storage <<<'{}' | jq -s -r 'map(.id) | join(" ")')
-same_text "all checks invoked" 13 "$(wc -w <<<"$actual")"
+same_text "all checks invoked" 6 "$(wc -w <<<"$actual")"
 same_text "the checks of the desired document, in order" "$desired" "$actual"
 bash() { return 7; }
 export -f bash
@@ -41,7 +41,7 @@ export -f getent
 status=0
 output=$(/bin/bash "$here/checks.sh" 26 26 /storage <<<'{}') || status=$?
 same_text "account enumeration failure stops checks" 2 "$status"
-same "only the preceding SELinux check was printed" '["selinux-enforcing"]' \
+same "only the preceding SELinux check was printed" '["selinux"]' \
   "$(jq -s 'map(.id)' <<<"$output")"
 
 finish

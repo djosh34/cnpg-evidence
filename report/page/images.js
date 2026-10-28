@@ -644,19 +644,12 @@ const EVIDENCE = [
 // --- host-check.sh: one image per check ---
 
 const CHECKS = {
-  'selinux-enforcing': ['SELinux mode', 'The kernel enforces SELinux.'],
-  'postgres-uid-account': ['Accounts with the PostgreSQL uid or gid', 'Every host account with PostgreSQL\'s uid or primary gid is locked and has a nologin shell.'],
-  'postgres-gid-group': ['Members of the PostgreSQL group', 'Every member of the group with PostgreSQL\'s gid is locked and has a nologin shell.'],
-  'postgres-sudoers': ['Sudo rules for the PostgreSQL ids', 'No sudoers line names PostgreSQL\'s account, group, uid or gid.'],
-  'postgresql-server-absent': ['PostgreSQL server package', 'No PostgreSQL server package is installed on the host.'],
-  'storage-dir-mode': ['Data volume directory', 'The directory of the data volumes is 0700 or tighter, owned by root, without an ACL.'],
-  'kubelet-pods-mode': ['Pod volume directory', 'The kubelet pod directory is 0750 or tighter, owned by root, without an ACL.'],
-  'k3s-kubeconfig-mode': ['k3s admin kubeconfig', 'The k3s kubeconfig is 0600 or tighter, owned by root, without an ACL.'],
-  'k3s-selinux': ['SELinux labels for containers', 'containerd gives each container its own SELinux label.'],
+  'selinux': ['SELinux mode and container labels', 'The kernel enforces SELinux and the generated containerd config enables SELinux labels.'],
+  'postgres-account': ['Accounts with the PostgreSQL uid or gid', 'Every host account with PostgreSQL\'s uid or primary gid is locked and has a nologin shell.'],
+  'dir-modes': ['Data and pod directories', 'The storage directory is 0700 or tighter and the kubelet pod directory is 0750 or tighter, both root:root without an ACL.'],
+  'k3s-secrets': ['k3s credentials and encryption', 'Existing k3s credential files are 0600 or tighter and the server directory is 0700 or tighter, all root:root without an ACL, with secrets encryption enabled on servers.'],
+  'low-ports': ['Low ports', 'The unprivileged port threshold is at least 1024 and no file under /usr or /opt carries cap_net_bind_service.'],
   'k3s-network-policy': ['Network policy controller', 'No k3s setting turns off the network policy controller.'],
-  'subordinate-ids': ['Subordinate ids', 'No account\'s subordinate id range overlaps the range kubelet gives pods.'],
-  'unprivileged-port-start': ['Lowest port without root', 'Only root can bind ports below 1024.'],
-  'bind-service-capability': ['Programs that can bind low ports', 'No program under /usr or /opt carries cap_net_bind_service.'],
 };
 
 const YES_NO = ['true', 'false', true, false];

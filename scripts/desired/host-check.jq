@@ -8,18 +8,11 @@
   kind: "desired",
   source: "host-check",
   checks: ([
-    ["selinux-enforcing", "enforcing"],
-    ["postgres-uid-account", "none"],
-    ["postgres-gid-group", "none"],
-    ["postgres-sudoers", "none"],
-    ["postgresql-server-absent", "none"],
-    ["storage-dir-mode", "700 or tighter, root:root, no ACL"],
-    ["kubelet-pods-mode", "750 or tighter, root:root, no ACL"],
-    ["k3s-kubeconfig-mode", "600 or tighter, root:root, no ACL"],
-    ["k3s-selinux", "true"],
-    ["k3s-network-policy", "none"],
-    ["subordinate-ids", "none"],
-    ["unprivileged-port-start", "1024 or higher"],
-    ["bind-service-capability", "none"]
+    ["selinux", "enforcing, enable_selinux true"],
+    ["postgres-account", "none"],
+    ["dir-modes", "none"],
+    ["k3s-secrets", "none"],
+    ["low-ports", "none"],
+    ["k3s-network-policy", "none"]
   ] | map({id: .[0], ok: true, value: .[1]}))
 }

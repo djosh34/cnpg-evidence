@@ -70,8 +70,8 @@ Each difference is `{path, extra}` or `{path, missing}`. `path` names the keys d
 ```json
 [{"path": ["postgres", "have_password"], "extra": "orders"},
  {"path": ["kubernetes", "namespaces", "databases", "run_pods"], "extra": "mallory"},
- {"path": ["checks", "selinux-enforcing", "value"], "extra": "disabled"},
- {"path": ["checks", "selinux-enforcing", "value"], "missing": "enforcing"}]
+ {"path": ["checks", "selinux", "value"], "extra": "disabled; enable_selinux unset"},
+ {"path": ["checks", "selinux", "value"], "missing": "enforcing, enable_selinux true"}]
 ```
 
 An empty list means the actual document has every desired value and nothing else. A `"*"` map stands for the keys the actual map has, so an actual map with no keys shows no difference; `evidence.sh` checks the number of instance pods.
