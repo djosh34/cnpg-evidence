@@ -17,9 +17,9 @@ esac
 
 case $source in
   evidence)
-    pairs=(01-accounts 02-login-rules 03-client-ca 04-encryption 05-network
-      06-container-isolation 07-operator-secrets 08-platform-pods 09-platform-secrets
-      10-platform-setup 11-platform-nodes-certificates)
+    pairs=(01-accounts 02-login-rules 03-client-ca 04-encryption 05-network 06-ports
+      07-container-isolation 08-operator-secrets 09-platform-pods 10-platform-secrets
+      11-platform-setup 12-platform-nodes-certificates)
     ;;
   prove)
     pairs=(01-login-attempts 02-other-namespace 03-host-uid)
@@ -39,6 +39,6 @@ esac
     done
   done
   if [ "$source" = evidence ] && [ "$kind" = actual ]; then
-    echo "evidence-12-versions-actual.png"
+    echo "evidence-13-versions-actual.png"
   fi
 } | LC_ALL=C sort

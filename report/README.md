@@ -18,7 +18,7 @@ Each image is one table. A desired image shows the values of a desired document 
 | `page/images.js` | Every image: file name, words, columns, legend and rows |
 | `page/draw.js` | `draw()`: checks the documents, leaves out what actual lacks, orders the rows, sets Passed or Failed, draws the sheets and lines up each pair |
 | `page/fonts/` | Sofia Sans, Sofia Sans Semi Condensed and Sofia Sans Condensed, with their licence `OFL.txt` |
-| `samples/` | Example documents: desired, clean and failing for each script. All values are invented. |
+| `samples/` | Example documents: desired, clean and failing for each script, the desired values `desired-values.json` and the CA `client-ca.pem` the desired documents come from. All values are invented. |
 | `test/` | Unit tests of the comparison and the images, and the test of the built binary |
 | `dev/render.js` | Renders every image of the samples with a local Chrome |
 | `launcher/` | The Go launcher of `cnpg-report`, its private `fonts.conf`, and `libs.sh`, which gathers the libraries from UBI9 |
@@ -38,7 +38,7 @@ bash report/build.sh build/cnpg-report
 
 It downloads the pinned Chrome zip and checks its SHA-256, installs the RPMs in a pinned UBI9 container and copies their libraries and licence texts, packs the payload, and builds the launcher with `CGO_ENABLED=0` in a pinned Go container. `launcher/payload.tar.gz` exists only during a build, so `go vet` and `go build` in `launcher/` work only inside it.
 
-A pushed tag `v*` runs `.github/workflows/release.yml`. It runs every CI job, then pushes the binary the `report` job built and tested as `ghcr.io/djosh34/cnpg-report:<tag>`, an image `FROM scratch` with only `/cnpg-report` in it. A last job pulls that image, copies the binary out with `podman create` and `podman cp`, and renders the clean samples with it.
+A pushed tag `v*` runs `.github/workflows/release.yml`. It runs every CI job, then pushes the binary the `report` job built and tested as `ghcr.io/djosh34/cnpg-report:<tag>`, an image `FROM scratch` with only `/cnpg-report` in it. A last job pulls that image, copies the binary out with `podman create` and `podman cp`, renders the clean samples with it, and runs the container example of [report.md](../docs/report.md#in-a-container) on the image.
 
 ## Drawing the images
 
@@ -64,20 +64,21 @@ Both images of a pair take their column widths from the desired table, so a pair
 
 ## Images
 
-`evidence.sh`, 11 pairs and one actual image:
+`evidence.sh`, 12 pairs and one actual image:
 
 - `evidence-01-accounts-desired.png`, `evidence-01-accounts-actual.png`: with the certificate names that log in as each account.
 - `evidence-02-login-rules-desired.png`, `-actual.png`
 - `evidence-03-client-ca-desired.png`, `-actual.png`
 - `evidence-04-encryption-desired.png`, `-actual.png`
 - `evidence-05-network-desired.png`, `-actual.png`
-- `evidence-06-container-isolation-desired.png`, `-actual.png`
-- `evidence-07-operator-secrets-desired.png`, `-actual.png`
-- `evidence-08-platform-pods-desired.png`, `-actual.png`
-- `evidence-09-platform-secrets-desired.png`, `-actual.png`
-- `evidence-10-platform-setup-desired.png`, `-actual.png`
-- `evidence-11-platform-nodes-certificates-desired.png`, `-actual.png`
-- `evidence-12-versions-actual.png` only: versions have no desired value.
+- `evidence-06-ports-desired.png`, `-actual.png`: every Service that reaches an instance pod, and the host ports of each instance pod.
+- `evidence-07-container-isolation-desired.png`, `-actual.png`
+- `evidence-08-operator-secrets-desired.png`, `-actual.png`
+- `evidence-09-platform-pods-desired.png`, `-actual.png`
+- `evidence-10-platform-secrets-desired.png`, `-actual.png`
+- `evidence-11-platform-setup-desired.png`, `-actual.png`
+- `evidence-12-platform-nodes-certificates-desired.png`, `-actual.png`
+- `evidence-13-versions-actual.png` only: versions have no desired value.
 
 `host-check.sh`, one pair per check of the node file, named with its `node` and the check `id`:
 
@@ -106,13 +107,13 @@ The images then apply the rules of the report on top of those differences:
 
 ## Tests
 
-From `report/`, with Node.js 20 or later, bash and jq:
+From `report/`, with Node.js 20 or later, bash, jq and openssl:
 
 ```bash
 node --test test/*.test.js
 ```
 
-CI runs them in the `page` job.
+CI runs them in the `page` job. `test/samples.test.js` checks that each `samples/*.desired.json` is what `scripts/desired/desired.sh` prints for `samples/desired-values.json` and `samples/client-ca.pem`; after a change to the scripts, write them again with it.
 
 The built binary, on an x86_64 host with docker and jq:
 
@@ -121,6 +122,14 @@ bash report/test/binary.sh build/cnpg-report images
 ```
 
 It runs the binary in `ubi9-minimal` with `--network=none` on the clean, failing and desired samples and compares the written files with the image list above (`test/expected-images.sh`). It checks exit 2 and no output directory on broken JSON and on a missing key. Last, it traces one run with `strace -f -e trace=openat` in a throwaway `ubi9-minimal` image that adds strace, and fails on any open under `/usr/lib64`, `/lib64`, `/usr/share/fonts` or `/etc/fonts`, failed ones included. The images and `strace-summary.txt` go into `images/`. CI runs it in the `report` job and uploads `images/` as the `report-images` artifact.
+
+The container example of [report.md](../docs/report.md#in-a-container), on an x86_64 host with docker and jq:
+
+```bash
+bash report/test/docker-example.sh VERSION OUT_DIR
+```
+
+It takes the command from the docs as written, runs it with the image `ghcr.io/djosh34/cnpg-report:VERSION` on the evidence samples, and compares the images with the list above. The `report` job builds a local image tagged `ci` from the binary and runs it; the release runs it on the pushed image.
 
 ## Development render
 

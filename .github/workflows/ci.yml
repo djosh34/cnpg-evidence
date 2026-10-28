@@ -37,6 +37,7 @@ jobs:
           set -euo pipefail
           node --version
           jq --version
+          openssl version
       - name: Page tests
         working-directory: report
         run: node --test test/*.test.js
@@ -62,6 +63,16 @@ jobs:
           file build/cnpg-report | grep -q 'x86-64.*statically linked'
       - name: Render in ubi9-minimal without network
         run: bash report/test/binary.sh build/cnpg-report images
+      # The container example of docs/report.md, on an image built as the
+      # release builds it.
+      - name: Run the container example
+        run: |
+          set -euo pipefail
+          mkdir -p image
+          cp build/cnpg-report image/cnpg-report
+          printf 'FROM scratch\nCOPY cnpg-report /cnpg-report\n' > image/Containerfile
+          docker build --platform linux/amd64 --file image/Containerfile --tag ghcr.io/djosh34/cnpg-report:ci image
+          bash report/test/docker-example.sh ci docker-example
       - name: Trace summary
         if: ${{ !cancelled() }}
         run: cat images/strace-summary.txt

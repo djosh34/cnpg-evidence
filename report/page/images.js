@@ -21,6 +21,7 @@
 const NETWORK_SCOPE = 'This table covers ports 8000 and 9187. Database logins are shown in the login images.';
 const PLATFORM_DESIRED = 'The platform components that may hold these rights. Any other account must hold none of them.';
 const PLATFORM_ACTUAL = 'Every Kubernetes account that holds one of these rights, as the API server answers for it.';
+const NODE_PORTS_NOTE = 'Open node ports is starting pods, or changing Services, Ingresses, or the Traefik IngressRoutes and IngressRouteTCPs (ingressroutetcps.traefik.io) where the cluster serves them.';
 const SECRETS_NOTE = 'A square stands for every Secret in the namespace, a name for that Secret only.';
 const OBJECTS_NOTE = 'The objects are the cluster\'s CNPG objects, Endpoints, EndpointSlices and NetworkPolicies. A square stands for every kind of them, a name for that kind only.';
 
@@ -199,6 +200,62 @@ function network(s) {
   return rows;
 }
 
+// The parts of the value at path, split by separator, each red when the
+// desired value it differs from lacks it.
+function parts(s, path, separator) {
+  const found = s.values(path);
+  const desired = found.filter(v => v.state === 'missing').flatMap(v => String(v.value).split(separator));
+  return found
+    .filter(v => v.state !== 'missing')
+    .flatMap(v => String(v.value).split(separator).map(part => entry(part, v.state === 'extra' && !desired.includes(part) ? 'extra' : '')));
+}
+
+const blank = [{ text: '', state: '' }];
+
+// Every Service that reaches the instances, by its namespace and name, then
+// the host ports of each instance pod. An extra Service is red by its name,
+// and its other values only where desired allows none for any Service: node
+// ports and external IPs. The script's words none and present start with a
+// capital, as the page's None does.
+function ports(s) {
+  const services = s.keys(['ports', 'services']).map(({ key, state }) => {
+    const path = ['ports', 'services', key];
+    const slash = key.indexOf('/');
+    const plain = values => (state === 'extra' ? values.map(v => ({ ...v, state: '' })) : values);
+    const word = values => values.map(v => ({ ...v, text: { none: 'None', present: 'Present' }[v.text] ?? v.text }));
+    return {
+      cells: [
+        [entry(key.slice(slash + 1), state)],
+        [entry(key.slice(0, slash), state)],
+        plain(entries(s.values([...path, 'type']))),
+        word(plain(parts(s, [...path, 'selector'], ','))),
+        word(plain(entries(s.values([...path, 'traffic_policy'])))),
+        plain(entries(s.items([...path, 'ports']))),
+        entries(s.items([...path, 'node_ports'])),
+        word(plain(entries(s.values([...path, 'health_check_port'])))),
+        entries(s.items([...path, 'external_ips'])),
+      ],
+    };
+  });
+  const namespace = s.at(['cluster', 'namespace']);
+  const pods = s.keys(['ports', 'host_ports']).map(({ key, state }) => ({
+    every: key === '*',
+    section: 1,
+    cells: [
+      [entry(key === '*' ? 'Every instance pod' : `pod ${key}`, state)],
+      [entry(namespace, state)],
+      [entry('hostPort', '')],
+      blank,
+      blank,
+      entries(s.items(['ports', 'host_ports', key])),
+      blank,
+      blank,
+      blank,
+    ],
+  }));
+  return [...services, ...pods];
+}
+
 // Isolation is a protection: an empty square, a pod that shares the host's
 // ids, is red when the desired document does not allow it.
 function containerIsolation(s) {
@@ -328,6 +385,7 @@ function rightRows(rights) {
 
 const POD_RIGHTS = [
   { key: 'exec_into_pods', label: 'Enter containers', namespaced: true },
+  { key: 'port_forward', label: 'Port-forward', namespaced: true },
   { key: 'change_pods', label: 'Change pods', namespaced: true },
   { key: 'run_pods', label: 'Start pods', namespaced: true },
 ];
@@ -453,7 +511,23 @@ const EVIDENCE = [
     },
   },
   {
-    name: '06-container-isolation',
+    name: '06-ports',
+    sections: ['ports'],
+    title: 'Services and host ports to the instances',
+    control: 'Besides a login, the instances are reached only through CNPG\'s ClusterIP Services, the rw LoadBalancer and the read LoadBalancer of desired.yaml. No Service has a node port or an external IP, and no instance pod has a host port.',
+    desired: 'The Services that may reach the instance pods, with their type, selector, traffic policy and ports. The read LoadBalancer has a health check port, which leads to no database.',
+    actual: 'Every Service in any namespace that sends connections to an instance pod, by its selector or by an address in its EndpointSlices, and the host ports of each instance pod.',
+    noun: ['Service or pod', 'Services and pods'],
+    columns: ['Service', 'Namespace', 'Type', 'Selector', 'Traffic policy', 'Ports', 'Node ports', 'Health check port', 'External IPs'],
+    names: 2,
+    rows: ports,
+    legend: {
+      desired: [],
+      actual: [RED_VALUE('A value the desired image does not have for this Service or pod'), [{ name: 'Red Service' }, 'A Service the desired image does not have']],
+    },
+  },
+  {
+    name: '07-container-isolation',
     sections: ['pods_sharing_host_uids'],
     title: 'Container isolation',
     control: 'Each instance runs in its own user namespace, so its uid 26 is no user on the host.',
@@ -469,7 +543,7 @@ const EVIDENCE = [
     },
   },
   {
-    name: '07-operator-secrets',
+    name: '08-operator-secrets',
     sections: ['kubernetes'],
     title: 'Where the operator and the plugin read Secrets',
     control: 'The CNPG operator and the backup plugin read Secrets only in the operator\'s and the cluster\'s namespaces.',
@@ -481,10 +555,10 @@ const EVIDENCE = [
     legend: { desired: [], actual: [RED_VALUE('A namespace the desired image does not allow')] },
   },
   {
-    name: '08-platform-pods',
+    name: '09-platform-pods',
     sections: ['kubernetes'],
     title: 'Platform access: containers and pods',
-    control: 'Only approved platform components can enter the instance containers, change their pods or start pods next to them.',
+    control: 'Only approved platform components can enter the instance containers, port-forward to them, change their pods or start pods next to them.',
     desired: PLATFORM_DESIRED,
     actual: PLATFORM_ACTUAL,
     noun: ['account', 'accounts'],
@@ -497,7 +571,7 @@ const EVIDENCE = [
     },
   },
   {
-    name: '09-platform-secrets',
+    name: '10-platform-secrets',
     sections: ['kubernetes'],
     title: 'Platform access: Secrets',
     control: 'Only approved platform components can read or change the cluster\'s Secrets or create tokens for its account.',
@@ -519,7 +593,7 @@ const EVIDENCE = [
     },
   },
   {
-    name: '10-platform-setup',
+    name: '11-platform-setup',
     sections: ['kubernetes'],
     title: 'Platform access: cluster setup',
     control: 'Only approved platform components can change the CNPG objects, the webhooks or role bindings, or act as another account.',
@@ -535,12 +609,12 @@ const EVIDENCE = [
     },
   },
   {
-    name: '11-platform-nodes-certificates',
+    name: '12-platform-nodes-certificates',
     sections: ['kubernetes', 'host_network_pods_that_can_bind_low_ports'],
     title: 'Platform access: nodes and certificates',
     control: 'Only approved platform components can open ports on the nodes, reach the node agents or request certificates. No host-network pod can bind a port below 1024.',
-    desired: PLATFORM_DESIRED,
-    actual: `${PLATFORM_ACTUAL} Host-network pods that can bind a port below 1024 are listed as pods.`,
+    desired: `${PLATFORM_DESIRED} ${NODE_PORTS_NOTE}`,
+    actual: `${PLATFORM_ACTUAL} ${NODE_PORTS_NOTE} Host-network pods that can bind a port below 1024 are listed as pods.`,
     noun: ['account or pod', 'accounts and pods'],
     columns: docs => [...rightColumns(NODE_RIGHTS)(docs), mark('Bind low ports')],
     names: 2,
@@ -551,7 +625,7 @@ const EVIDENCE = [
     },
   },
   {
-    name: '12-versions',
+    name: '13-versions',
     sections: ['software'],
     actualOnly: true,
     title: 'Versions',
@@ -625,26 +699,43 @@ function probeGroup(name) {
   return '01-login-attempts';
 }
 
-// prove.sh joins the different results of one attempt with ", ". Each is a
-// value of its own, red when the desired value is another.
-function results(s, name) {
-  const found = s.values(['probes', name, 'value']);
-  const desired = found.filter(v => v.state === 'missing').flatMap(v => String(v.value).split(', '));
-  return found
-    .filter(v => v.state !== 'missing')
-    .flatMap(v => (v.state === 'extra' ? String(v.value).split(', ').map(part => entry(part, desired.includes(part) ? '' : 'extra')) : [entry(v.value, '')]));
+// Where prove.sh makes each attempt, for the desired image.
+function where(name) {
+  if (name.startsWith('uid-')) return 'An instance pod on this node';
+  if (name === 'control-other-namespace') return 'The Kubernetes API';
+  if (name.startsWith('other-namespace-') && name !== 'other-namespace-lb') return 'Each instance pod';
+  return 'Each LoadBalancer port of each node';
 }
 
+// Where the attempts were made, from the targets prove.sh records: each
+// address or pod with the ports tried on it, and a target without a port as
+// it is.
+function triedOn(s, name) {
+  if (s.desired) return [entry(where(name), '')];
+  const ports = new Map();
+  for (const { target } of s.at(['probes', name, 'raw']) ?? []) {
+    const found = /^(?:(\S+) )?(\S+):(\d+)$/.exec(target);
+    const at = found ? found[1] ?? found[2] : target;
+    if (!ports.has(at)) ports.set(at, []);
+    if (found && !ports.get(at).includes(found[3])) ports.get(at).push(found[3]);
+  }
+  return [...ports].map(([at, list]) => entry(list.length ? `${at}: ${list.join(', ')}` : at, ''));
+}
+
+// prove.sh joins the different results of one attempt with ", ". Each is a
+// value of its own, red when the desired value is another.
 function probes(group) {
   return s => s.items(['probes'])
     .filter(row => probeGroup(String(row.value?.probe)) === group)
     .map(row => {
       const name = row.value.probe;
       return {
-        cells: [[entry(name, row.state)], entries(s.values(['probes', name, 'expected'])), results(s, name)],
+        cells: [[entry(name, row.state)], triedOn(s, name), entries(s.values(['probes', name, 'expected'])), parts(s, ['probes', name, 'value'], ', ')],
       };
     });
 }
+
+const LOAD_BALANCERS = 'go to every node\'s address on the rw LoadBalancer port 5432, and on the read LoadBalancer port when desired.yaml sets one';
 
 const PROVE = [
   {
@@ -652,12 +743,14 @@ const PROVE = [
     title: 'Login attempts from a node',
     control: 'No password login works, and a certificate logs in only as its own account.',
     desired: 'Each login attempt and the result it must get. The control attempt must log in, to show the path works.',
+    where: `The login attempts ${LOAD_BALANCERS}.`,
   },
   {
     name: '02-other-namespace',
     title: 'Connections from another namespace',
     control: 'A pod in another namespace cannot reach the instances on 5432, 8000 or 9187, nor log in through the Services.',
     desired: 'Each connection attempt from a new pod in its own namespace, and the result it must get. The control attempt must connect.',
+    where: `The attempts of other-namespace-lb ${LOAD_BALANCERS}.`,
   },
   {
     name: '03-host-uid',
@@ -665,12 +758,12 @@ const PROVE = [
     control: 'A host user with PostgreSQL\'s uid cannot reach the socket, the data or the ServiceAccount token of an instance.',
     desired: 'Each attempt as the uid on this node, and the result it must get.',
   },
-].map(image => ({
+].map(({ where: tried = '', ...image }) => ({
   ...image,
   sections: ['probes'],
-  actual: 'Each attempt that was made, and its result. One row stands for every address, pod or uid the attempt was made with.',
+  actual: `Each attempt that was made, where, and its result. One row stands for every address, pod or uid the attempt was made with. ${tried}`.trim(),
   noun: ['attempt', 'attempts'],
-  columns: ['Attempt', 'Must be', 'Result'],
+  columns: ['Attempt', 'Tried on', 'Must be', 'Result'],
   names: 1,
   rows: probes(image.name),
   legend: {

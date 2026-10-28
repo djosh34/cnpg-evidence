@@ -29,12 +29,12 @@ const values = s => s.rows.flatMap(r => r.cells.flat());
 const red = s => values(s).filter(v => v.state === 'extra');
 
 const FILES = [
-  '01-accounts', '02-login-rules', '03-client-ca', '04-encryption', '05-network', '06-container-isolation',
-  '07-operator-secrets', '08-platform-pods', '09-platform-secrets', '10-platform-setup', '11-platform-nodes-certificates',
+  '01-accounts', '02-login-rules', '03-client-ca', '04-encryption', '05-network', '06-ports', '07-container-isolation',
+  '08-operator-secrets', '09-platform-pods', '10-platform-secrets', '11-platform-setup', '12-platform-nodes-certificates',
 ];
 
 test('evidence: a desired and an actual image per item, numbered without a gap, versions actual only', () => {
-  const expected = [...FILES.flatMap(f => [`evidence-${f}-desired.png`, `evidence-${f}-actual.png`]), 'evidence-12-versions-actual.png'];
+  const expected = [...FILES.flatMap(f => [`evidence-${f}-desired.png`, `evidence-${f}-actual.png`]), 'evidence-13-versions-actual.png'];
   assert.deepEqual(sheets(clean, desired).map(s => s.file), expected);
   assert.deepEqual(sheets(desired).map(s => s.file), FILES.map(f => `evidence-${f}-desired.png`));
 });
@@ -72,17 +72,17 @@ test('an actual image fails when it shows a red mark; a desired image has no ver
   }
   const verdict = file => sheet(failing, desired, `evidence-${file}-actual.png`).verdict;
   assert.equal(verdict('01-accounts'), 'Failed');
-  assert.equal(verdict('10-platform-setup'), 'Passed');
+  assert.equal(verdict('11-platform-setup'), 'Passed');
 });
 
 test('the legend is the same on Passed and Failed images, and an image with no marks has none', () => {
   const failed = sheets(failing, desired);
   for (const s of sheets(clean, desired)) {
     assert.deepEqual(failed.find(f => f.file === s.file).legend, s.legend, s.file);
-    if (s.side === 'actual' && s.file !== 'evidence-12-versions-actual.png') assert.ok(s.legend.length, s.file);
+    if (s.side === 'actual' && s.file !== 'evidence-13-versions-actual.png') assert.ok(s.legend.length, s.file);
   }
   assert.deepEqual(sheet(clean, desired, 'evidence-02-login-rules-desired.png').legend, []);
-  assert.deepEqual(sheet(clean, desired, 'evidence-12-versions-actual.png').legend, []);
+  assert.deepEqual(sheet(clean, desired, 'evidence-13-versions-actual.png').legend, []);
   // A desired image that shows squares explains them.
   assert.deepEqual(sheet(clean, desired, 'evidence-01-accounts-desired.png').legend, [['on', 'Holds the right'], ['off', 'Does not hold the right']]);
 });
@@ -98,21 +98,21 @@ test('every yes or no is a square: filled when held, red when desired does not g
 
 test('a right desired allows but actual does not hold is a normal empty square', () => {
   // desired lets cronjob-controller enter containers; it does not.
-  const cronjob = show(clean, '08-platform-pods').find(r => r[0] === 'cronjob-controller');
+  const cronjob = show(clean, '09-platform-pods').find(r => r[0] === 'cronjob-controller');
   assert.deepEqual(cronjob.slice(2, 5), ['[ ]', '[ ]', '[ ]']);
-  assert.deepEqual(sheet(clean, desired, 'evidence-08-platform-pods-desired.png').rows.find(r => r.cells[0][0].text === 'cronjob-controller').cells[2], [{ mark: true, state: '' }]);
+  assert.deepEqual(sheet(clean, desired, 'evidence-09-platform-pods-desired.png').rows.find(r => r.cells[0][0].text === 'cronjob-controller').cells[2], [{ mark: true, state: '' }]);
 });
 
 test('a protection that is off is a red empty square', () => {
-  assert.deepEqual(show(failing, '06-container-isolation'), [['pg-1', '[x]'], ['pg-2', '[x]'], ['pg-3', '+[ ]']]);
-  assert.deepEqual(rows(sheet(failing, desired, 'evidence-06-container-isolation-desired.png')), [['Every instance', '[x]']]);
+  assert.deepEqual(show(failing, '07-container-isolation'), [['pg-1', '[x]'], ['pg-2', '[x]'], ['pg-3', '+[ ]']]);
+  assert.deepEqual(rows(sheet(failing, desired, 'evidence-07-container-isolation-desired.png')), [['Every instance', '[x]']]);
 });
 
 test('an extra row shows only its identity in red', () => {
   assert.deepEqual(show(failing, '01-accounts').find(r => r[0] === '+app'), ['+app', '[ ]', '', '', '', '[ ]', '[ ]', '[ ]', '', '[ ]', '']);
-  assert.deepEqual(show(failing, '08-platform-pods').find(r => r[0] === '+mallory'), ['+mallory', '', '[ ]', '[ ]', '[ ]', '[ ]', '[ ]', '[ ]', '[ ]', '[ ]', '+[x]']);
+  assert.deepEqual(show(failing, '09-platform-pods').find(r => r[0] === '+mallory'), ['+mallory', '', '[ ]', '[ ]', '[ ]', '[ ]', '[ ]', '[ ]', '[ ]', '[ ]', '[ ]', '+[x]']);
   // A known account with a right beyond desired keeps its name normal.
-  assert.deepEqual(show(failing, '08-platform-pods').find(r => r[0] === 'cert-manager-webhook').slice(2, 5), ['[ ]', '[ ]', '+[x]']);
+  assert.deepEqual(show(failing, '09-platform-pods').find(r => r[0] === 'cert-manager-webhook').slice(2, 5), ['[ ]', '[ ]', '+[x]']);
   assert.deepEqual(show(failing, '05-network').find(r => r[1] === '+everyone'), ['pg-3', '+everyone', '+8000 +9187']);
 });
 
@@ -151,11 +151,11 @@ test('the accounts image lists the certificate names of each account', () => {
 
 test('correct rows first and red rows last, each group alphabetical, and values the same way', () => {
   assert.deepEqual(show(failing, '01-accounts').map(r => r[0]), ['cnpg_metrics_exporter', 'postgres', 'streaming_replica', '+app', 'billing', 'orders']);
-  const pods = show(failing, '08-platform-pods').map(r => r[0]);
-  assert.deepEqual(pods.slice(-2), ['cert-manager-webhook', '+mallory']);
-  assert.deepEqual(pods.slice(0, -2), [...pods.slice(0, -2)].sort());
+  const pods = show(failing, '09-platform-pods').map(r => r[0]);
+  assert.deepEqual(pods.slice(-3), ['cert-manager-webhook', '+debug-tunnel', '+mallory']);
+  assert.deepEqual(pods.slice(0, -3), [...pods.slice(0, -3)].sort());
   assert.deepEqual(show(failing, '04-encryption').map(r => r[0]), ['pg-1', 'pg-3', 'pg-2']);
-  assert.deepEqual(show(failing, '07-operator-secrets'), [['Backup plugin', 'databases'], ['CNPG operator', 'cnpg-system databases +kube-system']]);
+  assert.deepEqual(show(failing, '08-operator-secrets'), [['Backup plugin', 'databases'], ['CNPG operator', 'cnpg-system databases +kube-system']]);
 });
 
 test('pg_hba keeps its number order, and a moved line is red at its new number', () => {
@@ -193,7 +193,7 @@ test('per-instance login rules mark only what differs from the desired lines', (
 });
 
 test('the platform grids have one column per namespace under each right', () => {
-  const s = sheet(failing, desired, 'evidence-09-platform-secrets-actual.png');
+  const s = sheet(failing, desired, 'evidence-10-platform-secrets-actual.png');
   assert.deepEqual(s.columns.slice(2).map(c => `${c.group}: ${c.label}`), [
     'Read Secrets: cert-manager', 'Read Secrets: cnpg-system', 'Read Secrets: databases',
     'Change Secrets: cert-manager', 'Change Secrets: cnpg-system', 'Change Secrets: databases',
@@ -202,10 +202,10 @@ test('the platform grids have one column per namespace under each right', () => 
   const secrets = rows(s);
   assert.deepEqual(secrets.find(r => r[0] === '+mallory'), ['+mallory', '', '[ ]', '[ ]', '+client-ca', '[ ]', '[ ]', '[ ]', '[ ]']);
   assert.deepEqual(secrets.find(r => r[0] === 'cert-manager-webhook').slice(2, 5), ['cert-manager-webhook-ca', '[ ]', '[ ]']);
-  const setup = sheet(clean, desired, 'evidence-10-platform-setup-actual.png');
+  const setup = sheet(clean, desired, 'evidence-11-platform-setup-actual.png');
   assert.deepEqual(setup.columns.slice(2).map(c => c.label), ['databases', 'Change webhooks', 'Grant rights', 'Impersonate']);
   assert.deepEqual(rows(setup).find(r => r[0] === 'system:kube-controller-manager').slice(2), ['endpoints endpointslices', '[ ]', '[ ]', '[ ]']);
-  assert.deepEqual(show(failing, '11-platform-nodes-certificates').at(-1), ['+pod node-agent-7xk2p', '+monitoring', '[ ]', '[ ]', '[ ]', '+[x]']);
+  assert.deepEqual(show(failing, '12-platform-nodes-certificates').at(-1), ['+pod node-agent-7xk2p', '+monitoring', '[ ]', '[ ]', '[ ]', '+[x]']);
 });
 
 test('a pair shares its columns', () => {
@@ -220,7 +220,7 @@ test('host-check and prove show the value read in red, without the desired value
   assert.deepEqual(rows(hc), [['unprivileged-port-start', '+0']]);
   assert.deepEqual(hc.context.find(c => c[0] === 'Read on the node'), ['Read on the node', 'ip_unprivileged_port_start = 0']);
   const pr = sheet(sample('prove.failing.json'), sample('prove.desired.json'), 'prove-01-login-attempts-actual.png');
-  assert.deepEqual(rows(pr).at(-1), ['password-no-tls', 'refused by pg_hba reject', '+allowed']);
+  assert.deepEqual(rows(pr).at(-1).filter((_, i) => i !== 1), ['password-no-tls', 'refused by pg_hba reject', '+allowed']);
 });
 
 test('a host-check value of true or false is a square, red when it is not the desired one', () => {
@@ -240,7 +240,7 @@ test('a host-check value of true or false is a square, red when it is not the de
 
 test('each result prove.sh joined is its own value, red only when it is not the desired one', () => {
   const pr = sheet(sample('prove.failing.json'), sample('prove.desired.json'), 'prove-02-other-namespace-actual.png');
-  assert.deepEqual(rows(pr).find(r => r[0] === 'other-namespace-9187'), ['other-namespace-9187', 'timeout or connection refused', 'denied +allowed']);
+  assert.deepEqual(rows(pr).find(r => r[0] === 'other-namespace-9187'), ['other-namespace-9187', 'pg-1: 9187 pg-2: 9187 pg-3: 9187', 'timeout or connection refused', 'denied +allowed']);
 });
 
 test('the network images state their scope', () => {
@@ -269,8 +269,8 @@ test('the population counts the rows drawn, and says All only for more than one'
   const population = s => s.context.find(([term]) => term === 'Population')?.[1];
   assert.equal(population(sheet(clean, desired, 'evidence-03-client-ca-actual.png')), '1 certificate');
   assert.equal(population(sheet(clean, desired, 'evidence-03-client-ca-desired.png')), '1 certificate');
-  assert.equal(population(sheet(clean, desired, 'evidence-06-container-isolation-actual.png')), 'All 3 instances');
-  assert.equal(population(sheet(clean, desired, 'evidence-06-container-isolation-desired.png')), undefined);
+  assert.equal(population(sheet(clean, desired, 'evidence-07-container-isolation-actual.png')), 'All 3 instances');
+  assert.equal(population(sheet(clean, desired, 'evidence-07-container-isolation-desired.png')), undefined);
   assert.equal(population(sheet(failing, desired, 'evidence-01-accounts-actual.png')), 'All 6 database accounts');
 });
 
@@ -298,4 +298,65 @@ test('documents that cannot be drawn are refused', () => {
   const unknownCheck = sample('host-check.clean.json');
   unknownCheck.checks[0].id = '../x';
   assert.throws(() => page.plan(unknownCheck, sample('host-check.desired.json')), /unknown host-check check/);
+});
+
+test('the ports image lists each Service and the host ports of each instance pod', () => {
+  assert.deepEqual(rows(sheet(clean, desired, 'evidence-06-ports-desired.png')).map(r => r.slice(0, 3)), [
+    ['pg-r', 'databases', 'ClusterIP'],
+    ['pg-read-lb', 'databases', 'LoadBalancer'],
+    ['pg-ro', 'databases', 'ClusterIP'],
+    ['pg-rw', 'databases', 'ClusterIP'],
+    ['pg-rw-lb', 'databases', 'LoadBalancer'],
+    ['Every instance pod', 'databases', 'hostPort'],
+  ]);
+  const read = show(clean, '06-ports').find(r => r[0] === 'pg-read-lb');
+  assert.deepEqual(read, ['pg-read-lb', 'databases', 'LoadBalancer', 'cnpg.io/cluster=pg cnpg.io/podRole=instance', 'Local', '5433 -> 5432', '', 'Present', '']);
+});
+
+test('the ports image marks a changed Service by its value and an extra Service by its name', () => {
+  const ports = show(failing, '06-ports');
+  assert.deepEqual(ports.find(r => r[0] === 'pg-read-lb')[4], '+Cluster');
+  // An extra Service keeps its type and ports plain; any node port or external IP is red.
+  assert.deepEqual(ports.find(r => r[0] === '+pg-debug'), ['+pg-debug', '+databases', 'NodePort', 'cnpg.io/cluster=pg cnpg.io/instanceRole=primary', 'Cluster', '5432 -> 5432', '+30432', 'None', '']);
+  assert.deepEqual(ports.find(r => r[0] === '+pg-by-hand'), ['+pg-by-hand', '+otel', 'ClusterIP', 'None', 'None', '6000 -> 5432', '', 'None', '+198.51.100.50']);
+  assert.deepEqual(ports.find(r => r[0] === 'pod pg-3'), ['pod pg-3', 'databases', 'hostPort', '', '', '+5432 -> 5432', '', '', '']);
+  assert.deepEqual(ports.slice(-3).map(r => r[0]), ['pod pg-1', 'pod pg-2', 'pod pg-3']);
+  assert.equal(sheet(failing, desired, 'evidence-06-ports-actual.png').verdict, 'Failed');
+  // A changed selector marks only the part desired lacks.
+  const actual = structuredClone(clean);
+  actual.ports.services['databases/pg-read-lb'].selector = 'cnpg.io/cluster=pg,cnpg.io/instanceRole=replica';
+  assert.equal(show(actual, '06-ports').find(r => r[0] === 'pg-read-lb')[3], 'cnpg.io/cluster=pg +cnpg.io/instanceRole=replica');
+});
+
+test('the platform pods grid has a port-forward column, and an extra holder is red', () => {
+  const s = sheet(failing, desired, 'evidence-09-platform-pods-actual.png');
+  assert.deepEqual(s.columns.slice(2).map(c => `${c.group}: ${c.label}`), [
+    'Enter containers: cert-manager', 'Enter containers: cnpg-system', 'Enter containers: databases',
+    'Port-forward: databases',
+    'Change pods: cert-manager', 'Change pods: cnpg-system', 'Change pods: databases',
+    'Start pods: cert-manager', 'Start pods: cnpg-system', 'Start pods: databases',
+  ]);
+  const off = Array(6).fill('[ ]');
+  assert.deepEqual(rows(s).find(r => r[0] === '+debug-tunnel'), ['+debug-tunnel', '+monitoring', '[ ]', '[ ]', '[ ]', '+[x]', ...off]);
+  assert.equal(s.verdict, 'Failed');
+  assert.equal(show(clean, '09-platform-pods').find(r => r[0] === 'namespace-controller')[5], '[x]');
+});
+
+test('the nodes image says that opening node ports covers Traefik IngressRouteTCPs', () => {
+  for (const s of sheets(clean, desired).filter(s => s.pair === 'evidence-12-platform-nodes-certificates')) {
+    assert.match(s.statement, /IngressRouteTCPs \(ingressroutetcps\.traefik\.io\)/);
+  }
+});
+
+test('the prove images show where each attempt went, the read LoadBalancer port included', () => {
+  const proveDesired = sample('prove.desired.json');
+  const login = sheet(sample('prove.clean.json'), proveDesired, 'prove-01-login-attempts-actual.png');
+  assert.equal(login.columns[1].label, 'Tried on');
+  assert.equal(rows(login).find(r => r[0] === 'password-tls')[1], '192.0.2.10: 5432, 5433 192.0.2.11: 5432, 5433 192.0.2.12: 5432, 5433');
+  const other = rows(sheet(sample('prove.clean.json'), proveDesired, 'prove-02-other-namespace-actual.png'));
+  assert.equal(other.find(r => r[0] === 'other-namespace-lb')[1], '192.0.2.10: 5432, 5433 192.0.2.11: 5432, 5433 192.0.2.12: 5432, 5433');
+  assert.equal(rows(sheet(sample('prove.clean.json'), proveDesired, 'prove-03-host-uid-actual.png'))[0][1], 'pg-1 uid 26');
+  assert.equal(rows(sheet(proveDesired, undefined, 'prove-01-login-attempts-desired.png'))[0][1], 'Each LoadBalancer port of each node');
+  // No row for the NodePorts.
+  assert.ok(sheets(sample('prove.clean.json'), proveDesired).every(s => s.rows.every(r => !r.cells[0][0].text.includes('nodeport'))));
 });
