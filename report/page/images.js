@@ -743,14 +743,14 @@ const PROVE = [
     title: 'Login attempts from a node',
     control: 'No password login works, and a certificate logs in only as its own account.',
     desired: 'Each login attempt and the result it must get. The control attempt must log in, to show the path works.',
-    where: `The login attempts ${LOAD_BALANCERS}.`,
+    tried: `The login attempts ${LOAD_BALANCERS}.`,
   },
   {
     name: '02-other-namespace',
     title: 'Connections from another namespace',
     control: 'A pod in another namespace cannot reach the instances on 5432, 8000 or 9187, nor log in through the Services.',
     desired: 'Each connection attempt from a new pod in its own namespace, and the result it must get. The control attempt must connect.',
-    where: `The attempts of other-namespace-lb ${LOAD_BALANCERS}.`,
+    tried: `The attempts of other-namespace-lb ${LOAD_BALANCERS}.`,
   },
   {
     name: '03-host-uid',
@@ -758,7 +758,7 @@ const PROVE = [
     control: 'A host user with PostgreSQL\'s uid cannot reach the socket, the data or the ServiceAccount token of an instance.',
     desired: 'Each attempt as the uid on this node, and the result it must get.',
   },
-].map(({ where: tried = '', ...image }) => ({
+].map(({ tried = '', ...image }) => ({
   ...image,
   sections: ['probes'],
   actual: `Each attempt that was made, where, and its result. One row stands for every address, pod or uid the attempt was made with. ${tried}`.trim(),
