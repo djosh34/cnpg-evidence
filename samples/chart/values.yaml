@@ -1,4 +1,4 @@
-# Chart-only settings. The cluster, CA Secret, LoadBalancer name, namespaces,
+# Chart-only settings. The cluster, CA Secret, LoadBalancers, namespaces,
 # replication and databases come from desired.yaml. The values below are
 # examples.
 
@@ -11,10 +11,6 @@ cluster:
 issuer:
   kind: Issuer
   name: example-ca
-
-# create: false when the service named in desired.yaml exists already.
-rwLoadBalancer:
-  create: true
 
 # The pod ranges and node tunnel addresses in the NetworkPolicy come from the
 # nodes' spec.podCIDR.

@@ -43,6 +43,7 @@ spec:
     synchronous:
       method: any
       number: 1  # every commit waits for one other instance
+      dataDurability: required  # and stops while no other instance can confirm it
     pg_hba:
       # One line per database: only its own role, only with a certificate.
       {{- range .Values.databases }}
@@ -75,16 +76,42 @@ spec:
         bypassrls: false
         disablePassword: true  # PASSWORD NULL
       {{- end }}
-    {{- if .Values.rwLoadBalancer.create }}
+    # No NodePorts: PostgreSQL is reached on the nodes only through each
+    # LoadBalancer's own port.
     services:
       additional:
+        # 5432 on every node, to the primary.
         - selectorType: rw
           serviceTemplate:
             metadata:
               name: {{ .Values.rwLoadBalancer.name }}
             spec:
               type: LoadBalancer
-    {{- end }}
+              allocateLoadBalancerNodePorts: false
+        {{- with .Values.readLoadBalancer }}
+        # The read port on every node, to the instance on that node only, primary
+        # or replica. A node whose instance is not ready refuses it.
+        - selectorType: r
+          serviceTemplate:
+            metadata:
+              name: {{ required "readLoadBalancer.name is required" .name }}
+            spec:
+              type: LoadBalancer
+              externalTrafficPolicy: Local
+              allocateLoadBalancerNodePorts: false
+              ports:
+                - name: postgres  # with another name CNPG adds 5432 as well
+                  protocol: TCP
+                  port: {{ required "readLoadBalancer.port is required" .port }}
+                  targetPort: 5432
+        {{- end }}
+
+  # A replica is ready, and so on the read port, only while it streams and its
+  # replay is less than 16Mi behind what it received.
+  probes:
+    readiness:
+      type: streaming
+      maximumLag: 16Mi
 
   monitoring:
     tls:

@@ -6,9 +6,9 @@ What is in `desired.yaml` and `samples/`, how to install it, and how to keep it 
 
 | File | What it is |
 |---|---|
-| [`desired.yaml`](../desired.yaml) | The desired state of the cluster: name, namespace and instances, the client CA Secret, the rw LoadBalancer name, the operator and OTel namespaces, the replication certificate names, and the databases with their role and client CNs. `evidence.sh` compares against it; the chart reads it as values. |
+| [`desired.yaml`](../desired.yaml) | The desired state of the cluster: name, namespace and instances, the client CA Secret, the rw LoadBalancer name, the optional read LoadBalancer's name and port, the operator and OTel namespaces, the replication certificate names, and the databases with their role and client CNs. `evidence.sh` compares against it; the chart reads it as values. |
 | [`samples/chart/`](../samples/chart) | A Helm chart that renders the `Cluster`, one `Database` per database, the server and replication `Certificate`s, the `<cluster>-bootstrap` Secret, the barman-cloud `ObjectStore` and one ingress `NetworkPolicy`. |
-| [`samples/chart/values.yaml`](../samples/chart/values.yaml) | Chart-only settings: image, storage size, cert-manager issuer, whether to create the rw LoadBalancer, object store, recovery. |
+| [`samples/chart/values.yaml`](../samples/chart/values.yaml) | Chart-only settings: image, storage size, cert-manager issuer, object store, recovery. |
 | [`samples/values-cnpg-operator.yaml`](../samples/values-cnpg-operator.yaml) | Values for the operator chart: chart RBAC off, `WATCH_NAMESPACE=cnpg-system,databases`. |
 | [`samples/values-barman-cloud.yaml`](../samples/values-barman-cloud.yaml) | Values for the plugin chart: chart RBAC off. |
 | [`samples/rbac-cnpg-operator.yaml`](../samples/rbac-cnpg-operator.yaml) | The operator's RBAC: a small ClusterRole for nodes, webhook configurations and cluster image catalogs, and the chart's namespaced rules bound only in `cnpg-system` and `databases`. |
@@ -36,6 +36,7 @@ Database objects: pg-orders, pg-billing
 - `cnpg_streaming_replica` is CNPG's map for replication logins; the chart adds the replication CN to it.
 - The server and replication `Certificate`s carry the replication CN and `dnsNames` from `desired.yaml`, and the issuer from `values.yaml`.
 - The `NetworkPolicy` selects every pod of the cluster, including its bootstrap and join Job pods, and admits 5432 and 8000 from the cluster's pods, 8000 from the operator pods, 9187 from the OTel namespace, and 5432 from outside the cluster, from the other nodes and from the svclb pods of the rw LoadBalancer.
+- The `Cluster` has the rw LoadBalancer and, when `readLoadBalancer` is set, the read LoadBalancer, both without NodePorts (see [LoadBalancers](#loadbalancers)). Every commit waits for one other instance (`synchronous: {method: any, number: 1, dataDurability: required}`), and a replica is ready only while it streams and is less than 16Mi behind (`probes.readiness: {type: streaming, maximumLag: 16Mi}`).
 
 To see the full output: `helm template pg samples/chart -n databases -f desired.yaml --dry-run=server`. The NetworkPolicy reads every node's `spec.podCIDR` from the cluster with `lookup`, so rendering without a cluster fails. A NetworkPolicy written by hand needs the same pod ranges, from `kubectl get nodes -o jsonpath='{.items[*].spec.podCIDR}'`: each range goes into the `except` list of the `0.0.0.0/0` source, and its network address as `/32` becomes a source of its own. Under flannel, connections from another node itself arrive from that address, the node's `flannel.1` interface. No address range is fixed in the samples or the scripts.
 
@@ -54,11 +55,11 @@ Pods with `hostUsers: false` need a kernel with idmapped mounts on tmpfs.
    - `cluster`: the name, namespace and number of instances. The namespaces `databases` and `cnpg-system` are also fixed in `values-cnpg-operator.yaml` (`WATCH_NAMESPACE`), in both RBAC files and in the `prove.sh` defaults. Another namespace also needs `WATCH_NAMESPACE`, the RoleBindings in both RBAC files and `prove.sh --namespace`.
    - `caSecret`: a Secret in the cluster's namespace with `ca.crt` holding the CAs that may sign client certificates, including the CA of the `issuer` in `values.yaml`: the chart also uses this Secret as the server CA, and the replication certificate is checked against it. Give the full chain if there are intermediates. Create it by hand, never with `ca.key`: `kubectl create secret generic client-ca -n databases --from-file=ca.crt=client-ca.pem`. Pass the same file to `evidence.sh --ca`.
    - `rwLoadBalancer.name`: the rw LoadBalancer Service. The policy admits its svclb pods, the per-node pods in `kube-system` through which k3s servicelb forwards the LoadBalancer port.
+   - `readLoadBalancer`: the name and port of the read LoadBalancer, or leave the block out for none.
    - `network.operatorNamespace`, `network.otelNamespace`: the namespaces of the operator and the OTel collectors.
    - `replication`: the CN and `dnsNames` of the server and replication certificates; `databases`: the databases, their roles and client CNs.
 4. In `samples/chart/values.yaml`, set:
    - `issuer`: the cert-manager issuer from step 2, which signs the server and replication certificates.
-   - `rwLoadBalancer.create: false` if the Service exists already.
    - `objectStore`: the bucket, endpoint and credentials Secret. Create that Secret in the cluster's namespace with the keys `ACCESS_KEY_ID` and `ACCESS_SECRET_KEY`.
    - `cluster.imageName` and `cluster.storageSize`.
 5. Install the operator and the plugin with their values files:
@@ -81,7 +82,47 @@ Pods with `hostUsers: false` need a kernel with idmapped mounts on tmpfs.
    Run the collectors without `hostNetwork`, in the OTel namespace.
    If a collector does use `hostNetwork`, run it with `securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}`; otherwise `evidence.sh` lists it as able to bind a port below 1024 on its node.
 
+CNPG creates both LoadBalancer Services and refuses a Service of the same name that it did not create (`refusing to reconcile service: ..., not owned by the cluster`). Delete such a Service before step 6; its port is closed until CNPG has made the new one.
+
 Helm changes only objects it owns. When the cluster's objects already exist, step 6 fails with `invalid ownership metadata` for each of them, such as the `Cluster`, the `NetworkPolicy` or a `Certificate`. Either let Helm take them over: give each the label `app.kubernetes.io/managed-by=Helm` and the annotations `meta.helm.sh/release-name=pg` and `meta.helm.sh/release-namespace=databases`, after checking with `helm template` that the chart renders the same names (the replication `Certificate` is `<cluster>-replication`). Or copy the parts from the `helm template` output into the existing manifests by hand.
+
+## LoadBalancers
+
+k3s servicelb opens each LoadBalancer's port on every node:
+
+- **rw, 5432:** every node forwards it to the primary.
+- **read, `readLoadBalancer.port`:** with `selectorType: r` and `externalTrafficPolicy: Local`, a node forwards it only to the instance on that node, primary or replica, and only while that instance is ready. A node without a ready instance refuses the port, so a client moves on to the next node at once. Connections keep the client's address, which the policy admits as outside on 5432; the read LoadBalancer needs no entry of its own.
+
+Both set `allocateLoadBalancerNodePorts: false`, so neither opens a NodePort. The read LoadBalancer still has a `healthCheckNodePort`: Kubernetes gives one to every LoadBalancer with traffic policy Local. It answers over HTTP how many ready instances the node has and does not lead to PostgreSQL.
+
+A NodePort that a Service had before keeps working after a chart upgrade: Kubernetes keeps a NodePort it has allocated, and CNPG does not remove it. Remove it once by hand, then check that `kubectl get svc -n databases` shows no second port for the Service:
+
+```bash
+kubectl patch service pg-rw-lb -n databases --type=json -p '[{"op":"remove","path":"/spec/ports/0/nodePort"}]'
+```
+
+### Clients on the read port
+
+A client lists every node in the host field with the read port and a short `connect_timeout`. pgx tries the hosts in order and takes the first that lets it in. For example:
+
+```
+host=node1.example.com,node2.example.com,node3.example.com port=5433 dbname=orders user=orders
+sslmode=verify-ca sslrootcert=ca.crt sslcert=orders-app.crt sslkey=orders-app.key connect_timeout=2
+```
+
+`verify-ca`, because the server certificate names `replication.dnsNames`, not the nodes. With the node names in `replication.dnsNames`, use `verify-full`.
+
+Reads on the read port can be slightly behind the primary: a commit waits for one replica, and the other replica stays ready while it is less than 16Mi behind.
+
+Measured on a three-node k3s cluster with the example `desired.yaml`, CNPG 1.30.1 and pgx 5.11, with a new connection and one `SELECT` every 0.25 s and the stopped node listed first:
+
+| Event | Reads | Writes on 5432 |
+|---|---|---|
+| A replica's node stops for 120 s | 0 of 960 failed. Each new connection took about 2 s while the node was down: the stopped node does not refuse, so pgx waits for `connect_timeout` before it moves on. The replica served reads again 26 s after its node started. | 0 of 960 failed. |
+| A replica is not ready, its node runs | Its node refuses at once, and pgx moves on. 0 of 358 failed, typically 20 ms per connection. | Not measured. |
+| The primary's node stops for 120 s | Worked for the first 26 s, then failed on every node until 24 s after the node started again: without a primary, the replicas stop streaming and fail the readiness check. | Failed from the stop until 23 s after the node started again. CNPG promoted no replica. |
+
+An open connection ends when the node it entered through stops, and when its instance is promoted.
 
 ## Changes later
 
@@ -96,8 +137,10 @@ The same chart restores from the barman-cloud backups instead of running initdb.
 ```bash
 helm install pg-restore samples/chart -n databases -f desired.yaml \
   --set cluster.name=pg-restore --set recovery.enabled=true --set recovery.sourceCluster=pg \
-  --set rwLoadBalancer.create=false
+  --set rwLoadBalancer.name=pg-restore-rw-lb --set readLoadBalancer=null
 ```
+
+The restore gets its own rw LoadBalancer and no read LoadBalancer: CNPG refuses a Service that another cluster owns. While the old cluster holds 5432, the new LoadBalancer's svclb pods stay Pending, so check the restore through its pods or its `pg-restore-rw` Service inside the cluster.
 
 `bootstrap.recovery` gets the same `database`, `owner` and `secret` fields as `initdb`, so CNPG creates no `app` either. A restore still copies what the backup holds: a backup taken before `app` was removed brings the `app` database and role back. After such a restore, run steps 3 and 4 of the next section on the new cluster.
 
