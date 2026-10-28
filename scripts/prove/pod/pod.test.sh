@@ -16,12 +16,12 @@ kubectl() {
     *'get -o json pods'*) echo '{"items":[{"status":{"podIP":"10.42.0.1"}}]}' ;;
     *'get -o json service pg-rw-lb'*)
       cat <<'JSON'
-{"spec":{"ports":[{"port":5432,"nodePort":30000}]},"status":{"loadBalancer":{"ingress":[{"ip":"192.0.2.1"}]}}}
+{"spec":{"ports":[{"port":5432}]},"status":{"loadBalancer":{"ingress":[{"ip":"192.0.2.1"}]}}}
 JSON
       ;;
-    'get nodes -o json')
+    *'get -o json service pg-read-lb'*)
       cat <<'JSON'
-{"items":[{"status":{"addresses":[{"type":"InternalIP","address":"192.0.2.2"}]}}]}
+{"spec":{"ports":[{"port":5433}]},"status":{"loadBalancer":{"ingress":[{"ip":"192.0.2.1"}]}}}
 JSON
       ;;
     'create namespace prove-'* | 'delete namespace prove-'*) return 0 ;;
@@ -34,7 +34,7 @@ JSON
 10.42.0.1:8000 Connection refused
 10.42.0.1:9187 timeout
 lb 192.0.2.1:5432 ${service_result:-FATAL: pg_hba.conf rejects connection}
-nodeport 192.0.2.2:30000 ${service_result:-FATAL: pg_hba.conf rejects connection}
+lb 192.0.2.1:5433 ${service_result:-FATAL: pg_hba.conf rejects connection}
 TEXT
       ;;
     *) return 2 ;;
@@ -50,24 +50,24 @@ desired_rows() {
     bash "$here/../../desired/desired.sh" --source prove |
     jq -c --argjson records "$1" '[.probes[] | select(.probe as $name | any($records[]; .probe == $name))] | sort_by(.probe)'
 }
-result=$(bash "$here/pod.sh" databases pg pg-rw-lb | jq -s .)
+result=$(bash "$here/pod.sh" databases pg pg-rw-lb pg-read-lb | jq -s .)
 same_text 'pod controls and policy probes' true "$(jq 'length == 6 and all(.ok)' <<<"$result")"
 same 'names without addresses, targets with them' \
   '[["control-other-namespace","10.43.0.1:443","allowed"],["other-namespace-5432","10.42.0.1:5432","denied"],
     ["other-namespace-8000","10.42.0.1:8000","denied"],["other-namespace-9187","10.42.0.1:9187","denied"],
-    ["other-namespace-lb","192.0.2.1:5432","denied"],["other-namespace-nodeport","192.0.2.2:30000","denied"]]' \
+    ["other-namespace-lb","192.0.2.1:5432","denied"],["other-namespace-lb","192.0.2.1:5433","denied"]]' \
   "$(jq -c 'map([.probe, .target, .value])' <<<"$result")"
 same 'names, texts and values as in the desired document' "$(desired_rows "$result")" \
   "$(jq -c 'map({probe, expected, value, ok}) | unique | sort_by(.probe)' <<<"$result")"
 for refusal in 'psql: error: connection failed: Connection refused' \
   'psql: error: connection failed: timeout expired'; do
-  result=$(service_result=$refusal bash "$here/pod.sh" databases pg pg-rw-lb | jq -s .)
+  result=$(service_result=$refusal bash "$here/pod.sh" databases pg pg-rw-lb pg-read-lb | jq -s .)
   same_text "$refusal is an accepted service denial" true "$(jq 'all(.ok)' <<<"$result")"
 done
 for failure in 'succeeded: 1' 'succeeded: pg_hba.conf rejects connection' \
   'succeeded: Connection refused' 'psql: error: could not translate host name' \
   'psql: error: certificate verify failed' 'timeout' 'no result, the pod did not finish'; do
-  result=$(service_result=$failure bash "$here/pod.sh" databases pg pg-rw-lb | jq -s .)
+  result=$(service_result=$failure bash "$here/pod.sh" databases pg pg-rw-lb pg-read-lb | jq -s .)
   same_text "$failure never proves service denial" 2 \
     "$(jq '[.[] | select(.ok == false)] | length' <<<"$result")"
   same_text "$failure is allowed or error" "$([[ $failure == succeeded* ]] && echo allowed || echo error)" \
@@ -75,7 +75,7 @@ for failure in 'succeeded: 1' 'succeeded: pg_hba.conf rejects connection' \
 done
 for failure in run wait; do
   status=0
-  result=$(pod_failure=$failure bash "$here/pod.sh" databases pg pg-rw-lb 2>/dev/null) || status=$?
+  result=$(pod_failure=$failure bash "$here/pod.sh" databases pg pg-rw-lb pg-read-lb 2>/dev/null) || status=$?
   same_text "$failure error exits 2" 2 "$status"
   same_text "$failure error has no output" '' "$result"
 done

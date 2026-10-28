@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 # Makes TCP and PostgreSQL attempts inside the disposable pod and labels successful logins.
-# Usage: run.sh HOST:PORT ['lb HOST:PORT'] ['nodeport HOST:PORT'] ...
+# Usage: run.sh HOST:PORT ['lb HOST:PORT'] ...
 # Exit: 0 with one result line per target; unexpected shell errors are nonzero.
 set -euo pipefail
 shopt -s inherit_errexit
 
+# No PG* variable of the image reaches psql.
+unset "${!PG@}"
+
 for target in "$@"; do
   case $target in
-    "lb "* | "nodeport "*)
-      address=${target#* }
+    "lb "*)
+      address=${target#lb }
       if result=$(PGCONNECT_TIMEOUT=3 psql -w -X -At -c 'select 1' \
           "host=${address%:*} port=${address##*:} dbname=postgres user=postgres sslmode=require" 2>&1); then
         result="succeeded: $result"

@@ -6,16 +6,15 @@ Every run leaves failed logins in PostgreSQL's log; run it by hand, not on a sch
 
 ## Run
 
-As root on the node given by `--node`, with a cluster-admin kubeconfig (on a k3s server node, `KUBECONFIG=/etc/rancher/k3s/k3s.yaml`), `kubectl`, `jq`, `psql`, `setpriv`, `pgrep` and `python3`:
+As root on the node given by `--node`, with a cluster-admin kubeconfig (on a k3s server node, `KUBECONFIG=/etc/rancher/k3s/k3s.yaml`), `kubectl`, `jq`, `psql`, `setpriv`, `pgrep` and `python3`. The desired state comes on stdin as JSON, as for `evidence.sh`:
 
 ```bash
-bash scripts/prove/prove.sh
-bash scripts/prove/prove.sh --namespace databases --cluster pg --lb-service pg-rw-lb \
-  --node node-a --node-root '' --postgres-uid 26
+yq -o=json desired.yaml | bash scripts/prove/prove.sh
+yq -o=json desired.yaml | bash scripts/prove/prove.sh --node node-a --node-root '' --postgres-uid 26
 ```
 
-- `--namespace`, `--cluster`: the namespace and name of the CNPG `Cluster`. Default `databases` and `pg`.
-- `--lb-service`: the rw LoadBalancer Service. Default `pg-rw-lb`.
+From [`desired.yaml`](../desired.yaml) it takes `cluster.namespace` and `cluster.name`, the rw LoadBalancer `rwLoadBalancer.name` and the read LoadBalancer `readLoadBalancer.name`, when that block is set.
+
 - `--node`: this node's Kubernetes node name, as in `kubectl get nodes`. Default the output of `hostname`. The uid attempts read this node's processes, so run the script on that node, and pick a node that runs an instance.
 - `--node-root`: a prefix for the kubelet and storage paths, for a node whose filesystem is seen under another path, such as a node in a container seen through `/proc/<pid>/root`. Default none; leave it empty when the script runs on the node itself.
 - `--postgres-uid`: PostgreSQL's uid in the CNPG image. Default 26.
@@ -26,7 +25,7 @@ bash scripts/prove/prove.sh --namespace databases --cluster pg --lb-service pg-r
 
 The script reads the CNPG `Cluster`. It takes the application database and role from the first `hostssl ... cert` line in its pg_hba, and the replication certificate and key from the `<cluster>-replication` Secret.
 
-The rw LoadBalancer Service forwards its port on every address in `status.loadBalancer.ingress` to the primary. The script tries every address and port:
+The rw LoadBalancer Service forwards its port on every address in `status.loadBalancer.ingress` to the primary, and the read LoadBalancer its port to the instance on the same node. The script tries every address and port of both:
 
 - Password logins as `postgres` to `postgres`, with and without TLS, must get the pg_hba reject.
 - An application login without a client certificate must be asked for one.
@@ -37,7 +36,7 @@ The replication key reaches `psql` as an in-memory file and is never written to 
 
 ### 2. Connections from another namespace
 
-The script collects the address of every instance pod, the LoadBalancer addresses, and the Service's NodePort on every node's internal address. Pods have their own addresses on the cluster's overlay network, separate from the node addresses. A LoadBalancer Service also opens a NodePort: the same forwarding on a high port of every node address.
+The script collects the address of every instance pod and the addresses and ports of both LoadBalancers. Pods have their own addresses on the cluster's overlay network, separate from the node addresses. The sample chart's LoadBalancers open no NodePort; the ports section of `evidence.sh` shows that none exists.
 
 It creates the namespace `prove-<time>-<pid>` and starts one pod there with the CNPG image of the cluster, which has the client commands it needs. A namespace scopes object names and permissions, but does not separate the network; the NetworkPolicy filters which sources reach which ports. NetworkPolicy never filters connections from the node itself (host processes and hostNetwork pods) to a pod on that node; pods on the same node are filtered as usual.
 
@@ -45,9 +44,9 @@ From that pod:
 
 - Control: a connection to the Kubernetes API on 443 must succeed, which shows that the pod's network works.
 - Connections to each instance pod's address on 5432 (PostgreSQL), 8000 (the CNPG instance manager) and 9187 (metrics) must time out or be refused.
-- Logins as `postgres` to `postgres` with `sslmode=require` through the LoadBalancer and every NodePort must not get in: a pg_hba reject or no connection passes; a login or any other error fails.
+- Logins as `postgres` to `postgres` with `sslmode=require` through every LoadBalancer address and port must not get in: a pg_hba reject or no connection passes; a login or any other error fails.
 
-Logins from the node time out after five seconds, connections from the pod after three. The script waits up to 180 seconds for the pod to finish, reads its log and deletes the namespace. It also deletes the namespace when a step fails, and logs its name, so a namespace left by an interrupted run can be found.
+Logins from the node time out after five seconds, connections from the pod after three. Every psql call names the host, port, database and user. No `PG*` variable of the caller or of the image reaches psql; the script sets only the timeout and, for the replication certificate, `PGSSLCERT` and `PGSSLKEY`. The script waits up to 180 seconds for the pod to finish, reads its log and deletes the namespace. It also deletes the namespace when a step fails, and logs its name, so a namespace left by an interrupted run can be found.
 
 ### 3. Access as the host postgres uid
 
@@ -68,8 +67,8 @@ Each of the three groups writes one JSON record per attempt; `prove.sh` combines
 
 The groups also run on their own and print their records, one per line:
 
-- `bash scripts/prove/login/login.sh NAMESPACE CLUSTER LB_SERVICE`: logins from the node.
-- `bash scripts/prove/pod/pod.sh NAMESPACE CLUSTER LB_SERVICE`: attempts from the pod in another namespace.
+- `bash scripts/prove/login/login.sh NAMESPACE CLUSTER LB_SERVICE...`: logins from the node.
+- `bash scripts/prove/pod/pod.sh NAMESPACE CLUSTER LB_SERVICE...`: attempts from the pod in another namespace.
 - `bash scripts/prove/uid/uid.sh NAMESPACE CLUSTER NODE NODE_ROOT POSTGRES_UID`: host-uid attempts.
 
 ## Output
@@ -99,7 +98,7 @@ Exit 0: every attempt matches. Exit 1: at least one differs. Exit 2: a usage or 
 
 ## Probes
 
-- `password-tls`: a password login with TLS gets the pg_hba reject. One attempt per LoadBalancer address and port.
+- `password-tls`: a password login with TLS gets the pg_hba reject. One attempt per address and port of each LoadBalancer, as for every login probe below.
 - `password-no-tls`: a password login without TLS gets the pg_hba reject.
 - `tls-no-client-cert`: an application login is asked for a client certificate.
 - `replication-cert-as-ROLE`: the replication certificate cannot log in as the application role.
@@ -107,8 +106,7 @@ Exit 0: every attempt matches. Exit 1: at least one differs. Exit 2: a usage or 
 - `control-replication-cert`: the replication certificate logs in as `streaming_replica` to `postgres`. Must succeed.
 - `control-other-namespace`: the pod in another namespace connects to the Kubernetes API on 443. Must succeed.
 - `other-namespace-5432`, `other-namespace-8000`, `other-namespace-9187`: each instance pod's address on that port times out or refuses the connection.
-- `other-namespace-lb`: through each LoadBalancer address, a pg_hba reject or no connection (refused, or a `psql` connect timeout); a login or any other error fails.
-- `other-namespace-nodeport`: the same for the NodePort on every node's address.
+- `other-namespace-lb`: through each address and port of both LoadBalancers, a pg_hba reject or no connection (refused, or a `psql` connect timeout); a login or any other error fails.
 - `uid-UID socket-proc-root`: the host uid cannot log in through the socket under the process root. One attempt per instance pod on the node.
 - `uid-UID token-proc-root`: the host uid cannot read the ServiceAccount token under the process root.
 - `uid-UID environ`: the host uid cannot read the postgres process environment.

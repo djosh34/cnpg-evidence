@@ -12,6 +12,11 @@ shopt -s inherit_errexit
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
 
+# No PG* variable of the caller reaches psql. Only the ones the probes set on
+# purpose do: this timeout, and the replication certificate and key in login.sh.
+unset "${!PG@}"
+export PGCONNECT_TIMEOUT=5
+
 add_probe() {
   jq -nc --arg probe "$1" --arg target "$2" --arg expected "$3" --arg wanted "$4" \
     --arg value "$5" --arg actual "$6" \

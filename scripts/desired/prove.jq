@@ -23,8 +23,7 @@
       probe("control-replication-cert"; "logs in as streaming_replica to postgres (CNPG's fixed line)"; "allowed"),
       probe("control-other-namespace"; "connected (Kubernetes API, the pod network works)"; "allowed"),
       (5432, 8000, 9187 | denied("other-namespace-\(.)"; "timeout or connection refused")),
-      ("lb", "nodeport"
-       | denied("other-namespace-\(.)"; "pg_hba refusal or no connection (connection refused or connect timeout)")),
+      denied("other-namespace-lb"; "pg_hba refusal or no connection (connection refused or connect timeout)"),
       ("socket-proc-root", "token-proc-root", "environ", "socket-host-path", "token-host-path", "pgdata-host-path"
        | denied("uid-\($postgres_uid) \(.)"; "Permission denied")),
       denied("uid-mapped socket-host-path"; "Permission denied")

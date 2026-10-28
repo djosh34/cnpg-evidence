@@ -62,7 +62,7 @@ while read -r pod pod_uid; do
 
   deny_path "uid-$postgres_uid socket-proc-root" "$pod" "$postgres_uid" "$postgres_uid" \
     "$process_root/controller/run/.s.PGSQL.5432" \
-    "${psql_command[@]}" "host=$process_root/controller/run dbname=postgres user=postgres"
+    "${psql_command[@]}" "host=$process_root/controller/run port=5432 dbname=postgres user=postgres"
   deny_path "uid-$postgres_uid token-proc-root" "$pod" "$postgres_uid" "$postgres_uid" \
     "$process_root/run/secrets/kubernetes.io/serviceaccount/token" \
     "${read_command[@]}" "if=$process_root/run/secrets/kubernetes.io/serviceaccount/token"

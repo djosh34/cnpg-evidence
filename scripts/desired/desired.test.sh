@@ -113,6 +113,6 @@ same "prove: the first database is the application login" \
 same "prove: two controls" '["control-replication-cert", "control-other-namespace"]' \
   "$(jq '[.probes[] | select(.value == "allowed") | .probe]' <<<"$prove")"
 same_text "prove: uid probes name --postgres-uid" 6 "$(jq '[.probes[] | select(.probe | startswith("uid-99 "))] | length' <<<"$prove")"
-same_text "prove: 19 probes" 19 "$(jq '.probes | length' <<<"$prove")"
+same_text "prove: 18 probes" 18 "$(jq '.probes | length' <<<"$prove")"
 
 finish

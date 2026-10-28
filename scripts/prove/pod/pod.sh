@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs instance, service and Kubernetes API connection probes in a disposable namespace.
-# Usage: pod.sh NAMESPACE CLUSTER LB_SERVICE
+# Usage: pod.sh NAMESPACE CLUSTER LB_SERVICE...
 # Exit: 0 records collected (including failed probes), 2 collection error.
 set -euo pipefail
 shopt -s inherit_errexit
@@ -11,7 +11,8 @@ source "$here/../probe.sh"
 
 namespace=$1
 cluster=$2
-lb_service=$3
+lb_services=("${@:3}")
+((${#lb_services[@]})) || die "no LoadBalancer Service given"
 
 image=$(kjson "$namespace" cluster "$cluster" | jq -r '.spec.imageName // .status.image')
 api=$(kubectl -n default get service kubernetes -o jsonpath='{.spec.clusterIP}'):443
@@ -23,16 +24,10 @@ for ip in $ips; do
   done
 done
 
-service=$(kjson "$namespace" service "$lb_service")
-addresses=$(jq -r -f "$here/../login/targets.jq" <<<"$service")
-while read -r address; do
-  [[ -z $address ]] || targets+=("lb $address")
-done <<<"$addresses"
-nodeports=$(jq -r '.spec.ports[].nodePort // empty' <<<"$service")
-node_ips=$(kubectl get nodes -o json | jq -r '.items[].status.addresses[] | select(.type == "InternalIP") | .address')
-for ip in $node_ips; do
-  for port in $nodeports; do
-    targets+=("nodeport $ip:$port")
+for lb_service in "${lb_services[@]}"; do
+  addresses=$(kjson "$namespace" service "$lb_service" | jq -r -f "$here/../login/targets.jq")
+  for address in $addresses; do
+    targets+=("lb $address")
   done
 done
 
@@ -58,13 +53,13 @@ for target in "$api" "${targets[@]}"; do
     [[ $result != connected ]] || value=allowed
     add_probe control-other-namespace "$target" "connected (Kubernetes API, the pod network works)" \
       allowed "$value" "$result"
-  elif [[ $target == "lb "* || $target == "nodeport "* ]]; then
+  elif [[ $target == "lb "* ]]; then
     if [[ $result == 'succeeded: '* ]]; then
       value=allowed
     elif [[ $result =~ pg_hba\.conf\ rejects\ connection|[Cc]onnection\ refused|timeout\ expired ]]; then
       value=denied
     fi
-    add_probe "other-namespace-${target%% *}" "${target#* }" \
+    add_probe other-namespace-lb "${target#lb }" \
       "pg_hba refusal or no connection (connection refused or connect timeout)" denied "$value" "$result"
   else
     if [[ $result == timeout || $result == *refused* ]]; then

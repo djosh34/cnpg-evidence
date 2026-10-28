@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Runs certificate and password login probes against every LoadBalancer address.
-# Usage: login.sh NAMESPACE CLUSTER LB_SERVICE
+# Runs certificate and password login probes against every address of the
+# LoadBalancer Services.
+# Usage: login.sh NAMESPACE CLUSTER LB_SERVICE...
 # Exit: 0 records collected (including failed probes), 2 collection error.
 set -euo pipefail
 shopt -s inherit_errexit
@@ -11,7 +12,8 @@ source "$here/../probe.sh"
 
 namespace=$1
 cluster=$2
-lb_service=$3
+lb_services=("${@:3}")
+((${#lb_services[@]})) || die "no LoadBalancer Service given"
 psql_command=(psql -w -X -At -c 'select current_user')
 
 cluster_state=$(kjson "$namespace" cluster "$cluster")
@@ -28,10 +30,14 @@ with_key() {
   printf '%s\n' "$key" | PGSSLCERT=/proc/self/fd/$certificate_fd python3 "$here/key.py" "$@"
 }
 
-targets=$(kjson "$namespace" service "$lb_service" | jq -r -f "$here/targets.jq")
-[[ -n $targets ]] || die "service $lb_service has no load balancer address"
+targets=()
+for lb_service in "${lb_services[@]}"; do
+  service_targets=$(kjson "$namespace" service "$lb_service" | jq -r -f "$here/targets.jq")
+  [[ -n $service_targets ]] || die "service $lb_service has no load balancer address"
+  mapfile -t -O "${#targets[@]}" targets <<<"$service_targets"
+done
 
-while read -r target; do
+for target in "${targets[@]}"; do
   connection="host=${target%:*} port=${target##*:}"
   deny password-tls "$target" "refused by pg_hba reject" 'pg_hba\.conf rejects connection' \
     "${psql_command[@]}" "$connection dbname=postgres user=postgres password=prove-sh sslmode=require"
@@ -49,4 +55,4 @@ while read -r target; do
   allow control-replication-cert "$target" "logs in as streaming_replica to postgres (CNPG's fixed line)" \
     '^streaming_replica$' \
     with_key "${psql_command[@]}" "$connection dbname=postgres user=streaming_replica sslmode=require"
-done <<<"$targets"
+done

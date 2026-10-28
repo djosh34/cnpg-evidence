@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Checks exit status and stdout after usage and collection failures.
+# Checks exit status and stdout after usage, desired-value and collection failures.
 # Usage: bash prove.test.sh
 # Exit: 0 all assertions pass, 1 an assertion fails, nonzero on a test error.
 set -euo pipefail
@@ -9,18 +9,43 @@ here=$(dirname "${BASH_SOURCE[0]}")
 # shellcheck source-path=SCRIPTDIR
 source "$here/../lib/test.sh"
 
-for arguments in --unknown '--postgres-uid nope' --node-root; do
-  status=0
+values='{"cluster": {"name": "pg", "namespace": "databases", "instances": 3}, "caSecret": "client-ca",
+         "rwLoadBalancer": {"name": "pg-rw-lb"}, "readLoadBalancer": {"name": "pg-read-lb", "port": 5433},
+         "network": {"operatorNamespace": "cnpg-system", "otelNamespace": "otel"},
+         "replication": {"commonName": "pg-replication"}, "databases": []}'
+
+# The node tools may be missing where the tests run.
+psql() { return 2; }
+setpriv() { return 2; }
+pgrep() { return 2; }
+export -f psql setpriv pgrep
+
+# exits NAME STDIN ARGS...: exit 2 and nothing on stdout. Keeps stderr in errors.
+exits() {
+  local name=$1 input=$2 status=0 actual
+  shift 2
+  actual=$(bash "$here/prove.sh" "$@" <<<"$input" 2>"$errors_file") || status=$?
+  same_text "$name exit" 2 "$status"
+  same_text "$name stdout" '' "$actual"
+  errors=$(<"$errors_file")
+}
+errors_file=$(mktemp)
+trap 'rm -f "$errors_file"' EXIT
+
+for arguments in --unknown '--postgres-uid nope' --node-root '--namespace databases' '--cluster pg' \
+  '--lb-service pg-rw-lb'; do
   # shellcheck disable=SC2086
-  actual=$(bash "$here/prove.sh" $arguments 2>/dev/null) || status=$?
-  same_text "$arguments exit" 2 "$status"
-  same_text "$arguments stdout" '' "$actual"
+  exits "$arguments" "$values" $arguments
 done
+
+exits 'values that are not JSON' 'cluster: pg'
+same_text 'values that are not JSON say so' 1 "$(grep -c 'not JSON' <<<"$errors")"
+exits 'values without the rw LoadBalancer' "$(jq -c 'del(.rwLoadBalancer)' <<<"$values")"
+same_text 'values without the rw LoadBalancer say what is needed' 1 "$(grep -c 'the desired state needs' <<<"$errors")"
+exits 'a read LoadBalancer without a port' "$(jq -c 'del(.readLoadBalancer.port)' <<<"$values")"
+same_text 'a read LoadBalancer without a port says what is needed' 1 "$(grep -c 'the desired state needs' <<<"$errors")"
 
 kubectl() { echo 'API denied' >&2; return 2; }
 export -f kubectl
-status=0
-actual=$(bash "$here/prove.sh" 2>/dev/null) || status=$?
-same_text 'child collection error exits 2' 2 "$status"
-same_text 'collection error has no stdout' '' "$actual"
+exits 'child collection error' "$values"
 finish
