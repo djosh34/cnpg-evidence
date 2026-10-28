@@ -110,7 +110,6 @@ function plan(doc, desired) {
         legend: image.legend[which],
         columns,
         names: image.names,
-        inline: Boolean(image.inline),
         rows,
       });
     }
@@ -162,13 +161,12 @@ function squareElement(value) {
 }
 
 // An extra row is red in the cells that name it; every other cell shows its own state.
-function cell(values, column, isName, inline, rowState) {
+function cell(values, column, isName, rowState) {
   const td = element('td', isName ? 'name' : column.mark ? 'mark' : '');
   if (!values.length && !isName) values = [{ text: 'None', state: '' }];
-  let line = null;
   for (const value of values) {
-    if (inline && line) line.append(', ');
-    else td.append((line = element('div', 'v')));
+    const line = element('div', 'v');
+    td.append(line);
     if (Object.hasOwn(value, 'mark')) line.append(squareElement(value));
     else line.append(element('span', `val ${isName ? rowState || value.state : value.state}`.trim(), value.text));
   }
@@ -234,7 +232,7 @@ function sheetElement(sheet, id) {
   for (const row of sheet.rows) {
     const tr = element('tr');
     const state = rowState(row, sheet.names);
-    row.cells.forEach((values, i) => tr.append(cell(values, sheet.columns[i], i < sheet.names, sheet.inline && i >= sheet.names, state)));
+    row.cells.forEach((values, i) => tr.append(cell(values, sheet.columns[i], i < sheet.names, state)));
     body.append(tr);
   }
   table.append(body);

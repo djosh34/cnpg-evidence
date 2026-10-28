@@ -166,8 +166,16 @@ test('pg_ident lines are compared without numbers: only a new line is red', () =
 
 test('per-instance login rules mark only what differs from the desired lines', () => {
   const actual = structuredClone(clean);
+  actual.details.pg_hba = { 'pg-1': clean.details.pg_hba, 'pg-2': clean.details.pg_hba.slice(1).map((l, i) => ({ ...l, number: i + 1 })) };
   actual.details.pg_ident = { 'pg-1': clean.details.pg_ident, 'pg-2': clean.details.pg_ident.slice(1) };
-  const ident = show(actual, '02-login-rules').filter(r => r[0].startsWith('pg_ident'));
+  const lines = show(actual, '02-login-rules');
+  const hba = on => lines.filter(r => r[0] === `pg_hba on ${on}`);
+  assert.equal(hba('pg-1').length, clean.details.pg_hba.length);
+  assert.ok(hba('pg-1').every(r => !r[2].startsWith('+')));
+  // Without its first line, every pg_hba line of pg-2 moved up one number.
+  assert.equal(hba('pg-2').length, clean.details.pg_hba.length - 1);
+  assert.ok(hba('pg-2').every(r => r[1].startsWith('+') && r[2].startsWith('+')));
+  const ident = lines.filter(r => r[0].startsWith('pg_ident'));
   assert.equal(ident.filter(r => r[0] === 'pg_ident on pg-1').length, clean.details.pg_ident.length);
   assert.equal(ident.filter(r => r[0] === 'pg_ident on pg-2').length, clean.details.pg_ident.length - 1);
   assert.deepEqual(ident.filter(r => r[2].startsWith('+')), []);

@@ -12,8 +12,8 @@
 //
 // A column is a label, or {label, mark, group, wide} for a column of squares,
 // the columns of one group sharing a heading above them. A wide one has room
-// for names in place of a square. columns may be a
-// function of both documents, so both images of a pair get the same columns.
+// for names in place of a square. columns may be a function of both
+// documents, so both images of a pair get the same columns.
 // The legend lists, per side, the marks the image can show as [specimen,
 // words]. The specimen is a square 'on', 'off', 'on extra' or 'off extra',
 // {text} for a red value or {name} for a red row name.
@@ -99,39 +99,40 @@ function loginRules(s) {
     const words = line !== null && typeof line === 'object' && 'line' in line ? line.line : line;
     return { number, words: text(words), state: item.state };
   };
-  // pg_hba is known by number and words, so a new line and a line that moved
-  // are red there, and its rows keep their number order.
-  const hba = (file, items) => {
-    for (const { number, words, state } of items.map(parts)) {
-      if (state === 'missing') continue;
-      rows.push({
-        section: 1,
-        keep: `${file}\n${String(number ?? '').padStart(6, '0')}`,
-        cells: [[entry(file, '')], number === null ? [] : [entry(String(number), state)], [entry(words, state)]],
-      });
-    }
-  };
-  // PostgreSQL reads every line of a pg_ident map, so pg_ident is a list
-  // without numbers: only a line the desired side lacks is red.
-  const ident = (file, items) => {
+  // A line is red when the desired lines lack it. pg_hba is known by number
+  // and words, so a line that moved is red too, and its rows keep their number
+  // order. PostgreSQL reads every line of a pg_ident map, so pg_ident is a list
+  // compared without numbers.
+  const add = (file, items, hba) => {
     const lines = items.map(parts);
-    const desired = new Set(lines.filter(l => l.state !== 'extra').map(l => l.words));
-    for (const { words, state } of lines) {
-      if (state === 'missing') continue;
-      rows.push({ section: 2, cells: [[entry(file, '')], [{ text: '', state: '' }], [entry(words, desired.has(words) ? '' : 'extra')]] });
+    const known = l => (hba ? `${l.number}\n${l.words}` : l.words);
+    const desired = new Set(lines.filter(l => l.state !== 'extra').map(known));
+    for (const line of lines) {
+      if (line.state === 'missing') continue;
+      const state = desired.has(known(line)) ? '' : 'extra';
+      if (hba) {
+        rows.push({
+          section: 1,
+          keep: `${file}\n${String(line.number ?? '').padStart(6, '0')}`,
+          cells: [[entry(file, '')], line.number === null ? [] : [entry(String(line.number), state)], [entry(line.words, state)]],
+        });
+      } else {
+        rows.push({ section: 2, cells: [[entry(file, '')], [{ text: '', state: '' }], [entry(line.words, state)]] });
+      }
     }
   };
-  [['pg_hba', hba], ['pg_ident', ident]].forEach(([file, add]) => {
+  for (const file of ['pg_hba', 'pg_ident']) {
     const path = ['details', file];
-    // When the instances disagree, the lines come as one list per instance.
+    // When the instances disagree, the lines come as one list per instance,
+    // each compared with the one desired list they replace.
     if (Array.isArray(s.at(path)) || s.at(path) === undefined) {
-      add(file, s.items(path));
+      add(file, s.items(path), file === 'pg_hba');
     } else {
-      // The one desired list the per-instance lists replace.
       const replaced = s.values(path).filter(v => v.state === 'missing' && Array.isArray(v.value)).flatMap(v => v.value.map(value => ({ value, state: 'missing' })));
-      s.keys(path).forEach(({ key }) => add(`${file} on ${key}`, [...s.items([...path, key]), ...replaced]));
+      const own = item => ({ value: item.value, state: 'extra' });
+      s.keys(path).forEach(({ key }) => add(`${file} on ${key}`, [...s.items([...path, key]).map(own), ...replaced], file === 'pg_hba'));
     }
-  });
+  }
   for (const [file, section] of [['pg_hba', 3], ['pg_ident', 4]]) {
     for (const item of s.items(['details', `${file}_not_understood`])) {
       if (item.state !== 'missing') rows.push({ section, cells: [[entry(`${file}, not understood`, '')], [], [entry(item.value, item.state)]] });
