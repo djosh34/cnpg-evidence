@@ -273,7 +273,7 @@ const EVIDENCE = [
     title: 'Certificate logins',
     control: 'Each certificate name logs in as one account, and that account reaches one database. No other database exists.',
     desired: 'Each certificate name of desired.yaml and of CNPG, the account it logs in as and the database it reaches, then the databases no certificate reaches.',
-    actual: 'Each certificate name the pg_ident lines map to an account, and the database the pg_hba lines open to it, then the databases no certificate reaches.',
+    actual: 'Each certificate name the pg_ident lines of every instance map to an account, and the database the certificate pg_hba lines of desired.yaml and CNPG open to it, then the databases no certificate reaches. The login rules image compares the pg_hba lines themselves.',
     noun: ['row', 'rows'],
     columns: ['Certificate name', 'Account', 'Database'],
     names: 3,
