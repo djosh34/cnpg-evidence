@@ -212,11 +212,11 @@ function parts(s, path, separator) {
 
 const blank = [{ text: '', state: '' }];
 
-// Every Service that reaches the instances, by its namespace and name, then
-// the host ports of each instance pod. An extra Service is red by its name,
-// and its other values only where desired allows none for any Service: node
-// ports and external IPs. The script's words none and present start with a
-// capital, as the page's None does.
+// Every Service that reaches the instances, by its namespace and name, and
+// the host ports of each instance pod. An extra Service is red by its name
+// and namespace, and its other values only where desired allows none for any
+// Service: node ports and external IPs. The script's words none and present
+// start with a capital, as the page's None does.
 function ports(s) {
   const services = s.keys(['ports', 'services']).map(({ key, state }) => {
     const path = ['ports', 'services', key];
@@ -240,7 +240,6 @@ function ports(s) {
   const namespace = s.at(['cluster', 'namespace']);
   const pods = s.keys(['ports', 'host_ports']).map(({ key, state }) => ({
     every: key === '*',
-    section: 1,
     cells: [
       [entry(key === '*' ? 'Every instance pod' : `pod ${key}`, state)],
       [entry(namespace, state)],
@@ -518,7 +517,7 @@ const EVIDENCE = [
     desired: 'The Services that may reach the instance pods, with their type, selector, traffic policy and ports. The read LoadBalancer has a health check port, which leads to no database.',
     actual: 'Every Service in any namespace that sends connections to an instance pod, by its selector or by an address in its EndpointSlices, and the host ports of each instance pod.',
     noun: ['Service or pod', 'Services and pods'],
-    columns: ['Service', 'Namespace', 'Type', 'Selector', 'Traffic policy', 'Ports', 'Node ports', 'Health check port', 'External IPs'],
+    columns: ['Service or pod', 'Namespace', 'Type', 'Selector', 'Traffic policy', 'Ports', 'Node ports', 'Health check port', 'External IPs'],
     names: 2,
     rows: ports,
     legend: {

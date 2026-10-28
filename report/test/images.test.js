@@ -302,12 +302,12 @@ test('documents that cannot be drawn are refused', () => {
 
 test('the ports image lists each Service and the host ports of each instance pod', () => {
   assert.deepEqual(rows(sheet(clean, desired, 'evidence-06-ports-desired.png')).map(r => r.slice(0, 3)), [
+    ['Every instance pod', 'databases', 'hostPort'],
     ['pg-r', 'databases', 'ClusterIP'],
     ['pg-read-lb', 'databases', 'LoadBalancer'],
     ['pg-ro', 'databases', 'ClusterIP'],
     ['pg-rw', 'databases', 'ClusterIP'],
     ['pg-rw-lb', 'databases', 'LoadBalancer'],
-    ['Every instance pod', 'databases', 'hostPort'],
   ]);
   const read = show(clean, '06-ports').find(r => r[0] === 'pg-read-lb');
   assert.deepEqual(read, ['pg-read-lb', 'databases', 'LoadBalancer', 'cnpg.io/cluster=pg cnpg.io/podRole=instance', 'Local', '5433 -> 5432', '', 'Present', '']);
@@ -320,7 +320,8 @@ test('the ports image marks a changed Service by its value and an extra Service 
   assert.deepEqual(ports.find(r => r[0] === '+pg-debug'), ['+pg-debug', '+databases', 'NodePort', 'cnpg.io/cluster=pg cnpg.io/instanceRole=primary', 'Cluster', '5432 -> 5432', '+30432', 'None', '']);
   assert.deepEqual(ports.find(r => r[0] === '+pg-by-hand'), ['+pg-by-hand', '+otel', 'ClusterIP', 'None', 'None', '6000 -> 5432', '', 'None', '+198.51.100.50']);
   assert.deepEqual(ports.find(r => r[0] === 'pod pg-3'), ['pod pg-3', 'databases', 'hostPort', '', '', '+5432 -> 5432', '', '', '']);
-  assert.deepEqual(ports.slice(-3).map(r => r[0]), ['pod pg-1', 'pod pg-2', 'pod pg-3']);
+  // Correct rows first, Services and pods together, then the red ones.
+  assert.deepEqual(ports.map(r => r[0]), ['pg-r', 'pg-ro', 'pg-rw', 'pg-rw-lb', 'pod pg-1', 'pod pg-2', '+pg-by-hand', '+pg-debug', 'pg-read-lb', 'pod pg-3']);
   assert.equal(sheet(failing, desired, 'evidence-06-ports-actual.png').verdict, 'Failed');
   // A changed selector marks only the part desired lacks.
   const actual = structuredClone(clean);

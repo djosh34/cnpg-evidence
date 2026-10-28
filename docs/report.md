@@ -172,7 +172,7 @@ The four platform images are grids: one row per account that holds one of their 
 
 The network images cover the status and metrics ports, 8000 and 9187, and say so. Logins on 5432 are in the login images.
 
-The ports images list every Service in any namespace that reaches an instance pod, by its selector or by an address in its EndpointSlices, with its type, selector, traffic policy, ports, node ports, health check port and external IPs, and then the host ports of each instance pod. An extra Service is red by its name, and its node ports and external IPs are red too, since no Service may have them.
+The ports images list every Service in any namespace that reaches an instance pod, by its selector or by an address in its EndpointSlices, with its type, selector, traffic policy, ports, node ports, health check port and external IPs, and then the host ports of each instance pod. An extra Service is red by its name and namespace, and its node ports and external IPs are red too, since no Service may have them.
 
 The platform pods grid has a Port-forward column for the cluster's namespace. Open node ports on the nodes image covers starting pods and changing Services, Ingresses, and the Traefik IngressRoutes and IngressRouteTCPs (`ingressroutetcps.traefik.io`) where the cluster serves them.
 
