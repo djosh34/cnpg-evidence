@@ -24,6 +24,7 @@ JSON
 {"spec":{"ports":[{"port":5433}]},"status":{"loadBalancer":{"ingress":[{"ip":"192.0.2.1"}]}}}
 JSON
       ;;
+    *'get -o json service pg-empty-lb'*) echo '{"spec":{"ports":[{"port":5432}]},"status":{"loadBalancer":{}}}' ;;
     'create namespace prove-'* | 'delete namespace prove-'*) return 0 ;;
     *'run probe'*) [[ ${pod_failure:-} != run ]] ;;
     *'wait pod/probe'*) [[ ${pod_failure:-} != wait ]] ;;
@@ -79,4 +80,8 @@ for failure in run wait; do
   same_text "$failure error exits 2" 2 "$status"
   same_text "$failure error has no output" '' "$result"
 done
+status=0
+result=$(bash "$here/pod.sh" databases pg pg-rw-lb pg-empty-lb 2>/dev/null) || status=$?
+same_text 'a Service without an address exits 2' 2 "$status"
+same_text 'a Service without an address has no output' '' "$result"
 finish

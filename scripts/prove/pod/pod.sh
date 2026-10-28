@@ -26,6 +26,7 @@ done
 
 for lb_service in "${lb_services[@]}"; do
   addresses=$(kjson "$namespace" service "$lb_service" | jq -r -f "$here/../login/targets.jq")
+  [[ -n $addresses ]] || die "service $lb_service has no load balancer address"
   for address in $addresses; do
     targets+=("lb $address")
   done

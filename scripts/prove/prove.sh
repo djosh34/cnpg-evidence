@@ -38,11 +38,13 @@ for command in jq kubectl psql setpriv pgrep python3; do
 done
 
 values=$(jq -c .) || die "the desired state on stdin is not JSON"
+[[ -n $values ]] || die "the desired state on stdin is not JSON"
 expected() { jq -r -L "$here/../evidence/violations" "include \"expected\"; $1" <<<"$values"; }
 [[ $(expected valid_values) == true ]] || die "$(expected values_needed)"
 namespace=$(jq -r .cluster.namespace <<<"$values")
 cluster=$(jq -r .cluster.name <<<"$values")
-mapfile -t lb_services < <(jq -r '.rwLoadBalancer.name, (.readLoadBalancer.name // empty)' <<<"$values")
+names=$(jq -r '.rwLoadBalancer.name, (.readLoadBalancer.name // empty)' <<<"$values")
+mapfile -t lb_services <<<"$names"
 
 ((EUID == 0)) || die "run as root"
 

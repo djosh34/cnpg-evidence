@@ -25,7 +25,7 @@ From [`desired.yaml`](../desired.yaml) it takes `cluster.namespace` and `cluster
 
 The script reads the CNPG `Cluster`. It takes the application database and role from the first `hostssl ... cert` line in its pg_hba, and the replication certificate and key from the `<cluster>-replication` Secret.
 
-The rw LoadBalancer Service forwards its port on every address in `status.loadBalancer.ingress` to the primary, and the read LoadBalancer its port to the instance on the same node. The script tries every address and port of both:
+The rw LoadBalancer Service forwards its port on every address in `status.loadBalancer.ingress` to the primary, and the read LoadBalancer its port to the instance on the same node. The script tries every address and port of both. A node whose instance is not ready, or that runs none, refuses the read port, so the login rows fail through that address until the instance is ready.
 
 - Password logins as `postgres` to `postgres`, with and without TLS, must get the pg_hba reject.
 - An application login without a client certificate must be asked for one.
@@ -46,7 +46,7 @@ From that pod:
 - Connections to each instance pod's address on 5432 (PostgreSQL), 8000 (the CNPG instance manager) and 9187 (metrics) must time out or be refused.
 - Logins as `postgres` to `postgres` with `sslmode=require` through every LoadBalancer address and port must not get in: a pg_hba reject or no connection passes; a login or any other error fails.
 
-Logins from the node time out after five seconds, connections from the pod after three. Every psql call names the host, port, database and user. No `PG*` variable of the caller or of the image reaches psql; the script sets only the timeout and, for the replication certificate, `PGSSLCERT` and `PGSSLKEY`. The script waits up to 180 seconds for the pod to finish, reads its log and deletes the namespace. It also deletes the namespace when a step fails, and logs its name, so a namespace left by an interrupted run can be found.
+Logins from the node time out after five seconds, connections from the pod after three. Every psql call names the host, port, database and user. No `PG*` environment variable of the caller or of the image reaches psql; the script sets only the timeout and, for the replication certificate, `PGSSLCERT` and `PGSSLKEY`. The script waits up to 180 seconds for the pod to finish, reads its log and deletes the namespace. It also deletes the namespace when a step fails, and logs its name, so a namespace left by an interrupted run can be found.
 
 ### 3. Access as the host postgres uid
 

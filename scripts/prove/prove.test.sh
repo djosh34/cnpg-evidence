@@ -40,6 +40,8 @@ done
 
 exits 'values that are not JSON' 'cluster: pg'
 same_text 'values that are not JSON say so' 1 "$(grep -c 'not JSON' <<<"$errors")"
+exits 'no values' ''
+same_text 'no values say they are not JSON' 1 "$(grep -c 'not JSON' <<<"$errors")"
 exits 'values without the rw LoadBalancer' "$(jq -c 'del(.rwLoadBalancer)' <<<"$values")"
 same_text 'values without the rw LoadBalancer say what is needed' 1 "$(grep -c 'the desired state needs' <<<"$errors")"
 exits 'a read LoadBalancer without a port' "$(jq -c 'del(.readLoadBalancer.port)' <<<"$values")"
