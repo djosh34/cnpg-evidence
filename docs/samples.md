@@ -36,7 +36,7 @@ Database objects: pg-orders, pg-billing
 - `cnpg_streaming_replica` is CNPG's map for replication logins; the chart adds the replication CN to it.
 - The server and replication `Certificate`s carry the replication CN and `dnsNames` from `desired.yaml`, and the issuer from `values.yaml`.
 - The `NetworkPolicy` selects every pod of the cluster, including its bootstrap and join Job pods, and admits 5432 and 8000 from the cluster's pods, 8000 from the operator pods, 9187 from the OTel namespace, and 5432 from outside the cluster, from the other nodes and from the svclb pods of the rw LoadBalancer.
-- The `Cluster` has the rw LoadBalancer and, when `readLoadBalancer` is set, the read LoadBalancer, both without NodePorts (see [LoadBalancers](#loadbalancers)). Every commit waits for one other instance (`synchronous: {method: any, number: 1, dataDurability: required}`), and a replica is ready only while it streams and is less than 16Mi behind (`probes.readiness: {type: streaming, maximumLag: 16Mi}`).
+- The `Cluster` has the rw LoadBalancer and, when `readLoadBalancer` is set, the read LoadBalancer, both without NodePorts (see [LoadBalancers](#loadbalancers)). Every commit waits for one other instance, and a starting replica opens the read port only once it has caught up (see [Writes, reads and failover](#writes-reads-and-failover)).
 
 To see the full output: `helm template pg samples/chart -n databases -f desired.yaml --dry-run=server`. The NetworkPolicy reads every node's `spec.podCIDR` from the cluster with `lookup`, so rendering without a cluster fails. A NetworkPolicy written by hand needs the same pod ranges, from `kubectl get nodes -o jsonpath='{.items[*].spec.podCIDR}'`: each range goes into the `except` list of the `0.0.0.0/0` source, and its network address as `/32` becomes a source of its own. Under flannel, connections from another node itself arrive from that address, the node's `flannel.1` interface. No address range is fixed in the samples or the scripts.
 
@@ -112,17 +112,85 @@ sslmode=verify-ca sslrootcert=ca.crt sslcert=orders-app.crt sslkey=orders-app.ke
 
 `verify-ca`, because the server certificate names `replication.dnsNames`, not the nodes. With the node names in `replication.dnsNames`, use `verify-full`.
 
-Reads on the read port can be slightly behind the primary: a commit waits for one replica, and the other replica stays ready while it is less than 16Mi behind.
+A stopped node does not refuse, so pgx waits for `connect_timeout` before it moves on: while a node listed first is down, each new connection takes that long. A node whose instance is not ready refuses at once.
 
-Measured on a three-node k3s cluster with the example `desired.yaml`, CNPG 1.30.1 and pgx 5.11, with a new connection and one `SELECT` every 0.25 s and the stopped node listed first:
+Reads on the read port can be slightly behind the primary: a commit waits for one replica, and the other replica can be a few milliseconds behind, or more while it is slow or cut off (see [Writes, reads and failover](#writes-reads-and-failover)).
 
-| Event | Reads | Writes on 5432 |
-|---|---|---|
-| A replica's node stops for 120 s | 0 of 960 failed. Each new connection took about 2 s while the node was down: the stopped node does not refuse, so pgx waits for `connect_timeout` before it moves on. The replica served reads again 26 s after its node started. | 0 of 960 failed. |
-| A replica is not ready, its node runs | Its node refuses at once, and pgx moves on. 0 of 358 failed, typically 20 ms per connection. | Not measured. |
-| The primary's node stops for 120 s | Worked for the first 26 s, then failed on every node until 24 s after the node started again: without a primary, the replicas stop streaming and fail the readiness check. | Failed from the stop until 23 s after the node started again. CNPG promoted no replica. |
+## Writes, reads and failover
+
+The chart's settings in the `Cluster`:
+
+- **`synchronous: {method: any, number: 1, dataDurability: required}`.** Every commit waits until one of the other instances has it. When no other instance can confirm, writes stop instead of going on with one copy.
+- **`synchronous_commit: remote_apply`.** The commit returns only once that instance has applied it, so a read there right after the commit sees it.
+- **`failoverQuorum: true`.** CNPG promotes a replica only when it can tell that the replica holds every confirmed commit. With one confirming copy and two replicas, it needs both replicas ready to decide.
+- **`probes.startup: {type: streaming, maximumLag: 128Ki}`.** A replica that starts, after a node restart, an update or a crash, is not ready until it streams from the primary and its replay is within 128Ki of the WAL end the primary last reported. Until then its node refuses the read port. This bound is checked once, while the container starts; it is not a promise of zero lag.
+- **Readiness and liveness are CNPG's defaults.** A started replica stays ready while PostgreSQL accepts connections, so a replica that falls behind later stays on the read port; watch its replication lag. The liveness isolation check stays on.
+
+What clients see, from tests on a three-node k3s cluster with these settings, a new connection every 0.25 s and all three nodes in the host list:
+
+- **A replica's node is lost.** Reads keep working on the other nodes. Writes go on without a pause.
+- **The primary's node is lost.** Reads keep working on the replicas. Writes fail until CNPG has promoted a replica, about a minute after the loss, up to about a minute and a half when the lost node also ran the leader of the Kubernetes controller manager. Most of that time is Kubernetes noticing that the node is gone and the old primary's lease running out. The node does not need to come back.
+- **A node comes back.** Its instance opens the read port about half a minute after the node starts, once it streams and has caught up. An old primary first rewinds itself and comes back as a replica.
+- After each of these, every replica caught up fully by itself.
 
 An open connection ends when the node it entered through stops, and when its instance is promoted.
+
+### One node left
+
+With embedded etcd, two of three servers lost means no Kubernetes API, so nothing is promoted and nothing changes in the cluster until a second node returns. Writes stop, as every commit needs a second instance.
+
+- **The last node runs a replica.** It keeps serving reads on its read port, with the data as it was when the other nodes were lost.
+- **The last node runs the primary.** Writes hang. After about 30 s the isolation check finds neither the API nor the other instances, and the liveness probe restarts PostgreSQL, which cannot start again without the API. Reads stop too. If k3s itself exits on that node first, which it can when it held one of the k3s leader leases, nothing restarts PostgreSQL: under systemd the running containers keep going and keep serving reads.
+- **Recovery depends on which node returns.** When the primary's node returns, everything recovers without a manual step. When only the other replica's node returns while the primary's node stays down, nothing is promoted: the returning replica cannot pass its startup check without a primary to stream from, and the quorum needs both replicas.
+
+### A replica restart while the primary's node is down
+
+A replica whose container restarts while the primary's node is down cannot pass its startup check, since there is no primary to stream from. CNPG then waits for it, and the quorum needs both replicas, so it promotes nothing until the primary's node returns. This needs two events at once. The way out is to promote the replica that still runs by hand:
+
+```bash
+kubectl cnpg promote <cluster> <instance>
+```
+
+This skips the quorum check. First compare `select pg_last_wal_replay_lsn()` on both replicas, and promote only a replica that is not behind the other; otherwise wait for the primary's node, since a commit that only the other replica confirmed would be lost.
+
+## Outside the chart
+
+### CoreDNS on every node
+
+k3s runs one CoreDNS replica. When it runs on the primary's lost node, the failover waits on DNS: the promoted replica restores WAL from the object store by its host name, and the replicas reach the new primary through the `<cluster>-rw` Service name. Run one CoreDNS replica per node, through k3s's manifest method:
+
+1. On every server, create an empty `coredns.yaml.skip` next to `coredns.yaml` in `/var/lib/rancher/k3s/server/manifests`. k3s then no longer applies its own file.
+2. Put an own copy of `coredns.yaml` under another name in the same directory, with `replicas: 3` added to the `coredns` Deployment's `spec`. The Deployment's spread rule puts each replica on another node.
+3. On k3s upgrades, compare the copy with the new `coredns.yaml` and update it by hand.
+
+k3s's own manifest sets no replica count, so `kubectl scale deployment coredns -n kube-system --replicas=3` also holds across k3s restarts, as long as a k3s version does not add one.
+
+### Secrets encryption
+
+By default k3s stores Secrets unencrypted in etcd and in its etcd snapshots. Turn on k3s `secrets-encryption`: `--secrets-encryption` on new servers, or the `k3s secrets-encrypt` steps on a running cluster ([k3s docs](https://docs.k3s.io/security/secrets-encryption)). Snapshots taken before stay unencrypted.
+
+### Audit log
+
+The k3s API server writes no audit log by default, so a `kubectl exec` into an instance pod leaves no record. A short policy records who opened a shell in, attached to, or read a Secret in the cluster's namespace (`databases` here), without the Secret's content:
+
+```yaml
+apiVersion: audit.k8s.io/v1
+kind: Policy
+omitStages: [RequestReceived]
+rules:
+  - level: Metadata
+    namespaces: [databases]
+    resources:
+      - group: ""
+        resources: [pods/exec, pods/attach, secrets]
+  - level: None
+```
+
+Give it to every server with `--kube-apiserver-arg=audit-policy-file=<path>` and `--kube-apiserver-arg=audit-log-path=<path>`, and keep the log off the node.
+
+### Backup bucket
+
+The bucket holds every database's WAL and base backups. Give the credentials in `objectStore.credentialsSecret` access to this one bucket only, and turn on encryption at rest for the bucket.
 
 ## Changes later
 
