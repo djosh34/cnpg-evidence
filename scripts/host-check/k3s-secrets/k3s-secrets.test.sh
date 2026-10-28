@@ -15,7 +15,7 @@ trap 'rm -r "$fixture"' EXIT
 mkdir "$fixture/server" "$fixture/config.yaml.d"
 printf 'credentials\n' >"$fixture/k3s.yaml"
 printf 'token: do-not-print\nsecrets-encryption: true\n' >"$fixture/config.yaml"
-printf 'agent-token: also-do-not-print\n' >"$fixture/config.yaml.d/10-token.yaml"
+printf '"agent-token": also-do-not-print\n' >"$fixture/config.yaml.d/10-token.yaml"
 printf 'node-name: do-not-print-either\n' >"$fixture/config.yaml.d/20-node.yaml"
 stat() {
   if [[ ${*: -1} == */server ]]; then

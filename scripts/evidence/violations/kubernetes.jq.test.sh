@@ -63,6 +63,11 @@ violations_because() {
     jq -L "$here" -f "$here/kubernetes.jq"
 }
 
+same "Traefik may not hold more than Secret reads in the superuser row" \
+  '["rule 7: system:serviceaccount:kube-system:traefik can get PostgreSQL superuser through rights in databases (allowed by ClusterRoleBinding \"t\" of ClusterRole \"exec\" to ServiceAccount \"traefik/kube-system\")"]' \
+  "$(violations_because . '{"superuser_beyond_reading_secrets": ["system:serviceaccount:kube-system:traefik"],
+     "superuser_in_cluster_namespace": {"system:serviceaccount:kube-system:traefik": ["RBAC: allowed by ClusterRoleBinding \"t\" of ClusterRole \"exec\" to ServiceAccount \"traefik/kube-system\""]}}')"
+
 same "each sentence names the binding that allowed it" \
   '["rule 7: mallory can get PostgreSQL superuser through rights in databases (allowed by RoleBinding \"mallory/databases\" of Role \"secrets\" to User \"mallory\")",
     "rule 6: the operator can read secrets in kube-system (allowed by ClusterRoleBinding \"a\" of ClusterRole \"view\" to Group \"system:serviceaccounts:cnpg-system\"; allowed by RoleBinding \"b/kube-system\" of Role \"r\" to ServiceAccount \"cnpg-cloudnative-pg/cnpg-system\")"]' \

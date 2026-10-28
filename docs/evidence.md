@@ -115,7 +115,7 @@ The allowed subjects, in `scripts/evidence/violations/expected.jq`:
 | cert-manager's cainjector | every right but `create_certificates` | It writes CA bundles into webhook configurations |
 | the Kubernetes and k3s controllers | every right | They create pods and other objects from objects that other subjects write |
 | k3s's Helm install jobs `helm-traefik` and `helm-traefik-crd` in `kube-system` | every right | k3s binds them to cluster-admin to install Traefik |
-| Traefik's ServiceAccount `traefik` in `kube-system` | `superuser_in_cluster_namespace` | It reads Secrets in every namespace for the certificates of the routes it serves |
+| Traefik's ServiceAccount `traefik` in `kube-system` | in `superuser_in_cluster_namespace`, only get, list and watch on Secrets | It reads Secrets in every namespace for the certificates of the routes it serves |
 
 ### Pods
 

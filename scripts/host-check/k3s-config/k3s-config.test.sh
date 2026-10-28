@@ -14,9 +14,9 @@ sed() {
   builtin command sed "${@:1:$#-1}" <<'YAML'
 # Only safe settings leave the file.
 token: secret
-selinux: true # enabled
+"selinux": true # enabled
   disable-network-policy: false
-secrets-encryption: true
+secrets-encryption: "true"
 YAML
 }
 awk() {

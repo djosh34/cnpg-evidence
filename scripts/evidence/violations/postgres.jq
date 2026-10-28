@@ -1,5 +1,6 @@
 # Rules 1 to 4 for the postgres section: which roles hold which right, which
-# have a password, which exist and which can log in, and which databases exist. The expected roles of
+# have a password, which exist and which can log in, and which databases
+# exist. The expected roles of
 # each right are in expected.jq.
 #
 # Input: {facts, values}. Output: a list of sentences.

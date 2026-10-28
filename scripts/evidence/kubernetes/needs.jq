@@ -1,7 +1,7 @@
 # Every question the kubernetes section needs answered: for each subject and
-# right, where it applies (in: a namespace, or "" for cluster-wide) and how
-# to ask the API server (ask: verb, resource, subresource, namespace; "-"
-# for none or all namespaces).
+# right, where it applies (in: a namespace, or "" for cluster-wide), whether
+# it only reads Secrets (secret_read), and how to ask the API server (ask:
+# verb, resource, subresource, namespace; "-" for none or all namespaces).
 #
 # A Role can grant a verb on named objects only (resourceNames). The API
 # server answers a question about a named object yes for such a grant and for
@@ -34,8 +34,9 @@ def superuser_in_cluster_namespace($cluster; $pods; $secrets):
     {verb: write,
      resource: ("pods", "replicationcontrollers", "deployments.apps", "statefulsets.apps", "daemonsets.apps",
                 "replicasets.apps", "jobs.batch", "cronjobs.batch")},
-    ($secrets[] | {verb: "get", resource: "secrets/\(.)"}, {verb: ("update", "patch"), resource: "secrets/\(.)"}),
-    {verb: ("list", "watch", "create"), resource: "secrets"},
+    ($secrets[] | {verb: "get", resource: "secrets/\(.)", secret_read: true}, {verb: ("update", "patch"), resource: "secrets/\(.)"}),
+    {verb: ("list", "watch"), resource: "secrets", secret_read: true},
+    {verb: "create", resource: "secrets"},
     {verb: "create", resource: "serviceaccounts/\($cluster)", subresource: "token"},
     {verb: "create", resource: "clusters.postgresql.cnpg.io"},
     {verb: ("update", "patch"), resource: "clusters.postgresql.cnpg.io/\($cluster)"},
@@ -92,7 +93,7 @@ def ask_namespace($subject; $namespace; $named_in):
   end;
 
 def need($subject; $in; $named_in):
-  {right, in: $in, subject: $subject,
+  {right, in: $in, subject: $subject, secret_read: (.secret_read // false),
    ask: {verb, resource, subresource: (.subresource // "-"), namespace: ask_namespace($subject; $in; $named_in)}};
 
 . as $input

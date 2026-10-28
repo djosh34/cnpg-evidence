@@ -6,9 +6,10 @@ here=$(dirname "${BASH_SOURCE[0]}")
 source "$here/../../lib/test.sh"
 
 # need RIGHT IN SUBJECT VERB RESOURCE ASK_NAMESPACE, and the answer for it.
+# A get on a Secret is a Secret read.
 need() {
   jq -nc --arg right "$1" --arg in "$2" --arg subject "$3" --arg verb "$4" --arg resource "$5" --arg namespace "$6" \
-    '{right: $right, in: $in, subject: $subject,
+    '{right: $right, in: $in, subject: $subject, secret_read: ($verb == "get" and ($resource | startswith("secrets"))),
       ask: {verb: $verb, resource: $resource, subresource: "-", namespace: $namespace}}'
 }
 answer() {
@@ -77,6 +78,9 @@ EOF
 )
 same "granted_by has the same shape, with each holder's reasons" \
   "$expected" "$(section "$needs" "$answers" | jq '.granted_by | {superuser_in_cluster_namespace, operator_reads_secrets_in}')"
+
+same "the superuser holders beyond reading Secrets" '["bob","carol"]' \
+  "$(section "$needs" "$answers" | jq -c .granted_by.superuser_beyond_reading_secrets)"
 
 same "a resource the cluster does not serve is listed" \
   '["ingressroutes.traefik.io"]' "$(section "$needs" "$answers" '["ingressroutes.traefik.io"]' | jq -c .not_served)"

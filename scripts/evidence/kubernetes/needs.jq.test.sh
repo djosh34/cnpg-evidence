@@ -59,6 +59,8 @@ same "superuser in the cluster's namespace: the instance pods by name, workloads
     ["update","replicasets.apps","-"],["update","replicationcontrollers","-"],["update","secrets/pg-replication","-"],["update","statefulsets.apps","-"],
     ["watch","secrets","-"]]' \
   "$(questions superuser_in_cluster_namespace alice)"
+same "only get, list and watch on Secrets are Secret reads" '[["get","secrets/pg-replication"],["list","secrets"],["watch","secrets"]]' \
+  "$(jq -c 'select(.right == "superuser_in_cluster_namespace" and .subject == "alice" and .secret_read) | [.ask.verb, .ask.resource]' <<<"$needs" | jq -sc unique)"
 same "superuser rights are asked in the cluster's namespace only" \
   '["databases"]' "$(jq -c 'select(.right == "superuser_in_cluster_namespace") | .in' <<<"$needs" | jq -sc unique)"
 same "system:masters, cluster-admin and the component ServiceAccounts by name" \

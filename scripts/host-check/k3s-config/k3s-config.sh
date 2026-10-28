@@ -13,7 +13,7 @@ keys='selinux|disable-network-policy|secrets-encryption'
 {
   for file in "$config" "$config".d/*.yaml; do
     [[ -f $file ]] || continue
-    sed -nE "s/^[[:space:]]*($keys)[[:space:]]*:[[:space:]]*([^#[:space:]]*).*/\1: \2/p" "$file" |
+    sed -nE "s/^[[:space:]]*[\"']?($keys)[\"']?[[:space:]]*:[[:space:]]*[\"']?([^#[:space:]\"']*).*/\1: \2/p" "$file" |
       jq -Rn --arg f "$file" '{($f): [inputs]}'
   done
   for unit in "${units[@]}"; do

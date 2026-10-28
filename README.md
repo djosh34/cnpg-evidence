@@ -63,7 +63,7 @@ bash scripts/test.sh
 
 ## Upgrade from v0.1.0
 
-v0.2.0 adds the optional read LoadBalancer and rule 9, and drops `rwLoadBalancer.create`, the sample chart's NodePorts and the cluster flags of `prove.sh`, which now reads `desired.yaml` on stdin. Delete a Service of the rw or read name that was made outside the chart before the upgrade, and remove an old NodePort once after it. [upgrade.md](docs/upgrade.md) lists every step and the changed images.
+v0.2.0 adds the optional read LoadBalancer and a rule 9 for the ways into PostgreSQL besides a login, which later versions dropped again, and drops `rwLoadBalancer.create`, the sample chart's NodePorts and the cluster flags of `prove.sh`, which now reads `desired.yaml` on stdin. Delete a Service of the rw or read name that was made outside the chart before the upgrade, and remove an old NodePort once after it. [upgrade.md](docs/upgrade.md) lists every step and the changed images.
 
 ## Files
 

@@ -38,6 +38,14 @@ EOF
 same "reads the rules of every pod; one list where they agree, mappings without errors" \
   "$expected" "$(bash "$here/logins.sh" databases pg-1 pg-2)"
 
+# pg-2 has the same pg_ident lines in another order.
+same "pg_ident lines in another order are the same lines" '[{"number":1,"line":"clients a.test orders"},{"number":2,"line":"clients b.test orders"}]' \
+  "$(jq -n '{"pg-1": {pg_hba: [], pg_ident: [{number: 1, line: "clients a.test orders", map: "clients", system_user: "a.test", role: "orders", error: null},
+                                           {number: 2, line: "clients b.test orders", map: "clients", system_user: "b.test", role: "orders", error: null}]},
+             "pg-2": {pg_hba: [], pg_ident: [{number: 1, line: "clients b.test orders", map: "clients", system_user: "b.test", role: "orders", error: null},
+                                           {number: 2, line: "clients a.test orders", map: "clients", system_user: "a.test", role: "orders", error: null}]}}' |
+     jq -c -f "$here/logins.jq" | jq -c .pg_ident)"
+
 if bash "$here/logins.sh" databases pg-1 pg-3-fails >/dev/null 2>&1; then
   fail "a failed read on one pod fails"
 else

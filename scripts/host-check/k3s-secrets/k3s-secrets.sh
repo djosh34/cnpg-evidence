@@ -33,7 +33,7 @@ check_path "$kubeconfig" 600
 for file in "$config" "$config".d/*.yaml; do
   [[ -f $file ]] || continue
   # Only the setting name is read here; its value never leaves the file.
-  token_setting=$(awk '/^[[:space:]]*(token|agent-token)[[:space:]]*:/ {print "present"; exit}' "$file")
+  token_setting=$(awk '/^[[:space:]]*["\047]?(token|agent-token)["\047]?[[:space:]]*:/ {print "present"; exit}' "$file")
   if [[ -n $token_setting ]]; then
     check_path "$file" 600
   else

@@ -5,7 +5,8 @@
 # namespace.
 #
 # Input: {facts, values, granted_by, operator_account, plugin_account}, granted_by
-# from kubernetes/kubernetes.jq and optional. Output: a list of sentences.
+# from kubernetes/kubernetes.jq and optional; without it, a subject of
+# secret_readers counts as only reading Secrets. Output: a list of sentences.
 
 include "common";
 include "expected";
@@ -21,6 +22,9 @@ include "expected";
 # Each sentence ends with the reasons the API server gave, which name the
 # bindings that allowed the right.
 | (.granted_by // {}) as $granted_by
+# The Secret readers are allowed in the superuser row only while they hold
+# nothing in it but Secret reads.
+| ($granted_by.superuser_beyond_reading_secrets // []) as $beyond
 | def because($key; $holder):
     [$granted_by[$key][$holder]? // [] | .[] | ltrimstr("RBAC: ") | select(. != "")]
     | if . == [] then "" else " (\(join("; ")))" end;
@@ -33,7 +37,7 @@ include "expected";
     | "rule 6: \($who) can read secrets in \(.)\(because($key; .))";
 
   [
-    not_allowed("superuser_in_cluster_namespace"; $allowed + secret_readers;
+    not_allowed("superuser_in_cluster_namespace"; $allowed + (secret_readers - $beyond);
                 "get PostgreSQL superuser through rights in \($namespace)"),
     not_allowed("create_certificates"; certificate_subjects; "create Certificates or CertificateRequests"),
     not_allowed("write_routes"; $allowed; "write Ingresses, IngressRoutes or IngressRouteTCPs"),
