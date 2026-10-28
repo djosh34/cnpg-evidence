@@ -143,7 +143,7 @@ function loginRules(s) {
 
 function clientCa(s) {
   const secret = entries(s.values(['client_ca', 'secret']));
-  const certificates = s.items(['client_ca', 'certificates']);
+  const certificates = s.items(['client_ca', 'certificates']).filter(c => c.state !== 'missing');
   if (!certificates.length) return [{ cells: [secret, [], []] }];
   return certificates.map(({ value, state }) => ({
     cells: [secret, [entry(value.name, state)], [entry(fingerprint(value.sha256_fingerprint), state)]],
@@ -383,6 +383,7 @@ const EVIDENCE = [
     columns: ['Account', mark('Logs in'), 'Certificate names', 'Reaches', 'Owns', mark('Superuser'), mark('Create roles'), mark('Create databases'), 'Other rights', mark('Password stored'), 'Password login'],
     names: 1,
     rows: accounts,
+    // The words of the approved accounts image.
     legend: {
       desired: [['on', 'Holds the right'], ['off', 'Does not hold the right']],
       actual: [
@@ -581,9 +582,14 @@ const CHECKS = {
   'bind-service-capability': ['Programs that can bind low ports', 'No program under /usr or /opt carries cap_net_bind_service.'],
 };
 
-function hostCheckImage(id) {
+const YES_NO = ['true', 'false', true, false];
+
+// A check whose value is true or false in either document shows it as a square.
+function hostCheckImage(id, docs) {
   if (!Object.hasOwn(CHECKS, id)) throw new Error(`unknown host-check check ${JSON.stringify(id)}`);
   const [title, control] = CHECKS[id];
+  const yesNo = docs.some(doc => YES_NO.includes(doc.checks?.find(c => c.id === id)?.value));
+  const value = item => (yesNo ? { mark: item.value === true || item.value === 'true', state: item.state } : entry(item.value, item.state));
   return {
     name: id,
     sections: ['checks'],
@@ -591,17 +597,22 @@ function hostCheckImage(id) {
     control,
     desired: 'The value the check has on a node where it passes.',
     actual: 'The value the check read on this node.',
-    columns: ['Check', 'Value'],
+    columns: ['Check', yesNo ? mark('Value') : 'Value'],
     names: 1,
     raw: ['checks', id, 'raw'],
     legend: {
-      desired: [],
-      actual: [RED_VALUE('A value other than the one the check passes with'), [{ name: 'Red check' }, 'A check the desired image does not have']],
+      desired: yesNo ? [['on', 'true'], ['off', 'false']] : [],
+      actual: [
+        ...(yesNo
+          ? [['on', 'true'], ['off', 'false'], ['on extra', 'true, but the desired image has false'], ['off extra', 'false, but the desired image has true']]
+          : [RED_VALUE('A value other than the one the check passes with')]),
+        [{ name: 'Red check' }, 'A check the desired image does not have'],
+      ],
     },
     rows: s => {
       const row = s.items(['checks']).find(r => r.value?.id === id);
       if (!row) return [];
-      return [{ cells: [[entry(id, row.state)], entries(s.values(['checks', id, 'value']))] }];
+      return [{ cells: [[entry(id, row.state)], s.values(['checks', id, 'value']).map(value)] }];
     },
   };
 }
@@ -614,13 +625,23 @@ function probeGroup(name) {
   return '01-login-attempts';
 }
 
+// prove.sh joins the different results of one attempt with ", ". Each is a
+// value of its own, red when the desired value is another.
+function results(s, name) {
+  const found = s.values(['probes', name, 'value']);
+  const desired = found.filter(v => v.state === 'missing').flatMap(v => String(v.value).split(', '));
+  return found
+    .filter(v => v.state !== 'missing')
+    .flatMap(v => (v.state === 'extra' ? String(v.value).split(', ').map(part => entry(part, desired.includes(part) ? '' : 'extra')) : [entry(v.value, '')]));
+}
+
 function probes(group) {
   return s => s.items(['probes'])
     .filter(row => probeGroup(String(row.value?.probe)) === group)
     .map(row => {
       const name = row.value.probe;
       return {
-        cells: [[entry(name, row.state)], entries(s.values(['probes', name, 'expected'])), entries(s.values(['probes', name, 'value']))],
+        cells: [[entry(name, row.state)], entries(s.values(['probes', name, 'expected'])), results(s, name)],
       };
     });
 }
@@ -665,7 +686,7 @@ function imagesOf(source, docs) {
   if (source === 'host-check') {
     const ids = [];
     for (const doc of docs) for (const check of doc.checks ?? []) if (!ids.includes(check.id)) ids.push(check.id);
-    return ids.map(hostCheckImage);
+    return ids.map(id => hostCheckImage(id, docs));
   }
   throw new Error(`unknown source ${JSON.stringify(source)}`);
 }

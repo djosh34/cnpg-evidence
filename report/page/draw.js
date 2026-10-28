@@ -123,10 +123,12 @@ function rowState(row, names) {
 }
 
 // Less than desired is no finding: a row or value only the desired side has is
-// not drawn.
+// not drawn. A row goes when a cell that names it holds only desired values,
+// or, on an image without name cells, when all its values are desired only.
 function visible(rows, names) {
+  const desiredOnly = values => allState(values.map(v => v.state)) === 'missing';
   return rows
-    .filter(row => (names ? rowState(row, names) : allState(row.cells.flat().map(v => v.state))) !== 'missing')
+    .filter(row => (names ? !row.cells.slice(0, names).some(desiredOnly) : !desiredOnly(row.cells.flat())))
     .map(row => ({ ...row, cells: row.cells.map(values => values.filter(v => v.state !== 'missing')) }));
 }
 
@@ -135,7 +137,7 @@ const before = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
 // Correct first, red last, each group alphabetical: the values of each cell,
 // then the rows by their cells from the first column on. Rows with keep stay
-// in the order of keep.
+// in the order of keep; within a section, either every row has keep or none.
 function ordered(rows) {
   const byValue = (a, b) => bad([a]) - bad([b]) || before(a.text ?? '', b.text ?? '');
   const key = row => row.cells.map(values => values.map(v => v.text ?? (v.mark ? '1' : '0')).join('\n')).join('\t');

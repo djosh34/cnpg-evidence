@@ -130,6 +130,17 @@ test('an actual image never shows a value missing from actual', () => {
   assert.equal(sheet(actual, desired, 'evidence-01-accounts-actual.png').verdict, 'Passed');
 });
 
+test('a row whose name is only desired is not drawn, and the population counts what is drawn', () => {
+  const network = structuredClone(clean);
+  delete network.network_policy['pg-1'].otel;
+  assert.deepEqual(show(network, '05-network').filter(r => r[0] === 'pg-1').map(r => r[1]), ['cnpg-system operator', 'own node', 'pg pods']);
+  const ca = structuredClone(failing);
+  ca.client_ca.certificates = ca.client_ca.certificates.filter(c => c.name !== 'CN=example-ca');
+  const s = sheet(ca, desired, 'evidence-03-client-ca-actual.png');
+  assert.deepEqual(rows(s).map(r => r[1]), ['+CN=other-ca']);
+  assert.equal(s.context.find(([term]) => term === 'Population')[1], '1 certificate');
+});
+
 test('the accounts image lists the certificate names of each account', () => {
   const s = sheet(failing, desired, 'evidence-01-accounts-actual.png');
   assert.equal(s.columns[2].label, 'Certificate names');
@@ -210,6 +221,22 @@ test('host-check and prove show the value read in red, without the desired value
   assert.deepEqual(hc.context.find(c => c[0] === 'Read on the node'), ['Read on the node', 'ip_unprivileged_port_start = 0']);
   const pr = sheet(sample('prove.failing.json'), sample('prove.desired.json'), 'prove-01-login-attempts-actual.png');
   assert.deepEqual(rows(pr).at(-1), ['password-no-tls', 'refused by pg_hba reject', '+allowed']);
+});
+
+test('a host-check value of true or false is a square, red when it is not the desired one', () => {
+  const hcDesired = sample('host-check.desired.json');
+  const hc = sample('host-check.clean.json');
+  const selinux = doc => sheet(doc, hcDesired, 'host-check-node-a-k3s-selinux-actual.png');
+  assert.deepEqual(rows(selinux(hc)), [['k3s-selinux', '[x]']]);
+  assert.equal(selinux(hc).columns[1].mark, true);
+  hc.checks.find(c => c.id === 'k3s-selinux').value = 'false';
+  assert.deepEqual(rows(selinux(hc)), [['k3s-selinux', '+[ ]']]);
+  assert.equal(selinux(hc).verdict, 'Failed');
+});
+
+test('each result prove.sh joined is its own value, red only when it is not the desired one', () => {
+  const pr = sheet(sample('prove.failing.json'), sample('prove.desired.json'), 'prove-02-other-namespace-actual.png');
+  assert.deepEqual(rows(pr).find(r => r[0] === 'other-namespace-9187'), ['other-namespace-9187', 'timeout or connection refused', 'denied +allowed']);
 });
 
 test('the network images state their scope', () => {

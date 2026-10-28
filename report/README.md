@@ -101,6 +101,7 @@ The images then apply the rules of the report on top of those differences:
 - A square is red when its right is held and the comparison found it extra. An allowed right that is not held stays a normal empty square. The container isolation square is a protection: a pod that shares the host's ids is a red empty square.
 - An extra row is red only in the cells that name it. On the platform images an account counts as extra when the desired document lists it for none of the image's rights.
 - `draw.js` puts the correct rows first and the rows with a red mark last, each group sorted by its cells from the first column on, and sorts the values of each cell the same way. pg_hba rows keep their line-number order. pg_ident lines are compared as a list without numbers, so only a line the desired document lacks is red.
+- A host-check value of `true` or `false` is a square. prove.sh joins the different results of one attempt with `, `, and each is drawn as a value of its own.
 - An actual image is Failed when any value on it is red, else Passed.
 
 ## Tests
