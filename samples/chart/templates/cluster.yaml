@@ -44,6 +44,7 @@ spec:
       method: any
       number: 1  # every commit waits for one other instance
       dataDurability: required  # and stops while no other instance can confirm it
+      failoverQuorum: true  # promotes only a replica that holds every confirmed commit
     pg_hba:
       # One line per database: only its own role, only with a certificate.
       {{- range .Values.databases }}
