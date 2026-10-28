@@ -29,6 +29,7 @@ def numbered: to_entries | map({number: (.key + 1), line: .value});
       }
       + if $namespace == $values.cluster.namespace then
           {
+            port_forward: $here,
             create_pg_tokens: $here,
             change: ([
               "clusters", "databases", "databaseroles", "subscriptions", "poolers", "objectstores",
@@ -45,6 +46,7 @@ def numbered: to_entries | map({number: (.key + 1), line: .value});
     client_ca: {secret: .caSecret, certificates: $certificates[0]},
     tls: {"*": {postgresql: tls_minimum, metrics: tls_minimum}},
     network_policy: {"*": network_sources},
+    ports: {services: expected_services, host_ports: {"*": []}},
     kubernetes: {
       namespaces: (component_namespaces | map({key: ., value: rights_in(.)}) | from_entries),
       request_certificates: (certificate_subjects | allowed),
@@ -55,7 +57,7 @@ def numbered: to_entries | map({number: (.key + 1), line: .value});
       can_open_node_ports: ($allowed | allowed),
       operator_reads_secrets_in: (secret_namespaces | allowed),
       plugin_reads_secrets_in: (secret_namespaces | allowed),
-      not_served: (["ingressroutes.traefik.io"] | allowed)
+      not_served: (["ingressroutes.traefik.io", "ingressroutetcps.traefik.io"] | allowed)
     },
     pods_sharing_host_uids: [],
     host_network_pods_that_can_bind_low_ports: [],

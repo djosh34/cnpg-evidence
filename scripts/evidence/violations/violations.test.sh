@@ -9,6 +9,7 @@ source "$here/../../lib/test.sh"
 input=$(cat <<'EOF2'
 {
   "values": {"cluster": {"name": "pg", "namespace": "databases", "instances": 1}, "caSecret": "client-ca",
+             "rwLoadBalancer": {"name": "pg-rw-lb"},
              "network": {"operatorNamespace": "cnpg-system", "otelNamespace": "otel"},
              "replication": {"commonName": "pg-replication"}, "databases": []},
   "expected_ca": [{"name": "CN=example-ca", "sha256_fingerprint": "2E:18"}],
@@ -24,6 +25,11 @@ input=$(cat <<'EOF2'
     "tls": {"pg-1": {"postgresql": "TLSv1.3", "metrics": "TLSv1.3"}},
     "client_ca": {"secret":"client-ca","certificates":[{"name":"CN=example-ca","sha256_fingerprint":"2E:18"}]},
     "network_policy": {"pg-1": {"outside":[5432],"other nodes":[5432],"own node":["all"],"loadbalancer":[5432],"pg pods":[5432,8000],"cnpg-system operator":[8000],"otel":[9187],"other namespaces":[]}},
+    "ports": {"services": {
+      "databases/pg-rw": {"type":"ClusterIP","selector":"cnpg.io/cluster=pg,cnpg.io/instanceRole=primary","traffic_policy":"none","ports":["5432 -> 5432"],"node_ports":[],"health_check_port":"none","external_ips":[]},
+      "databases/pg-r": {"type":"ClusterIP","selector":"cnpg.io/cluster=pg,cnpg.io/podRole=instance","traffic_policy":"none","ports":["5432 -> 5432"],"node_ports":[],"health_check_port":"none","external_ips":[]},
+      "databases/pg-rw-lb": {"type":"LoadBalancer","selector":"cnpg.io/cluster=pg,cnpg.io/instanceRole=primary","traffic_policy":"Cluster","ports":["5432 -> 5432"],"node_ports":[],"health_check_port":"none","external_ips":[]}
+    }, "host_ports": {"pg-1": []}},
     "kubernetes": {"namespaces":{},"request_certificates":[],"proxy_to_nodes":[],"impersonate":[],"bind_or_escalate_roles":[],"change_webhooks":[],"can_open_node_ports":[],"operator_reads_secrets_in":[],"plugin_reads_secrets_in":[]},
     "pods_sharing_host_uids": ["pg-1"],
     "host_network_pods_that_can_bind_low_ports": [],

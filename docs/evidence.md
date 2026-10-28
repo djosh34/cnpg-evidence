@@ -20,7 +20,7 @@ Exit 0 when `violations` is empty, 1 when not, 2 on any error (bad input, a miss
 
 1. **Read the desired state.** It checks that `desired.yaml` has every key it needs, with the right types, and reads the certificates of `--ca`.
 2. **Find the instance pods.** Kubernetes runs each PostgreSQL instance as a pod: one or more containers that share an address on the cluster's overlay network, separate from the node addresses. A namespace groups objects such as pods, Secrets and permissions under one name; it does not separate the network. The pods of the cluster carry the labels `cnpg.io/cluster=<name>` and `cnpg.io/podRole=instance`, and the `Cluster` object names the primary. Each pod should set `hostUsers: false`: then the container's uid 26 is another uid on the host, and a host user with uid 26 is nobody inside it.
-3. **Read PostgreSQL.** On the primary, as `postgres` over `kubectl exec` and inside `BEGIN READ ONLY ... ROLLBACK`, it lists every role and which roles hold each special right. A role attribute such as `SUPERUSER` counts when the role can `SET ROLE` to a role that has it. A privilege, such as those of the built-in `pg_*` roles or `EXECUTE` on a file function, also counts when inherited. Replicas are physical copies, so the catalog of the primary holds for all.
+3. **Read PostgreSQL.** On the primary, as `postgres` over `kubectl exec` and inside `BEGIN READ ONLY ... ROLLBACK`, it lists every role and which roles hold each special right. A role attribute such as `SUPERUSER` counts when the role can `SET ROLE` to a role that has it. A privilege, such as those of the built-in `pg_*` roles or `EXECUTE` on a file function, also counts when inherited. Replicas are physical copies, so the catalog of the primary holds for all. Every psql call runs with an empty environment and names the user `postgres`, the database `postgres`, CNPG's socket directory `/controller/run` and port 5432, so no `PG*` variable of the container changes what it connects to or how.
 4. **Read the logins.** On every instance it reads `pg_hba_file_rules` and `pg_ident_file_mappings`; on the primary, the roles that can log in and every database. PostgreSQL uses the first pg_hba line that matches a connection, so the script walks the lines in order for three kinds of connection: the pod's unix socket, TCP with TLS and TCP without. A line for all addresses decides the connection and ends the walk; a line limited to some addresses decides only for those, and the walk goes on for the rest. The result is, per database, which role gets in and how.
 5. **Read the client CA.** The `Cluster` names the Secret whose `ca.crt` PostgreSQL uses to check client certificates, so that Secret decides which certificates can log in. Its certificates must be exactly those of `--ca`.
 6. **Read TLS.** On every instance it reads PostgreSQL's `ssl` and `ssl_min_protocol_version`, and makes one TLS handshake with `openssl s_client` to the metrics port 9187 inside the pod.
@@ -29,9 +29,10 @@ Exit 0 when `violations` is empty, 1 when not, 2 on any error (bad input, a miss
    - `other nodes`: the tunnel addresses. Under flannel, the k3s default, a connection from another node itself arrives from that node's `flannel.1` address, the first address of its pod range. A LoadBalancer connection that enters on another node arrives the same way.
    - `loadbalancer`: the svclb pods. k3s servicelb runs one per node in `kube-system`, and a connection it forwards can arrive from the svclb pod's address.
    - Then the cluster's own pods, the operator, the OTel namespace and every namespace.
-8. **Read hostNetwork pods.** A pod with `hostNetwork: true` uses its node's network directly. Containers get `NET_BIND_SERVICE` unless it is dropped. A container that keeps it can bind a port below 1024 on the node if it is privileged, runs as root (also when neither `runAsUser` nor `runAsNonRoot: true` is set), or can regain the capability (no `allowPrivilegeEscalation: false`).
-9. **Ask the API server who holds which right.** Kubernetes permissions are Roles (in one namespace) and ClusterRoles, given to users, groups and ServiceAccounts by RoleBindings and ClusterRoleBindings. A ServiceAccount is the identity a pod runs as; whoever can run a pod in a namespace can use that namespace's ServiceAccounts. Every subject of every binding is asked with a SubjectAccessReview, one per subject, verb and resource. The API server answers a review as it would answer the subject itself and stores nothing. A review names the subject's groups: a ServiceAccount is in `system:serviceaccounts`, `system:serviceaccounts:<namespace>` and `system:authenticated`, a user in `system:authenticated`, and a group is asked as a probe user in that group and `system:authenticated`. A Role can limit a verb to named objects, so existing objects are asked by name: the instance pods, the `Cluster`, every Secret, the NetworkPolicies, the nodes, `system:masters`, `cluster-admin` and the ServiceAccounts of CNPG and cert-manager. `system:masters` is the group whose members skip all authorization checks; the k3s admin certificate is in it. All reviews go in one List to one `kubectl create`; a failed review fails the run, so an error is never taken as a "no". Each yes comes with the API server's reason, which names the binding that allowed it.
-10. **Compare.** Each section's facts are compared with the expected values from `desired.yaml` and the fixed CNPG facts, giving one sentence per violation.
+8. **Read the Services.** A Service sends connections to the pods its selector matches in its own namespace, or to the addresses in its EndpointSlices, which can be written by hand for a Service without a selector, in any namespace. The script lists every Service whose selector matches an instance pod or whose EndpointSlices hold an instance pod's address, with every port it opens, and every host port of the instance pods. A NodePort opens the port on every node, an external IP makes every node answer on that address, and a host port opens the port on the pod's node.
+9. **Read hostNetwork pods.** A pod with `hostNetwork: true` uses its node's network directly. Containers get `NET_BIND_SERVICE` unless it is dropped. A container that keeps it can bind a port below 1024 on the node if it is privileged, runs as root (also when neither `runAsUser` nor `runAsNonRoot: true` is set), or can regain the capability (no `allowPrivilegeEscalation: false`).
+10. **Ask the API server who holds which right.** Kubernetes permissions are Roles (in one namespace) and ClusterRoles, given to users, groups and ServiceAccounts by RoleBindings and ClusterRoleBindings. A ServiceAccount is the identity a pod runs as; whoever can run a pod in a namespace can use that namespace's ServiceAccounts. Every subject of every binding is asked with a SubjectAccessReview, one per subject, verb and resource. The API server answers a review as it would answer the subject itself and stores nothing. A review names the subject's groups: a ServiceAccount is in `system:serviceaccounts`, `system:serviceaccounts:<namespace>` and `system:authenticated`, a user in `system:authenticated`, and a group is asked as a probe user in that group and `system:authenticated`. A Role can limit a verb to named objects, so existing objects are asked by name: the instance pods, the `Cluster`, every Secret, the NetworkPolicies, the nodes, `system:masters`, `cluster-admin` and the ServiceAccounts of CNPG and cert-manager. `system:masters` is the group whose members skip all authorization checks; the k3s admin certificate is in it. All reviews go in one List to one `kubectl create`; a failed review fails the run, so an error is never taken as a "no". Each yes comes with the API server's reason, which names the binding that allowed it.
+11. **Compare.** Each section's facts are compared with the expected values from `desired.yaml` and the fixed CNPG facts, giving one sentence per violation.
 
 ## Output
 
@@ -49,6 +50,7 @@ databases: {orders: {owner: orders, connect: [PUBLIC, orders], logins: {orders: 
 client_ca: {secret: client-ca, certificates: [{name: CN=example-ca, sha256_fingerprint: "2E:18:..."}]}
 tls: {pg-1: {postgresql: TLSv1.3, metrics: TLSv1.3}, ...}
 network_policy: {pg-1: {outside: [5432], other nodes: [5432], own node: [all], ...}, ...}
+ports: {services: {databases/pg-read-lb: {type: LoadBalancer, selector: "cnpg.io/cluster=pg,cnpg.io/podRole=instance", traffic_policy: Local, ports: ["5433 -> 5432"], node_ports: [], health_check_port: present, external_ips: []}, ...}, host_ports: {pg-1: [], ...}}
 kubernetes: {namespaces: {databases: {exec_into_pods: [group:system:masters, ...], ...}, ...}, request_certificates: [...], ...}
 pods_sharing_host_uids: []
 host_network_pods_that_can_bind_low_ports: []
@@ -113,9 +115,25 @@ Per instance pod, each source and the ports it may connect to:
 - `everyone`: a rule without a source, or no policy at all. Never expected.
 - A source it cannot name appears as its raw JSON and is a violation.
 
+### `ports`
+
+Rule 9: the ways into PostgreSQL besides a login.
+
+- `services.<namespace>/<name>`: every Service in any namespace that reaches an instance pod, by its selector or by an address in its EndpointSlices:
+  - `type`: `ClusterIP`, `NodePort` or `LoadBalancer`.
+  - `selector`: its selector as `key=value` pairs, or `none` for a Service whose EndpointSlices are written by hand.
+  - `traffic_policy`: `externalTrafficPolicy`, `Cluster` or `Local`, or `none` for a Service that takes no traffic from outside the cluster.
+  - `ports`: every port as `port -> targetPort`, with the protocol in front when it is not TCP, such as `UDP/53 -> 53`. A Service without a selector ignores `targetPort` and sends each port to the port of the same name in its EndpointSlices: the arrow then shows that port, `all` for a slice port without a number, which means every port, or `none` when no slice has it. A Service without ports, which only a headless one may be, limits no port and shows `all`.
+  - `node_ports`: the NodePorts of its ports. A NodePort leads to PostgreSQL on every node.
+  - `health_check_port`: `present` when it has a `healthCheckNodePort`, else `none`. Kubernetes gives one to every LoadBalancer with traffic policy `Local`, for load balancers to ask over HTTP whether the node has a ready pod; it does not lead to PostgreSQL, so its number is not shown.
+  - `external_ips`: its `externalIPs`. Every node answers on them.
+
+  Expected exactly: CNPG's `<cluster>-rw`, `<cluster>-r` and, with more than one instance, `<cluster>-ro`, ClusterIP on 5432 to the primary, every instance and the replicas; the rw LoadBalancer on 5432 to the primary with traffic policy `Cluster`; and, when `desired.yaml` sets `readLoadBalancer`, the read LoadBalancer on its port to every instance with traffic policy `Local` and a health check port. No NodePort and no external IP. Another Service, a missing one, or any field that differs is a violation.
+- `host_ports.<pod>`: the host ports of each instance pod's containers, as `hostPort -> containerPort`. Expected none.
+
 ### `kubernetes`
 
-Per right, the subjects the API server says yes for, as `system:serviceaccount:<ns>:<name>`, `group:<name>` or a user name. Each right equals PostgreSQL superuser, gets a certificate from cert-manager, or opens a port on the nodes. Only `system:masters`, the operator, the plugin, the instance ServiceAccount, the API server, cert-manager and its cainjector, and the Kubernetes and k3s controllers may hold them. In the `cert-manager` namespace its webhook may also, since it keeps its own serving CA there.
+Per right, the subjects the API server says yes for, as `system:serviceaccount:<ns>:<name>`, `group:<name>` or a user name. Each right equals PostgreSQL superuser, gets a certificate from cert-manager, opens a port on the nodes, or reaches PostgreSQL past the NetworkPolicy (rule 9). Only `system:masters`, the operator, the plugin, the instance ServiceAccount, the API server, cert-manager and its cainjector, and the Kubernetes and k3s controllers may hold them. In the `cert-manager` namespace its webhook may also, since it keeps its own serving CA there.
 
 - `namespaces.<ns>`: for the cluster's, the operator's and cert-manager's namespace:
   - `exec_into_pods`: get or create on `pods/exec` or `pods/attach`, patch on `pods/ephemeralcontainers`; by name for the instance pods.
@@ -123,6 +141,7 @@ Per right, the subjects the API server says yes for, as `system:serviceaccount:<
   - `run_pods`: create, update or patch pods, ReplicationControllers, Deployments, StatefulSets, DaemonSets, ReplicaSets, Jobs or CronJobs. A pod can run as any ServiceAccount of its namespace and mount its volumes.
   - `read_secret.<name>`, `read_secret.all (list)`, `read_secret.all (watch)`: get on that Secret, or list and watch on all.
   - `write_secret.<name>`, `write_secret.all (create)`: update or patch on that Secret, or create any. This includes the client CA Secret, which decides which certificates can log in.
+  - `port_forward` (cluster namespace only): get or create on `pods/portforward` of the instance pods. The kubelet opens a port-forward inside the pod, so the NetworkPolicy does not apply. A holder beyond the subjects above breaks rule 9.
   - `create_pg_tokens` (cluster namespace only): tokens for the instance ServiceAccount.
   - `change.<kind>` (cluster namespace only): create, update or patch. The keys are `clusters` (the `Cluster`, by name), `databases`, `databaseroles`, `subscriptions`, `poolers`, `objectstores`, `endpoints` and `endpointslices` (they decide which pods the cluster's Services send connections to), and `networkpolicies`, where delete counts too.
 - `request_certificates`: create cert-manager Certificates or CertificateRequests, or change Certificates, in any namespace, or `run_pods` where such a ServiceAccount lives. cert-manager signs what these objects ask for. Only `system:masters`, cert-manager and the controllers may.
@@ -130,9 +149,9 @@ Per right, the subjects the API server says yes for, as `system:serviceaccount:<
 - `impersonate`: impersonate users, groups, ServiceAccounts, `system:masters` or a CNPG or cert-manager ServiceAccount.
 - `bind_or_escalate_roles`: bind or escalate Roles, ClusterRoles or `cluster-admin`.
 - `change_webhooks`: write mutating or validating webhook configurations.
-- `can_open_node_ports`: `run_pods` in any namespace (a pod can use `hostPort` or `hostNetwork`), create, update or patch Services (servicelb gives a LoadBalancer port on every node), or Ingresses or IngressRoutes of Traefik, which k3s installs by default (an ingress controller serves them on the nodes' ports). Expected only the subjects listed above.
+- `can_open_node_ports`: `run_pods` in any namespace (a pod can use `hostPort` or `hostNetwork`), create, update or patch Services (servicelb gives a LoadBalancer port on every node), or Ingresses, or the IngressRoutes or IngressRouteTCPs of Traefik, which k3s installs by default (an ingress controller serves them on the nodes' ports). Expected only the subjects listed above.
 - `operator_reads_secrets_in`, `plugin_reads_secrets_in`: namespaces where the operator or plugin ServiceAccount can get, list or watch Secrets, or get one by name. Expected only the operator's and the cluster's namespace (rule 7).
-- `not_served`: present only when the cluster does not serve `ingressroutes.traefik.io`, which is then not asked.
+- `not_served`: present only when the cluster does not serve `ingressroutes.traefik.io` or `ingressroutetcps.traefik.io`; those it lists are not asked.
 
 ### Pods
 
@@ -150,11 +169,12 @@ Per right, the subjects the API server says yes for, as `system:serviceaccount:<
 | Path | What it does |
 |---|---|
 | `evidence.sh` | Reads the input, runs each part, assembles the document |
-| `psql/psql.sh` | Runs one SQL file as postgres in an instance pod |
+| `psql/psql.sh` | Runs one SQL file as postgres in an instance pod, with an empty environment |
 | `postgres/` | `postgres.sql`: roles and their rights |
 | `logins/` | `rules.sql` (every instance), `catalog.sql` (primary), `logins.jq`: the first-match walk |
 | `client-ca/`, `tls/` | The client CA Secret; TLS settings and the metrics handshake |
 | `network/` | `network.jq`: policies to named sources, per pod |
+| `ports/` | `ports.jq`: the Services that reach the instance pods, and their host ports |
 | `kubernetes/` | `subjects.jq`, `needs.jq` (which questions), `reviews.jq` (the questions as SubjectAccessReviews), `answers.jq` (the answers and their reasons), `kubernetes.jq` (grouping) |
 | `pods/`, `host-network/`, `software/` | Instance pods, hostNetwork pods, versions |
 | `violations/` | `expected.jq`: the expected values; one `.jq` per section with its rules; `violations.sh` joins their sentences |

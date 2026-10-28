@@ -53,7 +53,11 @@ def key: [.subject, .verb, .resource, .subresource, .namespace] | join("\t");
       write_secret: named_in($mode; "write_secret "; $namespace)
     }
     + if $namespace == $input.namespace then
-        {create_pg_tokens: holders_in($mode; "create_pg_tokens"; [$namespace]), change: named_in($mode; "change "; $namespace)}
+        {
+          port_forward: holders_in($mode; "port_forward"; [$namespace]),
+          create_pg_tokens: holders_in($mode; "create_pg_tokens"; [$namespace]),
+          change: named_in($mode; "change "; $namespace)
+        }
       else {} end;
 
   ([holders("holders"; "create_certificates")[] | account_namespaces($all_namespaces)] | unique) as $certificate_account_namespaces

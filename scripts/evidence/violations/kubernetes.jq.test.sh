@@ -12,7 +12,7 @@ facts=$(cat <<'JSON'
     "databases": {"exec_into_pods":["group:system:masters"],"change_pods":["group:system:masters"],"run_pods":["group:system:masters"],
                   "read_secret":{"pg-replication":["group:system:masters"],"all (list)":["group:system:masters"]},
                   "write_secret":{"all (create)":["group:system:masters"],"client-ca":["group:system:masters"]},
-                  "create_pg_tokens":["group:system:masters"],"change":{"clusters":["group:system:masters"],"networkpolicies":["group:system:masters"],"endpointslices":["group:system:masters"]}},
+                  "port_forward":["group:system:masters"],"create_pg_tokens":["group:system:masters"],"change":{"clusters":["group:system:masters"],"networkpolicies":["group:system:masters"],"endpointslices":["group:system:masters"]}},
     "cert-manager": {"exec_into_pods":[],"change_pods":[],"run_pods":[],
                      "read_secret":{"cert-manager-webhook-ca":["system:serviceaccount:cert-manager:cert-manager-webhook"]},
                      "write_secret":{"cert-manager-webhook-ca":["system:serviceaccount:cert-manager:cert-manager-webhook"]}}
@@ -61,6 +61,10 @@ same "pod patch, Secret writes, NetworkPolicy delete and EndpointSlice changes" 
 same "the webhook may keep its own CA only in cert-manager" \
   '["rule 8: system:serviceaccount:cert-manager:cert-manager-webhook can get secret pg-replication in databases"]' \
   "$(violations '.kubernetes.namespaces.databases.read_secret["pg-replication"] += ["system:serviceaccount:cert-manager:cert-manager-webhook"]')"
+
+same "a port-forward binding to the instance pods breaks rule 9" \
+  '["rule 9: mallory can port-forward to the instance pods in databases"]' \
+  "$(violations '.kubernetes.namespaces.databases.port_forward += ["mallory"]')"
 
 same "exec into cert-manager's pods" '["rule 8: mallory can exec into pods in cert-manager"]' \
   "$(violations '.kubernetes.namespaces["cert-manager"].exec_into_pods += ["mallory"]')"

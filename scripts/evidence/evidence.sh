@@ -61,10 +61,11 @@ log "reading PostgreSQL on ${instances[*]}"
 postgres=$(bash "$here/postgres/postgres.sh" "$namespace" "$primary") || exit 2
 logins=$(bash "$here/logins/logins.sh" "$namespace" "$primary" "${instances[@]}") || exit 2
 
-log "reading the client CA, TLS, network policies, pods and versions"
+log "reading the client CA, TLS, network policies, Services, pods and versions"
 client_ca=$(bash "$here/client-ca/client-ca.sh" "$namespace" "$cluster") || exit 2
 tls=$(bash "$here/tls/tls.sh" "$namespace" "${instances[@]}") || exit 2
 network=$(bash "$here/network/network.sh" "$namespace" "$cluster" "$load_balancer" "$operator_namespace" "$otel_namespace") || exit 2
+ports=$(bash "$here/ports/ports.sh" "$namespace" "$cluster") || exit 2
 host_network=$(bash "$here/host-network/host-network.sh") || exit 2
 software=$(bash "$here/software/software.sh" "$namespace" "$operator_namespace" "$primary") || exit 2
 
@@ -79,6 +80,7 @@ facts=$(
     --slurpfile client_ca <(echo "$client_ca") \
     --slurpfile tls <(echo "$tls") \
     --slurpfile network <(echo "$network") \
+    --slurpfile ports <(echo "$ports") \
     --slurpfile kubernetes <(echo "$kubernetes") \
     --slurpfile pods <(echo "$pods") \
     --slurpfile host_network <(echo "$host_network") \
@@ -89,6 +91,7 @@ facts=$(
       client_ca: $client_ca[0],
       tls: $tls[0],
       network_policy: $network[0],
+      ports: $ports[0],
       kubernetes: ($kubernetes[0] | del(.granted_by)),
       pods_sharing_host_uids: $pods[0].sharing_host_uids,
       host_network_pods_that_can_bind_low_ports: $host_network[0],

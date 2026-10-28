@@ -70,6 +70,7 @@ stub logins/logins.sh '{"databases": {}, "details": {"pg_hba": [{"number": 1, "l
 stub client-ca/client-ca.sh '{"secret": "client-ca", "certificates": []}'
 stub tls/tls.sh '{"pg-1": {"postgresql": "TLSv1.3", "metrics": "TLSv1.3"}}'
 stub network/network.sh '{}'
+stub ports/ports.sh '{"services": {}, "host_ports": {}}'
 stub host-network/host-network.sh '[]'
 stub software/software.sh '{"postgresql": "17.1"}'
 stub kubernetes/kubernetes.sh '{"namespaces": {}, "granted_by": {}}'
@@ -83,7 +84,7 @@ code=0
 out=$(bash "$copy/scripts/evidence/evidence.sh" --ca <(echo "$ca") <<<"$values" 2>/dev/null) || code=$?
 same_text "a clean run exits 0" 0 "$code"
 same_text "the document starts with what it is, when and where it was read" \
-  "kind source collected_at cluster status violations postgres databases client_ca tls network_policy kubernetes pods_sharing_host_uids host_network_pods_that_can_bind_low_ports software details" \
+  "kind source collected_at cluster status violations postgres databases client_ca tls network_policy ports kubernetes pods_sharing_host_uids host_network_pods_that_can_bind_low_ports software details" \
   "$(jq -r 'keys_unsorted | join(" ")' <<<"$out")"
 same "header values" \
   '{"kind": "actual", "source": "evidence", "collected_at": "2026-01-02T03:04:05Z", "cluster": {"name": "pg", "namespace": "databases"}, "status": "pass", "violations": []}' \
