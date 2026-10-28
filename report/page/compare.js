@@ -1,6 +1,6 @@
 // The literal differences between a desired and an actual document, by the
-// same rule as scripts/desired/compare.jq, and a reader that gives each image
-// the values of one side with their state.
+// rule in docs/report.md, and a reader that gives each image the values of
+// one side with their state.
 //
 // A difference is {path, extra} for a value only the actual document has, or
 // {path, missing} for one only the desired document has. A difference marks a
