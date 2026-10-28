@@ -7,4 +7,4 @@ shopt -s inherit_errexit
 
 # Change directory as the uid running this shell.
 cd -- "$1" || exit 2
-psql -w -X -At -c 'select current_user' 'host=/proc/self/cwd dbname=postgres user=postgres' || exit 2
+psql -w -X -At -c 'select current_user' 'host=/proc/self/cwd port=5432 dbname=postgres user=postgres' || exit 2

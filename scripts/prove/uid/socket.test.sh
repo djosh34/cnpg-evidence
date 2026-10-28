@@ -15,7 +15,7 @@ psql() {
 }
 export -f psql
 actual=$(bash "$here/socket.sh" /)
-same_text 'socket uses cwd after traversal' 'host=/proc/self/cwd dbname=postgres user=postgres' "$actual"
+same_text 'socket uses cwd after traversal' 'host=/proc/self/cwd port=5432 dbname=postgres user=postgres' "$actual"
 status=0
 actual=$(bash "$here/socket.sh" /does-not-exist/prove-socket 2>/dev/null) || status=$?
 same_text 'failed traversal exit' 2 "$status"

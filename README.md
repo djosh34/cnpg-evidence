@@ -38,7 +38,7 @@ bash scripts/host-check/host-check.sh > host-check.json
 # On one node that runs an instance, as root, with a cluster-admin kubeconfig
 # (on a k3s server node, KUBECONFIG=/etc/rancher/k3s/k3s.yaml).
 # Real login and access attempts that must fail.
-bash scripts/prove/prove.sh > prove.json
+yq -o=json desired.yaml | bash scripts/prove/prove.sh > prove.json
 
 # Anywhere with yq, bash, jq and openssl. The desired documents of the three scripts,
 # and the differences between a desired and an actual document.

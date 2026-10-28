@@ -71,12 +71,6 @@
       "ok": true
     },
     {
-      "probe": "other-namespace-nodeport",
-      "expected": "pg_hba refusal or no connection (connection refused or connect timeout)",
-      "value": "denied",
-      "ok": true
-    },
-    {
       "probe": "uid-26 socket-proc-root",
       "expected": "Permission denied",
       "value": "denied",

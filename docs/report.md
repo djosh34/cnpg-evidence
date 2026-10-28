@@ -49,12 +49,12 @@ Every script prints an actual document (`"kind": "actual"`), the values it found
 ```bash
 yq -o=json desired.yaml | bash scripts/evidence/evidence.sh --ca client-ca.pem > evidence.json
 bash scripts/host-check/host-check.sh > host-check.json
-bash scripts/prove/prove.sh > prove.json
+yq -o=json desired.yaml | bash scripts/prove/prove.sh > prove.json
 ```
 
 `host-check.sh` runs on every node, so give each node's file its own name when you gather them, such as `node-a.json` and `node-b.json` below.
 
-Their desired documents, anywhere with yq, bash, jq and openssl, from the same `desired.yaml` and `client-ca.pem` that `evidence.sh` read. If `prove.sh` ran with `--postgres-uid`, give `desired.sh` the same value.
+Their desired documents, anywhere with yq, bash, jq and openssl, from the same `desired.yaml` and `client-ca.pem` that `evidence.sh` and `prove.sh` read. If `prove.sh` ran with `--postgres-uid`, give `desired.sh` the same value.
 
 ```bash
 yq -o=json desired.yaml | bash scripts/desired/desired.sh --ca client-ca.pem > evidence.desired.json
