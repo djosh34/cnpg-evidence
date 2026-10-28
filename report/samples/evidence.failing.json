@@ -115,11 +115,6 @@
           "os_users": [
             "postgres"
           ]
-        },
-        "cnpg_metrics_exporter": {
-          "os_users": [
-            "postgres"
-          ]
         }
       }
     },
@@ -177,7 +172,8 @@
         "billing": {
           "common_names": [
             "billing-app.test",
-            "billing-report.test"
+            "billing-report.test",
+            "billing-batch.test"
           ],
           "password": true
         }
@@ -480,7 +476,8 @@
           "group:system:masters",
           "system:serviceaccount:kube-system:generic-garbage-collector",
           "system:serviceaccount:kube-system:namespace-controller",
-          "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg"
+          "system:serviceaccount:cnpg-system:cnpg-cloudnative-pg",
+          "system:serviceaccount:cert-manager:cert-manager-webhook"
         ],
         "change_pods": [
           "group:system:masters",
@@ -809,6 +806,10 @@
       },
       {
         "number": 8,
+        "line": "clients billing-batch.test billing"
+      },
+      {
+        "number": 9,
         "line": "clients billing-report.test billing"
       }
     ],

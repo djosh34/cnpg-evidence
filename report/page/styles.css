@@ -35,7 +35,7 @@ header {
   grid-template-columns: 1fr auto;
   column-gap: 64px;
   align-content: start;
-  padding-bottom: 56px;
+  padding-bottom: 44px;
 }
 .intro { grid-column: 1; }
 .intro p { max-width: 44em; text-wrap: pretty; }
@@ -43,7 +43,7 @@ header {
 
 .side {
   grid-column: 2;
-  grid-row: 1;
+  grid-row: 1 / span 2;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -56,8 +56,22 @@ header {
   padding: 8px 36px 12px;
   border: 4px solid var(--ink);
   font: 700 84px/1 'Sofia Sans Condensed', sans-serif;
+  text-align: center;
 }
 .desired .tag { border-style: dotted; }
+
+/* Actual and its verdict are one block: Passed in ink, Failed in red. */
+.stamp { display: flex; flex-direction: column; }
+.verdict {
+  padding: 10px 36px 14px;
+  border: 4px solid var(--ink);
+  border-top: 0;
+  background: var(--ink);
+  color: var(--paper);
+  font: 700 60px/1 'Sofia Sans Condensed', sans-serif;
+  text-align: center;
+}
+.verdict.failed { background: var(--red); border-color: var(--red); }
 
 h1 {
   max-width: 22em;
@@ -68,7 +82,8 @@ h1 {
 }
 
 .context {
-  grid-column: 1 / -1;
+  grid-column: 1;
+  align-self: start;
   display: grid;
   grid-template-columns: max-content minmax(0, 60em);
   gap: 6px 28px;
@@ -88,13 +103,28 @@ th, td {
 th:last-child, td:last-child { padding-right: 0; }
 th {
   padding-bottom: 14px;
-  border-bottom: 3px solid var(--ink);
   font: 600 20px/1.3 'Sofia Sans Semi', sans-serif;
   color: var(--muted);
   vertical-align: bottom;
   white-space: nowrap;
 }
+thead tr:last-child th { border-bottom: 3px solid var(--ink); }
 th:not(.name) { min-width: 180px; }
+th.mark { min-width: 132px; }
+th.mark.wide { min-width: 220px; }
+/* A square column is padded on both sides, so its square and heading sit at its centre. */
+th.mark, td.mark, th.mark:last-child, td.mark:last-child { padding-left: 24px; padding-right: 24px; text-align: center; }
+
+/* A heading over the columns of one group, with a rule as wide as they are. */
+th.group { padding-right: 0; }
+th.group span {
+  display: block;
+  margin: 0 24px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--rule);
+  color: var(--ink);
+  text-align: center;
+}
 td {
   padding-top: 16px;
   padding-bottom: calc(16px - var(--gap));
@@ -113,6 +143,26 @@ td.name + td.name .v { font-weight: 400; }
 /* The actual sheet takes the desired column widths; a longer value wraps. */
 .aligned .val { white-space: pre-wrap; overflow-wrap: anywhere; }
 
-/* A value only the actual side has is red; a desired value it lacks is red and struck through. */
-.val.extra, .val.missing { color: var(--red); font-weight: 700; }
-.val.missing { text-decoration: line-through; text-decoration-thickness: 2px; }
+/* A value only the actual side has is red. */
+.val.extra { color: var(--red); font-weight: 700; }
+
+/* Squares: filled when the right is held, empty when not, red when the desired side does not give it. */
+.box { display: inline-block; width: 22px; height: 22px; vertical-align: middle; margin-top: -4px; box-shadow: inset 0 0 0 2px var(--ink); }
+.box.on { background: var(--ink); }
+.box.extra { box-shadow: inset 0 0 0 2px var(--red); }
+.box.on.extra { background: var(--red); }
+
+/* Legend: the marks this image can show, above the table. */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 48px;
+  max-width: 100%;
+  margin-bottom: 48px;
+  font: 500 20px/1.3 'Sofia Sans Semi', sans-serif;
+}
+.legend .item { display: flex; align-items: center; gap: 14px; }
+.legend .break { flex-basis: 100%; height: 0; }
+.legend .box { margin-top: 0; }
+.specimen { color: var(--red); font-weight: 700; }
+.specimen.name { font-weight: 800; }

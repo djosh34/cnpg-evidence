@@ -1,10 +1,10 @@
 # cnpg-report
 
-`cnpg-report` draws PNG images from the JSON documents of `evidence.sh`, `host-check.sh` and `prove.sh`. Each piece of evidence gets a pair of images. The desired image shows the values the rules call for, and the actual image shows the values the script found, in the same columns and row order. A reviewer reads the pair side by side.
+`cnpg-report` draws PNG images from the JSON documents of `evidence.sh`, `host-check.sh` and `prove.sh`. Each piece of evidence gets a pair of images. The desired image shows the values the rules call for, and the actual image shows the values the script found, in the same columns. A reviewer reads the pair side by side.
 
 It is one static x86_64 Linux file of about 130 MB. It carries its own Chrome, glibc, libraries, fonts and the page that draws the images, so it runs with no network and no library or font from the OS, for example in a stock `ubi9-minimal` container. glibc still reads `/etc/nsswitch.conf` and `/etc/hosts` from the OS. Chrome runs without its sandbox, so give `cnpg-report` only documents of the three scripts.
 
-It only draws. The verdict stays the script's `status` and `violations`, and no image says passed or failed.
+Each actual image says Passed or Failed for what it shows. The script's own verdict stays its `status` and `violations`.
 
 ## Get the binary
 
@@ -64,12 +64,21 @@ yq -o=json desired.yaml | bash scripts/desired/desired.sh --source prove > prove
 
 Both documents are plain files, so the scripts can run in one place and `cnpg-report` in another. It reads only the files named in the call.
 
-On an actual image, the values that differ from the desired document are red:
+## Reading the images
 
-- A value only the actual document has is red.
-- A desired value the actual document lacks is red and struck through.
+Each image has a legend of the marks its kind of image can show, under the title and above the table. The legend is the same on a Passed and a Failed image. An image that can show no marks, such as the desired login rules image, has none.
 
-The comparison is the one `compare.sh` makes, described in [desired.md](desired.md#the-comparison). Rows match by their identity, not their place, so an extra row is red, a missing row is struck through, and a moved pg_hba or pg_ident line shows as one missing and one extra row for each line whose number changed. Moving one line renumbers the lines in between too, and swapping two lines gives four differences. Red marks a difference, not a failed check.
+- **Squares.** Every yes or no is a square, centred in its column: filled when the right is held, empty when it is not. On a desired image a filled square means the right is allowed.
+- **Red square.** A held right that the desired document does not allow is a red filled square. A right that is allowed but not held is a normal empty square. A protection that is off, such as an instance that shares the host's user ids, is a red empty square.
+- **Red value.** A value that goes beyond the desired document is red, such as an extra database an account reaches or a TLS version below the desired one.
+- **Red name.** A row that the desired document does not have, such as an extra account, shows only its name in red. Its other cells keep their own marks, so a right it holds that no one may hold is red as well.
+- **Less than desired.** A value or row that the desired document has and the actual document lacks is not drawn. Having less than desired is no finding.
+
+Under the Actual box, every actual image says **Failed** in red when it shows at least one red mark, and **Passed** in dark blue when it shows none. Desired images have no verdict.
+
+Every table puts its correct rows first and the rows with a red mark last, each group in alphabetical order of its first column. The values inside a cell follow the same order. pg_hba lines are the exception: they keep their line-number order, and a line counts by its number, so a line that moved is red at its new number. pg_ident lines are compared without their numbers, since PostgreSQL reads every line of a map, so only a new pg_ident line is red.
+
+The comparison is the one `compare.sh` makes, described in [desired.md](desired.md#the-comparison). The images then leave out what is missing from actual and compare pg_ident lines without numbers, so an image can pass where `compare.sh` lists a difference.
 
 ## Run
 
@@ -121,23 +130,24 @@ TMPDIR=/var/tmp cnpg-report --desired evidence.desired.json --out images/ eviden
 
 Each image is one PNG, named after the script, the piece of evidence and the side.
 
-`evidence.sh`, 12 pairs and one actual image:
+`evidence.sh`, 11 pairs and one actual image:
 
 | Image | Files |
 |---|---|
-| Accounts | `evidence-01-accounts-desired.png`, `evidence-01-accounts-actual.png` |
-| Certificate names | `evidence-02-certificate-names-desired.png`, `evidence-02-certificate-names-actual.png` |
-| Login rules | `evidence-03-login-rules-desired.png`, `evidence-03-login-rules-actual.png` |
-| Client CA | `evidence-04-client-ca-desired.png`, `evidence-04-client-ca-actual.png` |
-| Encryption | `evidence-05-encryption-desired.png`, `evidence-05-encryption-actual.png` |
-| Network | `evidence-06-network-desired.png`, `evidence-06-network-actual.png` |
-| Container isolation | `evidence-07-container-isolation-desired.png`, `evidence-07-container-isolation-actual.png` |
-| Operator Secrets | `evidence-08-operator-secrets-desired.png`, `evidence-08-operator-secrets-actual.png` |
-| Platform pods | `evidence-09-platform-pods-desired.png`, `evidence-09-platform-pods-actual.png` |
-| Platform Secrets | `evidence-10-platform-secrets-desired.png`, `evidence-10-platform-secrets-actual.png` |
-| Platform setup | `evidence-11-platform-setup-desired.png`, `evidence-11-platform-setup-actual.png` |
-| Nodes and certificates | `evidence-12-platform-nodes-certificates-desired.png`, `evidence-12-platform-nodes-certificates-actual.png` |
-| Versions | `evidence-13-versions-actual.png` only, since versions have no desired value |
+| Accounts, with the certificate names that log in as each | `evidence-01-accounts-desired.png`, `evidence-01-accounts-actual.png` |
+| Login rules | `evidence-02-login-rules-desired.png`, `evidence-02-login-rules-actual.png` |
+| Client CA | `evidence-03-client-ca-desired.png`, `evidence-03-client-ca-actual.png` |
+| Encryption | `evidence-04-encryption-desired.png`, `evidence-04-encryption-actual.png` |
+| Network | `evidence-05-network-desired.png`, `evidence-05-network-actual.png` |
+| Container isolation | `evidence-06-container-isolation-desired.png`, `evidence-06-container-isolation-actual.png` |
+| Operator Secrets | `evidence-07-operator-secrets-desired.png`, `evidence-07-operator-secrets-actual.png` |
+| Platform pods | `evidence-08-platform-pods-desired.png`, `evidence-08-platform-pods-actual.png` |
+| Platform Secrets | `evidence-09-platform-secrets-desired.png`, `evidence-09-platform-secrets-actual.png` |
+| Platform setup | `evidence-10-platform-setup-desired.png`, `evidence-10-platform-setup-actual.png` |
+| Nodes and certificates | `evidence-11-platform-nodes-certificates-desired.png`, `evidence-11-platform-nodes-certificates-actual.png` |
+| Versions | `evidence-12-versions-actual.png` only, since versions have no desired value |
+
+The four platform images are grids: one row per account that holds one of their rights, and one square column per namespace under each right. On the Secrets and setup images, a cell names the Secrets or kinds of object when the account holds the right on only some of them.
 
 The network images cover the status and metrics ports, 8000 and 9187, and say so. Logins on 5432 are in the login images.
 
@@ -153,7 +163,7 @@ The network images cover the status and metrics ports, 8000 and 9187, and say so
 | Connections from another namespace | `prove-02-other-namespace-desired.png`, `prove-02-other-namespace-actual.png` |
 | Access as the host postgres uid | `prove-03-host-uid-desired.png`, `prove-03-host-uid-actual.png` |
 
-Each image is as wide as its table plus 88 px margins, and as high as its content. Its header gives the title, the control, a Desired or Actual tag, the cluster or node, and who made the document. An actual image adds the collection time and a key to the red marks.
+Each image is as wide as its table plus 88 px margins, and as high as its content. Its header gives the title, the control, a Desired or Actual tag, the cluster or node, and who made the document. An actual image adds the collection time and Passed or Failed. A legend of the marks sits above the table.
 
 ## Third-party parts and their licences
 
