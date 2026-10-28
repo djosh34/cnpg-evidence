@@ -11,9 +11,15 @@ cluster:
 # Created outside the chart. No ca.key.
 caSecret: client-ca
 
-# rw LoadBalancer for clients. The NetworkPolicy admits the svclb pods that k3s servicelb runs on every node to forward its port.
+# rw LoadBalancer for clients, on 5432 of every node. The NetworkPolicy admits the svclb pods that k3s servicelb runs on every node to forward its port.
 rwLoadBalancer:
   name: pg-rw-lb
+
+# Optional read LoadBalancer, on this port of every node. Each node forwards it
+# only to its own instance, primary or replica. Leave the block out for none.
+readLoadBalancer:
+  name: pg-read-lb
+  port: 5433
 
 # Who may reach the instance pods besides clients: the operator on 8000, the
 # OTel collectors on 9187.

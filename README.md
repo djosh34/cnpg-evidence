@@ -7,7 +7,7 @@ Sample manifests for a CloudNativePG (CNPG) cluster that accepts only certificat
 - k3s with its default flannel, servicelb, local-path provisioner and network policy controller.
 - Hosts with SELinux and rpm.
 - CNPG with the barman-cloud plugin.
-- [`desired.yaml`](desired.yaml) describes the cluster: its name and namespace, the client CA Secret, the LoadBalancer, the namespaces of the operator and the OTel collectors, the replication certificate and the databases. The sample chart, `evidence.sh` and `desired.sh` read it.
+- [`desired.yaml`](desired.yaml) describes the cluster: its name and namespace, the client CA Secret, the rw and read LoadBalancers, the namespaces of the operator and the OTel collectors, the replication certificate and the databases. The sample chart, `evidence.sh` and `desired.sh` read it.
 
 ## Rules
 

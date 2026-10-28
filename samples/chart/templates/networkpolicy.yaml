@@ -45,7 +45,8 @@ spec:
               kubernetes.io/metadata.name: {{ $n.otelNamespace }}
       ports:
         - {protocol: TCP, port: 9187}
-    # Clients from outside the cluster on 5432, through the rw LoadBalancer.
+    # Clients from outside the cluster on 5432, through the rw LoadBalancer. The read
+    # LoadBalancer needs no entry: its traffic policy Local keeps the client's address.
     - from:
         # Any address that is not a pod.
         - ipBlock:
