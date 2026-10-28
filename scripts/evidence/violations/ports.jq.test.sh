@@ -55,6 +55,8 @@ same "a missing Service" '["rule 9: Service databases/pg-ro does not reach the i
 same "without readLoadBalancer in the values, a read LoadBalancer is extra" \
   '["rule 9: Service databases/pg-read-lb reaches the instance pods: LoadBalancer, ports 5433 -> 5432, node ports none, external IPs none"]' \
   "$(violations . 'del(.readLoadBalancer)')"
+same "one instance: no replica, so no -ro Service" '[]' \
+  "$(violations 'del(.ports.services["databases/pg-ro"])' '.cluster.instances = 1')"
 same "a host port" '["rule 9: pod pg-2 has host port 5432 -> 5432"]' "$(violations '.ports.host_ports["pg-2"] = ["5432 -> 5432"]')"
 
 finish

@@ -27,7 +27,6 @@ input=$(cat <<'EOF2'
     "network_policy": {"pg-1": {"outside":[5432],"other nodes":[5432],"own node":["all"],"loadbalancer":[5432],"pg pods":[5432,8000],"cnpg-system operator":[8000],"otel":[9187],"other namespaces":[]}},
     "ports": {"services": {
       "databases/pg-rw": {"type":"ClusterIP","selector":"cnpg.io/cluster=pg,cnpg.io/instanceRole=primary","traffic_policy":"none","ports":["5432 -> 5432"],"node_ports":[],"health_check_port":"none","external_ips":[]},
-      "databases/pg-ro": {"type":"ClusterIP","selector":"cnpg.io/cluster=pg,cnpg.io/instanceRole=replica","traffic_policy":"none","ports":["5432 -> 5432"],"node_ports":[],"health_check_port":"none","external_ips":[]},
       "databases/pg-r": {"type":"ClusterIP","selector":"cnpg.io/cluster=pg,cnpg.io/podRole=instance","traffic_policy":"none","ports":["5432 -> 5432"],"node_ports":[],"health_check_port":"none","external_ips":[]},
       "databases/pg-rw-lb": {"type":"LoadBalancer","selector":"cnpg.io/cluster=pg,cnpg.io/instanceRole=primary","traffic_policy":"Cluster","ports":["5432 -> 5432"],"node_ports":[],"health_check_port":"none","external_ips":[]}
     }, "host_ports": {"pg-1": []}},

@@ -67,13 +67,23 @@ EOF2
 same "the Services that select an instance pod in its namespace, and no other" "$expected" "$(ports <<<"$input" | jq .services)"
 same "no host port" '{"pg-1": [], "pg-2": []}' "$(ports <<<"$input" | jq .host_ports)"
 
-same "a Service without a selector in another namespace, through an EndpointSlice address" \
-  '{"type": "ClusterIP", "selector": "none", "traffic_policy": "none", "ports": ["6000 -> 5432"], "node_ports": [],
+# by_hand SLICE_PORTS: the entry of a Service without a selector in another
+# namespace, ports postgres 6000 (targetPort 9999, which it does not use) and
+# metrics 7000, whose EndpointSlice holds pg-2's address with these ports.
+by_hand() {
+  jq --argjson slice_ports "$1" \
+    '.services += [{metadata: {namespace: "otel", name: "by-hand"},
+                    spec: {type: "ClusterIP", ports: [{name: "postgres", port: 6000, targetPort: 9999}, {name: "metrics", port: 7000}]}}]
+     | .endpoint_slices += [{metadata: {namespace: "otel", labels: {"kubernetes.io/service-name": "by-hand"}},
+                             ports: $slice_ports, endpoints: [{addresses: ["10.0.0.9"]}, {addresses: ["10.42.1.7"]}]}]' <<<"$input" |
+    ports | jq -c '.services["otel/by-hand"]'
+}
+same "a Service without a selector in another namespace, through an EndpointSlice address, to the slice's ports" \
+  '{"type": "ClusterIP", "selector": "none", "traffic_policy": "none", "ports": ["6000 -> 5432", "7000 -> none"], "node_ports": [],
     "health_check_port": "none", "external_ips": []}' \
-  "$(jq '.services += [{metadata: {namespace: "otel", name: "by-hand"}, spec: {type: "ClusterIP", ports: [{port: 6000, targetPort: 5432}]}}]
-         | .endpoint_slices += [{metadata: {namespace: "otel", labels: {"kubernetes.io/service-name": "by-hand"}},
-                                 endpoints: [{addresses: ["10.0.0.9"]}, {addresses: ["10.42.1.7"]}]}]' <<<"$input" |
-     ports | jq '.services["otel/by-hand"]')"
+  "$(by_hand '[{"name": "postgres", "port": 5432}]')"
+same "a slice port without a number leads to every port" '["6000 -> all", "7000 -> 9187"]' \
+  "$(by_hand '[{"name": "postgres"}, {"name": "metrics", "port": 9187}]' | jq -c .ports)"
 
 same "an EndpointSlice of no Service does not count" '["databases/pg-r", "databases/pg-read-lb", "databases/pg-rw", "databases/pg-rw-lb"]' \
   "$(jq '.endpoint_slices += [{metadata: {namespace: "otel", labels: {}}, endpoints: [{addresses: ["10.42.1.7"]}]}]' <<<"$input" |
@@ -88,7 +98,7 @@ same "node ports, external IPs and other protocols" \
                                ports: [{port: 5432, targetPort: "postgres", nodePort: 32281}, {protocol: "UDP", port: 53}]}}]' <<<"$input" |
      ports | jq '.services["databases/extra"]')"
 
-same "a headless Service without ports reaches every port" '["all"]' \
+same "a Service without ports limits no port" '["all"]' \
   "$(jq '.services += [{metadata: {namespace: "databases", name: "headless"},
                         spec: {type: "ClusterIP", clusterIP: "None", selector: {"cnpg.io/cluster": "pg"}}}]' <<<"$input" |
      ports | jq -c '.services["databases/headless"].ports')"

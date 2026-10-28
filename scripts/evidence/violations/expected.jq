@@ -107,8 +107,8 @@ def network_sources:
   };
 
 # The Services that may send connections to the instance pods, as the ports
-# section shows them: CNPG's three ClusterIP Services, the rw LoadBalancer on
-# 5432 to the primary and, when set, the read LoadBalancer on its port to the
+# section shows them: CNPG's three ClusterIP Services (-ro only with a
+# replica to select), the rw LoadBalancer on 5432 to the primary and, when set, the read LoadBalancer on its port to the
 # instance on the same node. None has a node port or an external IP. Traffic
 # policy Local gives the read LoadBalancer a health check port, which answers
 # over HTTP and does not lead to PostgreSQL.
@@ -128,10 +128,12 @@ def expected_services:
       };
     {
       "\($namespace)/\($cluster)-rw": service("ClusterIP"; selector("cnpg.io/instanceRole"; "primary"); "none"; 5432),
-      "\($namespace)/\($cluster)-ro": service("ClusterIP"; selector("cnpg.io/instanceRole"; "replica"); "none"; 5432),
       "\($namespace)/\($cluster)-r": service("ClusterIP"; selector("cnpg.io/podRole"; "instance"); "none"; 5432),
       "\($namespace)/\(.rwLoadBalancer.name)": service("LoadBalancer"; selector("cnpg.io/instanceRole"; "primary"); "Cluster"; 5432)
     }
+    + if .cluster.instances < 2 then {}
+      else {"\($namespace)/\($cluster)-ro": service("ClusterIP"; selector("cnpg.io/instanceRole"; "replica"); "none"; 5432)}
+      end
     + if .readLoadBalancer == null then {}
       else {"\($namespace)/\(.readLoadBalancer.name)":
               service("LoadBalancer"; selector("cnpg.io/podRole"; "instance"); "Local"; .readLoadBalancer.port)}

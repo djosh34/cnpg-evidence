@@ -15,18 +15,27 @@ def selector_text:
 
 def with_protocol($text): if (.protocol // "TCP") == "TCP" then $text else "\(.protocol)/\($text)" end;
 
-# A Service without ports (a headless one) gives clients the pod addresses, on every port.
-def service_ports:
+# A Service with a selector sends each port to its targetPort. One without
+# a selector sends it to the port of the same name and protocol in its
+# EndpointSlices, where a port without a number means every port. A Service
+# without ports, which only a headless one may be, limits no port: its name
+# leads to the pods on every port.
+def service_ports($slice_ports):
   if (.spec.ports // []) == [] then ["all"]
-  else [.spec.ports[] | with_protocol("\(.port) -> \(.targetPort // .port)")]
+  elif (.spec.selector // {}) != {} then [.spec.ports[] | with_protocol("\(.port) -> \(.targetPort // .port)")]
+  else
+    [.spec.ports[] as $port
+     | [$slice_ports[] | select([.name // "", .protocol // "TCP"] == [$port.name // "", $port.protocol // "TCP"]) | .port // "all"]
+     | (unique[] // "none") as $target
+     | $port | with_protocol("\(.port) -> \($target)")]
   end;
 
-def service:
+def service($slice_ports):
   {
     type: .spec.type,
     selector: selector_text,
     traffic_policy: (.spec.externalTrafficPolicy // "none"),
-    ports: service_ports,
+    ports: service_ports($slice_ports),
     node_ports: [.spec.ports[]?.nodePort | select(. != null)],
     health_check_port: (if .spec.healthCheckNodePort then "present" else "none" end),
     external_ips: (.spec.externalIPs // [])
@@ -39,16 +48,18 @@ if .pods == [] then error("no instance pods") else . end
 | .namespace as $namespace
 | [.pods[].metadata.labels] as $labels
 | [.pods[].status.podIPs[]?.ip] as $addresses
-| [.endpoint_slices[]
-   | select(.metadata.labels["kubernetes.io/service-name"] and any(.endpoints[]?.addresses[]; IN($addresses[])))
-   | "\(.metadata.namespace)/\(.metadata.labels["kubernetes.io/service-name"])"] as $by_address
+# Per Service, the ports of its EndpointSlices that hold an instance address.
+| (reduce (.endpoint_slices[]
+           | select(.metadata.labels["kubernetes.io/service-name"] and any(.endpoints[]?.addresses[]; IN($addresses[]))))
+     as $slice ({}; .["\($slice.metadata.namespace)/\($slice.metadata.labels["kubernetes.io/service-name"])"] += ($slice.ports // [])))
+  as $by_address
 | {
     services: ([.services[]
                 | "\(.metadata.namespace)/\(.metadata.name)" as $id
-                | select(IN($id; $by_address[])
+                | select(($by_address | has($id))
                          or (.metadata.namespace == $namespace and (.spec.selector // {}) != {}
                              and (.spec.selector as $selector | any($labels[]; . as $pod | $selector | selects($pod)))))
-                | {key: $id, value: service}]
+                | {key: $id, value: service($by_address[$id] // [])}]
                | from_entries),
     host_ports: (.pods | map({key: .metadata.name, value: host_ports}) | from_entries)
   }

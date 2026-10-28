@@ -39,9 +39,9 @@ secrets=$(
 
 # Traefik's IngressRoute and IngressRouteTCP exist only where Traefik's CRDs
 # are installed.
+routes='["ingressroutes.traefik.io", "ingressroutetcps.traefik.io"]'
 traefik_resources=$(kubectl api-resources --api-group=traefik.io -o name)
-routes=$(jq -nc '["ingressroutes.traefik.io", "ingressroutetcps.traefik.io"]')
-ingress_routes=$(jq -Rn --argjson routes "$routes" '[inputs] as $served | [$routes[] | select(IN($served[]))]' <<<"$traefik_resources")
+ingress_routes=$(jq -Rnc --argjson routes "$routes" '$routes - ($routes - [inputs])' <<<"$traefik_resources")
 not_served=$(jq -nc --argjson routes "$routes" --argjson served "$ingress_routes" '$routes - $served')
 
 needs=$(

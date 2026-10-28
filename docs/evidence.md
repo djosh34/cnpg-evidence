@@ -120,15 +120,15 @@ Per instance pod, each source and the ports it may connect to:
 Rule 9: the ways into PostgreSQL besides a login.
 
 - `services.<namespace>/<name>`: every Service in any namespace that reaches an instance pod, by its selector or by an address in its EndpointSlices:
-  - `type`: `ClusterIP`, `NodePort`, `LoadBalancer` or `ExternalName`.
+  - `type`: `ClusterIP`, `NodePort` or `LoadBalancer`.
   - `selector`: its selector as `key=value` pairs, or `none` for a Service whose EndpointSlices are written by hand.
   - `traffic_policy`: `externalTrafficPolicy`, `Cluster` or `Local`, or `none` for a Service that takes no traffic from outside the cluster.
-  - `ports`: every port as `port -> targetPort`, with the protocol in front when it is not TCP, such as `UDP/53 -> 53`. A Service without ports (headless) gives clients the pod addresses on every port and shows `all`.
+  - `ports`: every port as `port -> targetPort`, with the protocol in front when it is not TCP, such as `UDP/53 -> 53`. A Service without a selector ignores `targetPort` and sends each port to the port of the same name in its EndpointSlices: the arrow then shows that port, `all` for a slice port without a number, which means every port, or `none` when no slice has it. A Service without ports, which only a headless one may be, limits no port and shows `all`.
   - `node_ports`: the NodePorts of its ports. A NodePort leads to PostgreSQL on every node.
   - `health_check_port`: `present` when it has a `healthCheckNodePort`, else `none`. Kubernetes gives one to every LoadBalancer with traffic policy `Local`, for load balancers to ask over HTTP whether the node has a ready pod; it does not lead to PostgreSQL, so its number is not shown.
   - `external_ips`: its `externalIPs`. Every node answers on them.
 
-  Expected exactly: CNPG's `<cluster>-rw`, `<cluster>-ro` and `<cluster>-r`, ClusterIP on 5432 to the primary, the replicas and every instance; the rw LoadBalancer on 5432 to the primary with traffic policy `Cluster`; and, when `desired.yaml` sets `readLoadBalancer`, the read LoadBalancer on its port to every instance with traffic policy `Local` and a health check port. No NodePort and no external IP. Another Service, a missing one, or any field that differs is a violation.
+  Expected exactly: CNPG's `<cluster>-rw`, `<cluster>-r` and, with more than one instance, `<cluster>-ro`, ClusterIP on 5432 to the primary, every instance and the replicas; the rw LoadBalancer on 5432 to the primary with traffic policy `Cluster`; and, when `desired.yaml` sets `readLoadBalancer`, the read LoadBalancer on its port to every instance with traffic policy `Local` and a health check port. No NodePort and no external IP. Another Service, a missing one, or any field that differs is a violation.
 - `host_ports.<pod>`: the host ports of each instance pod's containers, as `hostPort -> containerPort`. Expected none.
 
 ### `kubernetes`
