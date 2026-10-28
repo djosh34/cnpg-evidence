@@ -16,6 +16,7 @@ sed() {
 token: secret
 selinux: true # enabled
   disable-network-policy: false
+secrets-encryption: true
 YAML
 }
 awk() {
@@ -24,6 +25,7 @@ awk() {
 ExecStart=/usr/local/bin/k3s server \
   '--selinux' \
   '--disable-network-policy=false' \
+  '--secrets-encryption=true' \
   '--token=secret'
 Environment=K3S_TOKEN=secret
 UNIT
@@ -31,13 +33,13 @@ UNIT
 export -f sed awk
 actual=$(bash "$here/k3s-config.sh" "$here/k3s-config.test.sh" "$here/k3s-config.sh")
 expected=$(cat <<JSON
-{"$here/k3s-config.test.sh":["selinux: true","disable-network-policy: false"],"$here/k3s-config.sh":["--selinux","--disable-network-policy=false"]}
+{"$here/k3s-config.test.sh":["selinux: true","disable-network-policy: false","secrets-encryption: true"],"$here/k3s-config.sh":["--selinux","--disable-network-policy=false","--secrets-encryption=true"]}
 JSON
 )
 same "safe settings and multiline unit flags" "$expected" "$actual"
 actual=$(bash "$here/k3s-config.sh" /no-such-config "$here/k3s-config.sh" "$here/k3s-config.test.sh")
 expected=$(cat <<JSON
-{"$here/k3s-config.sh":["--selinux","--disable-network-policy=false"],"$here/k3s-config.test.sh":["--selinux","--disable-network-policy=false"]}
+{"$here/k3s-config.sh":["--selinux","--disable-network-policy=false","--secrets-encryption=true"],"$here/k3s-config.test.sh":["--selinux","--disable-network-policy=false","--secrets-encryption=true"]}
 JSON
 )
 same "server and agent units" "$expected" "$actual"

@@ -1,93 +1,57 @@
 {
   "kind": "actual",
   "source": "host-check",
-  "collected_at": "2026-03-14T09:32:41Z",
+  "collected_at": "2026-03-14T09:31:07Z",
   "node": "node-a",
   "collected": {
     "hostname": "node-a",
     "os": "Example Linux 9.4",
     "kernel": "5.14.0-427.example.x86_64",
+    "k3s_version": "k3s version v1.34.3+k3s1",
+    "containerd_version": "containerd v2.1.5-k3s1",
     "selinux": "permissive",
+    "containerd_enable_selinux": null,
+    "postgres_uid": 26,
+    "postgres_gid": 26,
+    "listening_tcp": [],
     "missing_tools": []
   },
   "checks": [
     {
-      "id": "selinux-enforcing",
+      "id": "selinux",
       "ok": false,
-      "value": "permissive",
-      "raw": "/sys/fs/selinux/enforce = 0"
+      "value": "permissive; enable_selinux unset",
+      "raw": "/sys/fs/selinux/enforce = 0; enable_selinux = unset in the k3s containerd config; config: no selinux setting"
     },
     {
-      "id": "postgres-uid-account",
-      "ok": false,
-      "value": "not locked with nologin: postgres",
-      "raw": "postgres:x:26:26: shell /bin/bash, password set"
-    },
-    {
-      "id": "postgres-gid-group",
+      "id": "postgres-account",
       "ok": true,
       "value": "none",
-      "raw": "no group with gid 26"
+      "raw": "postgres uid=26 gid=26 shell=/sbin/nologin locked=yes; group postgres gid=26 members=reader; sudoers: /etc/sudoers:12: postgres ALL=(ALL) ALL; postgresql*-server packages: postgresql16-server"
     },
     {
-      "id": "postgres-sudoers",
+      "id": "dir-modes",
       "ok": true,
       "value": "none",
-      "raw": "no matching line in /etc/sudoers, /etc/sudoers.d/*"
+      "raw": "/var/lib/rancher/k3s/storage 700 root:root; /var/lib/kubelet/pods 750 root:root"
     },
     {
-      "id": "postgresql-server-absent",
+      "id": "k3s-secrets",
       "ok": true,
       "value": "none",
-      "raw": "rpm -qa postgresql*-server: none"
+      "raw": "/etc/rancher/k3s/k3s.yaml 600 root:root; /etc/rancher/k3s/config.yaml 600 root:root; /var/lib/rancher/k3s/server 700 root:root; secrets-encryption: true"
     },
     {
-      "id": "storage-dir-mode",
+      "id": "low-ports",
       "ok": false,
-      "value": "755, root:root, no ACL",
-      "raw": "/var/lib/rancher/k3s/storage 755 root:root, no ACL"
-    },
-    {
-      "id": "kubelet-pods-mode",
-      "ok": true,
-      "value": "750 or tighter, root:root, no ACL",
-      "raw": "/var/lib/kubelet/pods 750 root:root, no ACL"
-    },
-    {
-      "id": "k3s-kubeconfig-mode",
-      "ok": true,
-      "value": "600 or tighter, root:root, no ACL",
-      "raw": "/etc/rancher/k3s/k3s.yaml 600 root:root, no ACL"
-    },
-    {
-      "id": "k3s-selinux",
-      "ok": true,
-      "value": "true",
-      "raw": "enable_selinux = true; k3s config selinux: true"
+      "value": "ip_unprivileged_port_start = 0",
+      "raw": "ip_unprivileged_port_start = 0; no cap_net_bind_service under /usr or /opt"
     },
     {
       "id": "k3s-network-policy",
       "ok": true,
       "value": "none",
-      "raw": "no disable-network-policy setting"
-    },
-    {
-      "id": "subordinate-ids",
-      "ok": true,
-      "value": "none",
-      "raw": "kubelet range 65536-4294967295; /etc/subuid: admin:100000:65536"
-    },
-    {
-      "id": "unprivileged-port-start",
-      "ok": false,
-      "value": "0",
-      "raw": "ip_unprivileged_port_start = 0"
-    },
-    {
-      "id": "bind-service-capability",
-      "ok": true,
-      "value": "none",
-      "raw": "no file under /usr or /opt with cap_net_bind_service"
+      "raw": "no disable-network-policy flag"
     }
   ]
 }

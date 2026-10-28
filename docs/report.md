@@ -178,7 +178,7 @@ The platform pods grid has a Port-forward column for the cluster's namespace. Op
 
 `host-check.sh`, one pair per check of the node file, named with the document's `node` and the check's `id`:
 
-- `host-check-<node>-<check>-desired.png` and `host-check-<node>-<check>-actual.png`, such as `host-check-node-a-selinux-enforcing-actual.png`. The 13 checks are listed in [host-check.md](host-check.md#checks).
+- `host-check-<node>-<check>-desired.png` and `host-check-<node>-<check>-actual.png`, such as `host-check-node-a-selinux-actual.png`. The six checks are listed in [host-check.md](host-check.md#checks).
 
 `prove.sh`, three pairs:
 

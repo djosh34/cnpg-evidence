@@ -41,9 +41,9 @@ test('evidence: a desired and an actual image per item, numbered without a gap, 
 
 test('host-check: one pair per check, named by the node', () => {
   const files = sheets(sample('host-check.clean.json'), sample('host-check.desired.json')).map(s => s.file);
-  assert.equal(files.length, 26);
-  assert.equal(files[0], 'host-check-node-a-selinux-enforcing-desired.png');
-  assert.equal(files[25], 'host-check-node-a-bind-service-capability-actual.png');
+  assert.equal(files.length, 12);
+  assert.equal(files[0], 'host-check-node-a-selinux-desired.png');
+  assert.equal(files[11], 'host-check-node-a-k3s-network-policy-actual.png');
 });
 
 test('prove: two pairs', () => {
@@ -212,9 +212,9 @@ test('a pair shares its columns', () => {
 });
 
 test('host-check and prove show the value read in red, without the desired value', () => {
-  const hc = sheet(sample('host-check.failing.json'), sample('host-check.desired.json'), 'host-check-node-a-unprivileged-port-start-actual.png');
-  assert.deepEqual(rows(hc), [['unprivileged-port-start', '+0']]);
-  assert.deepEqual(hc.context.find(c => c[0] === 'Read on the node'), ['Read on the node', 'ip_unprivileged_port_start = 0']);
+  const hc = sheet(sample('host-check.failing.json'), sample('host-check.desired.json'), 'host-check-node-a-low-ports-actual.png');
+  assert.deepEqual(rows(hc), [['low-ports', '+ip_unprivileged_port_start = 0']]);
+  assert.deepEqual(hc.context.find(c => c[0] === 'Read on the node'), ['Read on the node', 'ip_unprivileged_port_start = 0; no cap_net_bind_service under /usr or /opt']);
   const pr = sheet(sample('prove.failing.json'), sample('prove.desired.json'), 'prove-01-login-attempts-actual.png');
   assert.deepEqual(rows(pr).at(-1).filter((_, i) => i !== 1), ['password-no-tls', 'refused by pg_hba reject', '+allowed']);
 });
@@ -222,15 +222,17 @@ test('host-check and prove show the value read in red, without the desired value
 test('a host-check value of true or false is a square, red when it is not the desired one', () => {
   const hcDesired = sample('host-check.desired.json');
   const hc = sample('host-check.clean.json');
-  const selinux = doc => sheet(doc, hcDesired, 'host-check-node-a-k3s-selinux-actual.png');
-  assert.deepEqual(rows(selinux(hc)), [['k3s-selinux', '[x]']]);
+  hcDesired.checks.find(c => c.id === 'selinux').value = 'true';
+  hc.checks.find(c => c.id === 'selinux').value = 'true';
+  const selinux = doc => sheet(doc, hcDesired, 'host-check-node-a-selinux-actual.png');
+  assert.deepEqual(rows(selinux(hc)), [['selinux', '[x]']]);
   assert.equal(selinux(hc).columns[1].mark, true);
-  hc.checks.find(c => c.id === 'k3s-selinux').value = 'false';
-  assert.deepEqual(rows(selinux(hc)), [['k3s-selinux', '+[ ]']]);
+  hc.checks.find(c => c.id === 'selinux').value = 'false';
+  assert.deepEqual(rows(selinux(hc)), [['selinux', '+[ ]']]);
   assert.equal(selinux(hc).verdict, 'Failed');
   // A value that is neither true nor false stays text.
-  hc.checks.find(c => c.id === 'k3s-selinux').value = 'unset';
-  assert.deepEqual(rows(selinux(hc)), [['k3s-selinux', '+unset']]);
+  hc.checks.find(c => c.id === 'selinux').value = 'unset';
+  assert.deepEqual(rows(selinux(hc)), [['selinux', '+unset']]);
   assert.equal(selinux(hc).verdict, 'Failed');
 });
 
@@ -263,7 +265,7 @@ test('the population counts the rows drawn, and says All only for more than one'
 test('a missing check or probe is not drawn', () => {
   const hc = sample('host-check.clean.json');
   hc.checks.shift();
-  const check = sheet(hc, sample('host-check.desired.json'), 'host-check-node-a-selinux-enforcing-actual.png');
+  const check = sheet(hc, sample('host-check.desired.json'), 'host-check-node-a-selinux-actual.png');
   assert.deepEqual(rows(check), []);
   const pr = sample('prove.clean.json');
   pr.probes.shift();

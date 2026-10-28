@@ -3,67 +3,32 @@
   "source": "host-check",
   "checks": [
     {
-      "id": "selinux-enforcing",
+      "id": "selinux",
       "ok": true,
-      "value": "enforcing"
+      "value": "enforcing, enable_selinux true"
     },
     {
-      "id": "postgres-uid-account",
+      "id": "postgres-account",
       "ok": true,
       "value": "none"
     },
     {
-      "id": "postgres-gid-group",
+      "id": "dir-modes",
       "ok": true,
       "value": "none"
     },
     {
-      "id": "postgres-sudoers",
+      "id": "k3s-secrets",
       "ok": true,
       "value": "none"
     },
     {
-      "id": "postgresql-server-absent",
+      "id": "low-ports",
       "ok": true,
       "value": "none"
-    },
-    {
-      "id": "storage-dir-mode",
-      "ok": true,
-      "value": "700 or tighter, root:root, no ACL"
-    },
-    {
-      "id": "kubelet-pods-mode",
-      "ok": true,
-      "value": "750 or tighter, root:root, no ACL"
-    },
-    {
-      "id": "k3s-kubeconfig-mode",
-      "ok": true,
-      "value": "600 or tighter, root:root, no ACL"
-    },
-    {
-      "id": "k3s-selinux",
-      "ok": true,
-      "value": "true"
     },
     {
       "id": "k3s-network-policy",
-      "ok": true,
-      "value": "none"
-    },
-    {
-      "id": "subordinate-ids",
-      "ok": true,
-      "value": "none"
-    },
-    {
-      "id": "unprivileged-port-start",
-      "ok": true,
-      "value": "1024 or higher"
-    },
-    {
-      "id": "bind-service-capability",
       "ok": true,
       "value": "none"
     }

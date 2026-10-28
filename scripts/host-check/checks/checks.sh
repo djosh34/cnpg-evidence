@@ -8,16 +8,9 @@ shopt -s inherit_errexit
 here=$(dirname "${BASH_SOURCE[0]}")
 
 facts=$(< /dev/stdin)
-
-bash "$here/../selinux-enforcing/selinux-enforcing.sh"
-for check in postgres-uid-account postgres-gid-group postgres-sudoers; do
-  bash "$here/../$check/$check.sh" "$1" "$2"
-done
-bash "$here/../postgresql-server-absent/postgresql-server-absent.sh"
-bash "$here/../storage-dir-mode/storage-dir-mode.sh" "$3"
-bash "$here/../kubelet-pods-mode/kubelet-pods-mode.sh"
-bash "$here/../k3s-kubeconfig-mode/k3s-kubeconfig-mode.sh"
-for check in k3s-selinux k3s-network-policy subordinate-ids \
-  unprivileged-port-start bind-service-capability; do
-  bash "$here/../$check/$check.sh" <<<"$facts"
-done
+bash "$here/../selinux/selinux.sh" <<<"$facts"
+bash "$here/../postgres-account/postgres-account.sh" "$1" "$2"
+bash "$here/../dir-modes/dir-modes.sh" "$3"
+bash "$here/../k3s-secrets/k3s-secrets.sh"
+bash "$here/../low-ports/low-ports.sh"
+bash "$here/../k3s-network-policy/k3s-network-policy.sh"

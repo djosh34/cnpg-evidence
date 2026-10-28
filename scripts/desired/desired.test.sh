@@ -92,10 +92,10 @@ same "evidence: numbered pg_ident lines, one per CN" \
 
 host_check=$(bash "$here/desired.sh" --source host-check <<<"$values")
 same_text "host-check: every check in order" \
-  "selinux-enforcing postgres-uid-account postgres-gid-group postgres-sudoers postgresql-server-absent storage-dir-mode kubelet-pods-mode k3s-kubeconfig-mode k3s-selinux k3s-network-policy subordinate-ids unprivileged-port-start bind-service-capability" \
+  "selinux postgres-account dir-modes k3s-secrets low-ports k3s-network-policy" \
   "$(jq -r '[.checks[].id] | join(" ")' <<<"$host_check")"
-same "host-check: a row is the passing value" '{"id": "unprivileged-port-start", "ok": true, "value": "1024 or higher"}' \
-  "$(jq '.checks[11]' <<<"$host_check")"
+same "host-check: a row is the passing value" '{"id": "selinux", "ok": true, "value": "enforcing, enable_selinux true"}' \
+  "$(jq '.checks[0]' <<<"$host_check")"
 
 prove=$(bash "$here/desired.sh" --source prove --postgres-uid 99 <<<"$values")
 same "prove: what it is and where" '{"kind": "desired", "source": "prove", "namespace": "databases", "cluster": "pg"}' \
