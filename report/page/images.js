@@ -78,8 +78,8 @@ function accounts(s) {
   });
 }
 
-// One row per certificate name, account and database, then each database no
-// certificate reaches.
+// One row per certificate name, account and database, then, in a section of
+// their own, the databases no certificate pg_hba line names.
 function certificateLogins(s) {
   const logins = s.items(['certificate_logins']).filter(l => l.state !== 'missing');
   const rows = logins.map(({ value, state }) => ({
@@ -87,7 +87,7 @@ function certificateLogins(s) {
   }));
   const reached = new Set(logins.map(l => l.value.database));
   for (const db of s.items(['postgres', 'databases'])) {
-    if (db.state !== 'missing' && !reached.has(db.value)) rows.push({ cells: [[], [], [entry(db.value, db.state)]] });
+    if (db.state !== 'missing' && !reached.has(db.value)) rows.push({ section: 1, cells: [[], [], [entry(db.value, db.state)]] });
   }
   return rows;
 }
@@ -251,8 +251,8 @@ const EVIDENCE = [
     sections: ['postgres', 'certificate_logins'],
     title: 'Database accounts and their rights',
     control: 'Each database account has only the rights it needs, and no other account exists.',
-    desired: 'The database accounts of desired.yaml and of CNPG, with the databases they reach and the rights they hold.',
-    actual: 'Every database account in the primary\'s catalog, with the databases its login rules let it reach and the rights it holds.',
+    desired: 'The database accounts of desired.yaml and of CNPG, with the certificate names that log in as each, the databases their certificate pg_hba lines name, and the rights they hold.',
+    actual: 'Every database account in the primary\'s catalog, with the certificate names that log in as it, the databases its certificate pg_hba lines name, and the rights it holds.',
     noun: ['database account', 'database accounts'],
     columns: ['Account', mark('Logs in'), 'Certificate names', 'Reaches', mark('Superuser'), mark('Create roles'), mark('Create databases'), 'Other rights', mark('Password stored')],
     names: 1,
@@ -273,9 +273,9 @@ const EVIDENCE = [
     name: '02-certificate-logins',
     sections: ['certificate_logins', 'postgres'],
     title: 'Certificate logins',
-    control: 'Each certificate name logs in as one account, and that account reaches one database. No other database exists.',
-    desired: 'Each certificate name of desired.yaml and of CNPG, the account it logs in as and the database it reaches, then the databases no certificate reaches.',
-    actual: 'Each certificate name the pg_ident lines of every instance map to an account, and the database the certificate pg_hba lines of desired.yaml and CNPG open to it, then the databases no certificate reaches. The login rules image compares the pg_hba lines themselves.',
+    control: 'Each certificate name logs in only as its own account, to only its own databases. No other database exists.',
+    desired: 'Each certificate name of desired.yaml and of CNPG, the account it logs in as and the database its pg_hba line names, then each database no certificate pg_hba line names. In pg_hba, all stands for every database and replication for the replication connection.',
+    actual: 'Each certificate name the pg_ident lines of every instance map to an account, and the database the certificate pg_hba lines of desired.yaml and CNPG name for it, then each database no certificate pg_hba line names. In pg_hba, all stands for every database and replication for the replication connection. The login rules image compares the pg_hba lines themselves.',
     noun: ['row', 'rows'],
     columns: ['Certificate name', 'Account', 'Database'],
     names: 3,
@@ -315,7 +315,7 @@ const EVIDENCE = [
     name: '05-encryption',
     sections: ['tls'],
     title: 'Encrypted connections',
-    control: 'Every instance accepts only TLS 1.3 on PostgreSQL and answers with TLS on metrics.',
+    control: 'Every instance accepts only TLS 1.3 on PostgreSQL and answers with TLS 1.3 on metrics.',
     desired: 'The lowest TLS version PostgreSQL accepts on port 5432, and the TLS version of the metrics port 9187.',
     actual: 'Per instance, the lowest TLS version PostgreSQL accepts on port 5432, and the TLS version the metrics port 9187 answered with.',
     noun: ['instance', 'instances'],
