@@ -76,7 +76,7 @@ Each image has a legend of the marks its kind of image can show, under the title
 
 Under the Actual box, every actual image says **Failed** in red when it shows at least one red mark, and **Passed** in dark blue when it shows none. Desired images have no verdict.
 
-Every table puts its correct rows first and the rows with a red mark last, each group in alphabetical order of its first column. The values inside a cell follow the same order. Two tables come in two parts, each ordered this way: the login rules list the pg_hba lines before the pg_ident lines, and the certificate logins list the databases no certificate reaches after the certificate names. pg_hba lines are the exception: they keep their line-number order, and a line counts by its number, so a line that moved is red at its new number. pg_ident lines are compared without their numbers, since PostgreSQL reads every line of a map, so only a new pg_ident line is red.
+Every table puts its correct rows first and the rows with a red mark last, each group in alphabetical order of its first column. The values inside a cell follow the same order. pg_hba lines are the exception: they keep their line-number order, and a line counts by its number, so a line that moved is red at its new number. pg_ident lines are compared without their numbers, since PostgreSQL reads every line of a map, so only a new pg_ident line is red. Two tables come in two parts, each part ordered by these rules: the login rules list the pg_hba lines before the pg_ident lines, and the certificate logins list the databases no certificate pg_hba line names after the certificate names.
 
 The images rest on the comparison below. They then leave out what is missing from actual and compare pg_ident lines without numbers, so an image can pass where the comparison finds a difference.
 
@@ -174,7 +174,7 @@ Each image is one PNG, named after the script, the piece of evidence and the sid
 
 | Image | Files |
 |---|---|
-| Accounts, with the certificate names that log in as each and the databases they reach | `evidence-01-accounts-desired.png`, `evidence-01-accounts-actual.png` |
+| Accounts, with the certificate names that log in as each and the databases their certificate pg_hba lines name | `evidence-01-accounts-desired.png`, `evidence-01-accounts-actual.png` |
 | Certificate logins | `evidence-02-certificate-logins-desired.png`, `evidence-02-certificate-logins-actual.png` |
 | Login rules | `evidence-03-login-rules-desired.png`, `evidence-03-login-rules-actual.png` |
 | Client CA | `evidence-04-client-ca-desired.png`, `evidence-04-client-ca-actual.png` |
@@ -184,7 +184,7 @@ Each image is one PNG, named after the script, the piece of evidence and the sid
 | Platform rights | `evidence-08-platform-rights-desired.png`, `evidence-08-platform-rights-actual.png` |
 | Versions | `evidence-09-versions-actual.png` only, since versions have no desired value |
 
-The certificate logins images list each certificate name with the account it logs in as and the database it reaches, then each database no certificate reaches.
+The certificate logins images list each certificate name with the account it logs in as and the database its pg_hba line names, then each database no certificate pg_hba line names. In pg_hba, `all` stands for every database and `replication` for the replication connection.
 
 The platform rights images are grids: one row per account that holds one of the rights, and one square column per right.
 

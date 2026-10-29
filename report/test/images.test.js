@@ -161,7 +161,7 @@ test('correct rows first and red rows last, each group alphabetical, and values 
   assert.deepEqual(show(failing, '07-operator-secrets'), [['Backup plugin', 'databases'], ['CNPG operator', 'cnpg-system databases +kube-system']]);
 });
 
-test('certificate logins come first, then the databases no certificate reaches', () => {
+test('certificate logins come first, then the databases no certificate pg_hba line names', () => {
   assert.deepEqual(show(failing, '02-certificate-logins'), [
     ['billing-app.test', 'billing', 'billing'],
     ['billing-report.test', 'billing', 'billing'],
