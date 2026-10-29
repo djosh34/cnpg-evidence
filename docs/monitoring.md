@@ -55,7 +55,7 @@ scrape_configs:
 
 | Alert | Severity | Fires when | For |
 |---|---|---|---|
-| `CNPGDatabaseDown` | critical | No instance reports a running primary: PostgreSQL is down or fenced on every instance, no replica has been promoted yet, or the primary's metrics do not arrive | 3 min |
+| `CNPGDatabaseDown` | critical | No instance reports a running primary, and none answers without saying whether it is one: PostgreSQL is down or fenced on every instance, no replica has been promoted yet, or the primary's metrics do not arrive | 3 min |
 | `CNPGReplicaDown` | critical | The primary's replication slot for a replica is inactive: the replica is down or does not stream | 5 min |
 | `CNPGReplicaLag` | critical | A replica is more than 15 s behind (see [Replica lag](#replica-lag)) | 2 min |
 | `CNPGBackupFailing` | critical | The last backup is older than 26 h or there is none, the last backup failed, or WAL archiving fails on the primary | 10 min |
@@ -64,7 +64,7 @@ scrape_configs:
 | `CNPGConnectionsHigh` | critical | An instance has more than 90 % of `max_connections` open | 5 min |
 | `CNPGTransactionIDWraparound` | critical | The oldest transaction ID of a database is more than 1 billion transactions old; PostgreSQL stops at about 2.1 billion | 15 min |
 | `CNPGComplianceViolation` | critical | A check of the [compliance metric](samples.md#compliance-metric) counts a violation | 1 min |
-| `CNPGMetricsMissing` | critical | A replica that the primary keeps a slot for reports no metrics, or an instance whose PostgreSQL answers reports fewer than the four compliance checks | 10 min |
+| `CNPGMetricsMissing` | critical | A replica that the primary keeps a slot for reports no metrics, or an instance that answers reports fewer than the four compliance checks, for example none of its query metrics | 10 min |
 
 The 26 h backup age fits a daily backup; change it to the schedule. CPU, memory, deadlocks, long transactions and primary changes are on the dashboard only.
 
@@ -89,6 +89,7 @@ Alertmanager does not promise exactly one notification. After a restart that los
 ## What the rules do not see
 
 - `CNPGDatabaseDown` also fires when PostgreSQL runs but the primary's metrics stop arriving. The rules cannot tell the two apart.
+- The exporter can answer without the metrics of its queries. In one test with CNPG 1.30.1, every instance did so from the moment the operator, which had run on a lost node, started on another node until the lost node returned; meanwhile the instances reconciled the `Cluster` many times a second. The rules then cannot tell which instance is the primary or whether a replica streams. Only `CNPGMetricsMissing` fires, for every instance that answers.
 - `CNPGReplicaDown` reads the primary's replication slots for its replicas, which CNPG keeps by default (`replicationSlots.highAvailability`). Without them it never fires. While there is no primary, only `CNPGDatabaseDown` fires.
 - `CNPGCertificateExpiring` covers only Certificates that cert-manager manages. The CA in `caSecret` and client certificates made without cert-manager have no expiry metric; watch them another way.
 - `CNPGVolumeFull` needs a storage driver that reports kubelet volume stats. Volumes of the `local-path` provisioner report the whole filesystem they are on.

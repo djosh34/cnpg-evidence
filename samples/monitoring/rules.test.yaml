@@ -11,6 +11,9 @@ tests:
       - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-1"}', values: '1x20'}
       - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-2"}', values: '1x20'}
       - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-3"}', values: '1x20'}
+      - {series: 'cnpg_collector_fencing_on{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x20'}
+      - {series: 'cnpg_collector_fencing_on{namespace="databases",cluster="pg",pod="pg-2"}', values: '0x20'}
+      - {series: 'cnpg_collector_fencing_on{namespace="databases",cluster="pg",pod="pg-3"}', values: '0x20'}
       - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x20'}
       - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-2"}', values: '1x20'}
       - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-3"}', values: '1x20'}
@@ -69,15 +72,16 @@ tests:
       - {eval_time: 20m, alertname: CNPGComplianceViolation}
       - {eval_time: 20m, alertname: CNPGMetricsMissing}
 
-  # PostgreSQL is down on every instance: one alert for the database. The
-  # exporter skips its queries and keeps cnpg_collector_up at its last value,
-  # as it does on fenced instances.
+  # PostgreSQL is down on every instance: one alert for the database.
   - name: database down
     interval: 1m
     input_series:
-      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-1"}', values: '1x10'}
-      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-2"}', values: '1x10'}
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x10'}
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-2"}', values: '0x10'}
       - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-3"}', values: '0x10'}
+      - {series: 'cnpg_collector_fencing_on{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x10'}
+      - {series: 'cnpg_collector_fencing_on{namespace="databases",cluster="pg",pod="pg-2"}', values: '0x10'}
+      - {series: 'cnpg_collector_fencing_on{namespace="databases",cluster="pg",pod="pg-3"}', values: '0x10'}
     alert_rule_test:
       - {eval_time: 2m, alertname: CNPGDatabaseDown}
       - eval_time: 4m
@@ -88,6 +92,48 @@ tests:
               summary: No instance of databases/pg reports a running primary.
               description: PostgreSQL is down or fenced on every instance, no replica was promoted, or the metrics of the primary do not arrive.
       - {eval_time: 10m, alertname: CNPGMetricsMissing}
+
+  # Every instance is fenced. The exporter skips its queries and keeps
+  # cnpg_collector_up at 1.
+  - name: database fenced
+    interval: 1m
+    input_series:
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-1"}', values: '1x10'}
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-2"}', values: '1x10'}
+      - {series: 'cnpg_collector_fencing_on{namespace="databases",cluster="pg",pod="pg-1"}', values: '1x10'}
+      - {series: 'cnpg_collector_fencing_on{namespace="databases",cluster="pg",pod="pg-2"}', values: '1x10'}
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: CNPGDatabaseDown
+        exp_alerts:
+          - exp_labels: {severity: critical, namespace: databases, cluster: pg}
+            exp_annotations:
+              summary: No instance of databases/pg reports a running primary.
+              description: PostgreSQL is down or fenced on every instance, no replica was promoted, or the metrics of the primary do not arrive.
+      - {eval_time: 10m, alertname: CNPGMetricsMissing}
+
+  # The instances answer but report none of their query metrics: which one is
+  # the primary is not known, so only the metrics alert fires.
+  - name: query metrics missing
+    interval: 1m
+    input_series:
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-1"}', values: '1x15'}
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-2"}', values: '1x15'}
+      - {series: 'cnpg_collector_fencing_on{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x15'}
+      - {series: 'cnpg_collector_fencing_on{namespace="databases",cluster="pg",pod="pg-2"}', values: '0x15'}
+    alert_rule_test:
+      - {eval_time: 11m, alertname: CNPGDatabaseDown}
+      - eval_time: 11m
+        alertname: CNPGMetricsMissing
+        exp_alerts:
+          - exp_labels: {severity: critical, namespace: databases, cluster: pg, pod: pg-1}
+            exp_annotations:
+              summary: Metrics of instance pg-1 of databases/pg are missing.
+              description: Its scrape fails, or its exporter answers without the metrics of its queries, for example when the compliance query lacks its grants.
+          - exp_labels: {severity: critical, namespace: databases, cluster: pg, pod: pg-2}
+            exp_annotations:
+              summary: Metrics of instance pg-2 of databases/pg are missing.
+              description: Its scrape fails, or its exporter answers without the metrics of its queries, for example when the compliance query lacks its grants.
 
   # No metric of the database arrives at all.
   - name: database down, no metrics
@@ -149,7 +195,7 @@ tests:
           - exp_labels: {severity: critical, namespace: databases, cluster: pg, pod: pg-3}
             exp_annotations:
               summary: Metrics of instance pg-3 of databases/pg are missing.
-              description: Its scrape fails, or the compliance query fails on it, for example without its grants.
+              description: Its scrape fails, or its exporter answers without the metrics of its queries, for example when the compliance query lacks its grants.
       - {eval_time: 11m, alertname: CNPGDatabaseDown}
 
   - name: replica lag
@@ -328,6 +374,9 @@ tests:
       - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-1"}', values: '1x15'}
       - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-2"}', values: '1x15'}
       - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-3"}', values: '1x15'}
+      - {series: 'cnpg_collector_fencing_on{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x15'}
+      - {series: 'cnpg_collector_fencing_on{namespace="databases",cluster="pg",pod="pg-2"}', values: '0x15'}
+      - {series: 'cnpg_collector_fencing_on{namespace="databases",cluster="pg",pod="pg-3"}', values: '0x15'}
       - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x15'}
       - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-2"}', values: '1x15'}
       - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-3"}', values: '1x15'}
@@ -345,8 +394,8 @@ tests:
           - exp_labels: {severity: critical, namespace: databases, cluster: pg, pod: pg-2}
             exp_annotations:
               summary: Metrics of instance pg-2 of databases/pg are missing.
-              description: Its scrape fails, or the compliance query fails on it, for example without its grants.
+              description: Its scrape fails, or its exporter answers without the metrics of its queries, for example when the compliance query lacks its grants.
           - exp_labels: {severity: critical, namespace: databases, cluster: pg, pod: pg-3}
             exp_annotations:
               summary: Metrics of instance pg-3 of databases/pg are missing.
-              description: Its scrape fails, or the compliance query fails on it, for example without its grants.
+              description: Its scrape fails, or its exporter answers without the metrics of its queries, for example when the compliance query lacks its grants.

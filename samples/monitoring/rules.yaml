@@ -29,14 +29,23 @@ groups:
                 "serial", "$1", "slot_name", "_cnpg_.+_([0-9]+)"),
               "pod", "-", "cluster", "serial"))
 
-      # cnpg_pg_replication_in_recovery comes only from an instance whose
-      # PostgreSQL answers the exporter; cnpg_collector_up keeps its last value
-      # while an instance is fenced or starting.
+      # An instance answers when cnpg_collector_up is 1 and it is not fenced:
+      # the exporter keeps cnpg_collector_up at its last value while fenced.
+      # An instance that answers but reports no query metrics, such as
+      # cnpg_pg_replication_in_recovery, may be the primary; CNPGMetricsMissing
+      # covers it.
+      - record: cnpg_sample:instance_answers
+        expr: max by (namespace, cluster, pod) (cnpg_collector_up == 1 and on (namespace, pod) cnpg_collector_fencing_on == 0)
+
       - alert: CNPGDatabaseDown
         expr: |
           cnpg_sample:database
             unless on (namespace, cluster)
-          cnpg_pg_replication_in_recovery == 0
+          (
+            cnpg_pg_replication_in_recovery == 0
+            or
+            (cnpg_sample:instance_answers unless on (namespace, pod) cnpg_pg_replication_in_recovery)
+          )
         for: 3m
         labels:
           severity: critical
@@ -159,8 +168,8 @@ groups:
           description: Run evidence.sh against desired.yaml to see which role, attribute or mapping changed.
 
       # A replica the primary keeps a slot for that reports no metrics, or an
-      # instance whose PostgreSQL answers the exporter but that reports fewer
-      # than the four checks of the compliance query.
+      # instance that answers but reports fewer than the four checks of the
+      # compliance query.
       - alert: CNPGMetricsMissing
         expr: |
           (cnpg_sample:replica_streaming unless on (namespace, pod) cnpg_collector_up)
@@ -168,11 +177,11 @@ groups:
           (
             count by (namespace, cluster, pod) (cnpg_compliance_violations)
             or
-            max by (namespace, cluster, pod) (cnpg_pg_replication_in_recovery) * 0
+            cnpg_sample:instance_answers * 0
           ) < 4
         for: 10m
         labels:
           severity: critical
         annotations:
           summary: Metrics of instance {{ $labels.pod }} of {{ $labels.namespace }}/{{ $labels.cluster }} are missing.
-          description: Its scrape fails, or the compliance query fails on it, for example without its grants.
+          description: Its scrape fails, or its exporter answers without the metrics of its queries, for example when the compliance query lacks its grants.
