@@ -78,8 +78,8 @@ function accounts(s) {
   });
 }
 
-// One row per certificate name, account and database, then each database no
-// certificate reaches.
+// One row per certificate name, account and database, then, in a section of
+// their own, the databases no certificate reaches.
 function certificateLogins(s) {
   const logins = s.items(['certificate_logins']).filter(l => l.state !== 'missing');
   const rows = logins.map(({ value, state }) => ({
@@ -87,7 +87,7 @@ function certificateLogins(s) {
   }));
   const reached = new Set(logins.map(l => l.value.database));
   for (const db of s.items(['postgres', 'databases'])) {
-    if (db.state !== 'missing' && !reached.has(db.value)) rows.push({ cells: [[], [], [entry(db.value, db.state)]] });
+    if (db.state !== 'missing' && !reached.has(db.value)) rows.push({ section: 1, cells: [[], [], [entry(db.value, db.state)]] });
   }
   return rows;
 }

@@ -111,7 +111,6 @@ test('a protection that is off is a red empty square', () => {
 test('an extra row shows only its identity in red', () => {
   assert.deepEqual(show(failing, '01-accounts').find(r => r[0] === '+app'), ['+app', '[ ]', '', '', '[ ]', '[ ]', '[ ]', '', '[ ]']);
   assert.deepEqual(show(failing, '08-platform-rights').find(r => r[0] === '+mallory'), ['+mallory', '', '+[x]', '[ ]', '[ ]', '+[x]', '[ ]']);
-  assert.deepEqual(show(failing, '02-certificate-logins').at(-1), ['+billing-batch.test', '+billing', '+billing']);
   // A known account with a right beyond desired keeps its name normal.
   const actual = structuredClone(clean);
   actual.kubernetes.run_pods.push('system:serviceaccount:kube-system:traefik');
@@ -160,6 +159,23 @@ test('correct rows first and red rows last, each group alphabetical, and values 
   assert.deepEqual(accounts.slice(0, -1), [...accounts.slice(0, -1)].sort());
   assert.deepEqual(show(failing, '05-encryption').map(r => r[0]), ['pg-1', 'pg-3', 'pg-2']);
   assert.deepEqual(show(failing, '07-operator-secrets'), [['Backup plugin', 'databases'], ['CNPG operator', 'cnpg-system databases +kube-system']]);
+});
+
+test('certificate logins come first, then the databases no certificate reaches', () => {
+  assert.deepEqual(show(failing, '02-certificate-logins'), [
+    ['billing-app.test', 'billing', 'billing'],
+    ['billing-report.test', 'billing', 'billing'],
+    ['cnpg_pooler_pgbouncer', 'cnpg_pooler_pgbouncer', 'all'],
+    ['orders-app.test', 'orders', 'orders'],
+    ['pg-replication', 'streaming_replica', 'postgres'],
+    ['pg-replication', 'streaming_replica', 'replication'],
+    ['streaming_replica', 'streaming_replica', 'postgres'],
+    ['streaming_replica', 'streaming_replica', 'replication'],
+    ['+billing-batch.test', '+billing', '+billing'],
+    ['', '', 'template0'],
+    ['', '', 'template1'],
+    ['', '', '+app'],
+  ]);
 });
 
 test('pg_hba keeps its number order, and a moved line is red at its new number', () => {
