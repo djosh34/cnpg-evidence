@@ -1,0 +1,2251 @@
+{
+ "uid": "cnpg-sample",
+ "title": "PostgreSQL cluster",
+ "tags": [
+  "cloudnative-pg"
+ ],
+ "timezone": "browser",
+ "editable": true,
+ "graphTooltip": 1,
+ "refresh": "30s",
+ "schemaVersion": 41,
+ "version": 1,
+ "time": {
+  "from": "now-1h",
+  "to": "now"
+ },
+ "description": "A CloudNativePG cluster: health, primary, replication, certificates, rule checks and nodes. Written by dashboard.py.",
+ "templating": {
+  "list": [
+   {
+    "name": "datasource",
+    "label": "Data source",
+    "type": "datasource",
+    "query": "prometheus",
+    "current": {},
+    "hide": 0
+   },
+   {
+    "name": "namespace",
+    "label": "Namespace",
+    "type": "query",
+    "datasource": {
+     "type": "prometheus",
+     "uid": "${datasource}"
+    },
+    "query": {
+     "query": "label_values(cnpg_collector_up, namespace)",
+     "refId": "ns"
+    },
+    "refresh": 2,
+    "sort": 1,
+    "current": {},
+    "hide": 0
+   },
+   {
+    "name": "cluster",
+    "label": "Cluster",
+    "type": "query",
+    "datasource": {
+     "type": "prometheus",
+     "uid": "${datasource}"
+    },
+    "query": {
+     "query": "label_values(cnpg_collector_up{namespace=\"$namespace\"}, cluster)",
+     "refId": "cl"
+    },
+    "refresh": 2,
+    "sort": 1,
+    "current": {},
+    "hide": 0
+   }
+  ]
+ },
+ "annotations": {
+  "list": []
+ },
+ "panels": [
+  {
+   "id": 1,
+   "type": "stat",
+   "title": "Healthy",
+   "description": "Counts the problems the critical alerts of rules.yaml see now, without their waiting time; each pod, volume, certificate or check counts once: CNPGDatabaseDown, CNPGReplicaDown, CNPGReplicaLag, CNPGBackupFailing, CNPGVolumeFull, CNPGCertificateExpiring, CNPGConnectionsHigh, CNPGTransactionIDWraparound, CNPGComplianceViolation, CNPGMetricsMissing.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 4,
+    "h": 5
+   },
+   "transparent": false,
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "(count(label_replace(label_replace(vector(1), \"namespace\", \"$namespace\", \"\", \"\"), \"cluster\", \"$cluster\", \"\", \"\") unless on (namespace, cluster) ( cnpg_pg_replication_in_recovery == 0 or ((max by (namespace, cluster, pod) (cnpg_collector_up == 1 and on (namespace, pod) cnpg_collector_fencing_on == 0)) unless on (namespace, pod) cnpg_pg_replication_in_recovery) )) or vector(0)) + (count(( (max by (namespace, cluster, pod) ( label_join( label_replace( cnpg_pg_replication_slots_active{slot_type=\"physical\", slot_name=~\"_cnpg_.+\"} and on (namespace, pod) cnpg_pg_replication_in_recovery == 0, \"serial\", \"$1\", \"slot_name\", \"_cnpg_.+_([0-9]+)\"), \"pod\", \"-\", \"cluster\", \"serial\"))) == 0 or ( max by (namespace, cluster, pod) (max_over_time(cnpg_collector_up[1d])) unless on (namespace, pod) cnpg_collector_up ) ) and on (namespace, cluster) label_replace(label_replace(vector(1), \"namespace\", \"$namespace\", \"\", \"\"), \"cluster\", \"$cluster\", \"\", \"\")) or vector(0)) + (count(max by (namespace, cluster, pod) (cnpg_pg_replication_lag) > 15 and on (namespace, cluster) label_replace(label_replace(vector(1), \"namespace\", \"$namespace\", \"\", \"\"), \"cluster\", \"$cluster\", \"\", \"\")) or vector(0)) + (count(( time() - max by (namespace, cluster) (barman_cloud_cloudnative_pg_io_last_available_backup_timestamp) > 26 * 3600 or max by (namespace, cluster) (barman_cloud_cloudnative_pg_io_last_failed_backup_timestamp) > max by (namespace, cluster) (barman_cloud_cloudnative_pg_io_last_available_backup_timestamp) or max by (namespace, cluster) ( cnpg_pg_stat_archiver_last_failed_time > cnpg_pg_stat_archiver_last_archived_time and on (namespace, pod) cnpg_pg_replication_in_recovery == 0 ) or (label_replace(label_replace(vector(1), \"namespace\", \"$namespace\", \"\", \"\"), \"cluster\", \"$cluster\", \"\", \"\") unless on (namespace, cluster) barman_cloud_cloudnative_pg_io_last_available_backup_timestamp) ) and on (namespace, cluster) label_replace(label_replace(vector(1), \"namespace\", \"$namespace\", \"\", \"\"), \"cluster\", \"$cluster\", \"\", \"\")) or vector(0)) + (count((max by (namespace, cluster, persistentvolumeclaim) ( label_replace( kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes, \"cluster\", \"$1\", \"persistentvolumeclaim\", \"(.+)-[0-9]+(-wal|-tbs-.+)?\") and on (namespace, cluster) label_replace(label_replace(vector(1), \"namespace\", \"$namespace\", \"\", \"\"), \"cluster\", \"$cluster\", \"\", \"\") )) > 0.9) or vector(0)) + (count((label_replace( max by (namespace, name) (certmanager_certificate_expiration_timestamp_seconds > 0), \"cluster\", \"$1\", \"name\", \"(.+)-(server|replication)\") and on (namespace, cluster) label_replace(label_replace(vector(1), \"namespace\", \"$namespace\", \"\", \"\"), \"cluster\", \"$cluster\", \"\", \"\")) - time() < 3 * 86400) or vector(0)) + (count(sum by (namespace, cluster, pod) (cnpg_backends_total) / max by (namespace, cluster, pod) (cnpg_pg_settings_setting{name=\"max_connections\"}) > 0.9 and on (namespace, cluster) label_replace(label_replace(vector(1), \"namespace\", \"$namespace\", \"\", \"\"), \"cluster\", \"$cluster\", \"\", \"\")) or vector(0)) + (count(max by (namespace, cluster) (cnpg_pg_database_xid_age) > 1000000000 and on (namespace, cluster) label_replace(label_replace(vector(1), \"namespace\", \"$namespace\", \"\", \"\"), \"cluster\", \"$cluster\", \"\", \"\")) or vector(0)) + (count(max by (namespace, cluster, rule, check) (cnpg_compliance_violations) > 0 and on (namespace, cluster) label_replace(label_replace(vector(1), \"namespace\", \"$namespace\", \"\", \"\"), \"cluster\", \"$cluster\", \"\", \"\")) or vector(0)) + (count(( count by (namespace, cluster, pod) (cnpg_compliance_violations) or (max by (namespace, cluster, pod) (cnpg_collector_up == 1 and on (namespace, pod) cnpg_collector_fencing_on == 0)) * 0 ) < 4 and on (namespace, cluster) label_replace(label_replace(vector(1), \"namespace\", \"$namespace\", \"\", \"\"), \"cluster\", \"$cluster\", \"\", \"\")) or vector(0))",
+     "legendFormat": "",
+     "refId": "A",
+     "range": false,
+     "instant": true,
+     "format": "time_series"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "dark-green",
+        "value": null
+       },
+       {
+        "color": "red",
+        "value": 1
+       }
+      ]
+     },
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "0": {
+         "text": "Yes",
+         "index": 0
+        },
+        "1": {
+         "text": "1 problem",
+         "index": 1
+        },
+        "2": {
+         "text": "2 problems",
+         "index": 2
+        },
+        "3": {
+         "text": "3 problems",
+         "index": 3
+        },
+        "4": {
+         "text": "4 problems",
+         "index": 4
+        },
+        "5": {
+         "text": "5 problems",
+         "index": 5
+        },
+        "6": {
+         "text": "6 problems",
+         "index": 6
+        },
+        "7": {
+         "text": "7 problems",
+         "index": 7
+        },
+        "8": {
+         "text": "8 problems",
+         "index": 8
+        },
+        "9": {
+         "text": "9 problems",
+         "index": 9
+        },
+        "10": {
+         "text": "10 problems",
+         "index": 10
+        },
+        "11": {
+         "text": "11 problems",
+         "index": 11
+        },
+        "12": {
+         "text": "12 problems",
+         "index": 12
+        },
+        "13": {
+         "text": "13 problems",
+         "index": 13
+        },
+        "14": {
+         "text": "14 problems",
+         "index": 14
+        },
+        "15": {
+         "text": "15 problems",
+         "index": 15
+        },
+        "16": {
+         "text": "16 problems",
+         "index": 16
+        },
+        "17": {
+         "text": "17 problems",
+         "index": 17
+        },
+        "18": {
+         "text": "18 problems",
+         "index": 18
+        },
+        "19": {
+         "text": "19 problems",
+         "index": 19
+        },
+        "20": {
+         "text": "20 problems",
+         "index": 20
+        },
+        "21": {
+         "text": "21 problems",
+         "index": 21
+        },
+        "22": {
+         "text": "22 problems",
+         "index": 22
+        },
+        "23": {
+         "text": "23 problems",
+         "index": 23
+        },
+        "24": {
+         "text": "24 problems",
+         "index": 24
+        },
+        "25": {
+         "text": "25 problems",
+         "index": 25
+        },
+        "26": {
+         "text": "26 problems",
+         "index": 26
+        },
+        "27": {
+         "text": "27 problems",
+         "index": 27
+        },
+        "28": {
+         "text": "28 problems",
+         "index": 28
+        },
+        "29": {
+         "text": "29 problems",
+         "index": 29
+        }
+       }
+      }
+     ],
+     "color": {
+      "mode": "thresholds"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background_solid",
+    "graphMode": "none",
+    "textMode": "auto",
+    "justifyMode": "center",
+    "orientation": "auto",
+    "wideLayout": true,
+    "showPercentChange": false,
+    "text": {
+     "valueSize": 34
+    }
+   }
+  },
+  {
+   "id": 2,
+   "type": "stat",
+   "title": "Instances",
+   "description": "Each instance by the node it runs on. Primary: PostgreSQL accepts writes and holds CNPG's primary lease; both must agree. Writes blocked: the primary has fewer standbys connected than the synchronous standbys it needs, so every write waits; reads still work. A connected standby does not prove that it confirms commits.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "gridPos": {
+    "x": 4,
+    "y": 0,
+    "w": 8,
+    "h": 5
+   },
+   "transparent": false,
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "sort_desc(((((max by (namespace, pod) (cnpg_collector_fencing_on{namespace=\"$namespace\", cluster=\"$cluster\"}) == 1) * 0 - 6) or on (namespace, pod) ((((((1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 2 + max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * max by (namespace, pod) (cnpg_pg_replication_is_wal_receiver_up{namespace=\"$namespace\", cluster=\"$cluster\"}) - (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * 3 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 4) or on (namespace, pod) (max by (namespace, pod) (cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}) == 0) - 1 or on (namespace, pod) (max by (namespace, pod) (max_over_time(cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}[1h])) * 0 - 2)) == 2 and on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_streaming_replicas{namespace=\"$namespace\", cluster=\"$cluster\"}) < max by (namespace, pod) (cnpg_collector_sync_replicas{namespace=\"$namespace\", cluster=\"$cluster\", value=\"expected\"}))) * 0 - 5) or on (namespace, pod) (((1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 2 + max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * max by (namespace, pod) (cnpg_pg_replication_is_wal_receiver_up{namespace=\"$namespace\", cluster=\"$cluster\"}) - (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * 3 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 4) or on (namespace, pod) (max by (namespace, pod) (cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}) == 0) - 1 or on (namespace, pod) (max by (namespace, pod) (max_over_time(cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}[1h])) * 0 - 2)))) * on (namespace, pod) group_left (node) (topk by (namespace, pod) (1, max by (namespace, pod, node) (max_over_time(timestamp(container_memory_working_set_bytes{namespace=\"$namespace\", pod=~\"$cluster-[0-9]+\", container=\"postgres\"})[1h:1m]))) * 0 + 1)) or on (namespace, pod) label_replace(((max by (namespace, pod) (cnpg_collector_fencing_on{namespace=\"$namespace\", cluster=\"$cluster\"}) == 1) * 0 - 6) or on (namespace, pod) ((((((1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 2 + max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * max by (namespace, pod) (cnpg_pg_replication_is_wal_receiver_up{namespace=\"$namespace\", cluster=\"$cluster\"}) - (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * 3 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 4) or on (namespace, pod) (max by (namespace, pod) (cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}) == 0) - 1 or on (namespace, pod) (max by (namespace, pod) (max_over_time(cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}[1h])) * 0 - 2)) == 2 and on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_streaming_replicas{namespace=\"$namespace\", cluster=\"$cluster\"}) < max by (namespace, pod) (cnpg_collector_sync_replicas{namespace=\"$namespace\", cluster=\"$cluster\", value=\"expected\"}))) * 0 - 5) or on (namespace, pod) (((1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 2 + max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * max by (namespace, pod) (cnpg_pg_replication_is_wal_receiver_up{namespace=\"$namespace\", cluster=\"$cluster\"}) - (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * 3 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 4) or on (namespace, pod) (max by (namespace, pod) (cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}) == 0) - 1 or on (namespace, pod) (max by (namespace, pod) (max_over_time(cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}[1h])) * 0 - 2))), \"node\", \"unknown node\", \"\", \"\"))",
+     "legendFormat": "{{node}}",
+     "refId": "A",
+     "range": false,
+     "instant": true,
+     "format": "time_series"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       }
+      ]
+     },
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "2": {
+         "text": "Primary",
+         "color": "purple",
+         "index": 0
+        },
+        "1": {
+         "text": "Replica",
+         "color": "dark-green",
+         "index": 1
+        },
+        "0": {
+         "text": "Not streaming",
+         "color": "red",
+         "index": 2
+        },
+        "-5": {
+         "text": "Writes blocked",
+         "color": "red",
+         "index": 3
+        },
+        "-3": {
+         "text": "Primary without lease",
+         "color": "red",
+         "index": 4
+        },
+        "-4": {
+         "text": "Promoting",
+         "color": "orange",
+         "index": 5
+        },
+        "-6": {
+         "text": "Fenced",
+         "color": "orange",
+         "index": 6
+        },
+        "-1": {
+         "text": "PostgreSQL down",
+         "color": "red",
+         "index": 7
+        },
+        "-2": {
+         "text": "Not reporting",
+         "color": "red",
+         "index": 8
+        }
+       }
+      }
+     ],
+     "color": {
+      "mode": "thresholds"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background_solid",
+    "graphMode": "none",
+    "textMode": "value_and_name",
+    "justifyMode": "center",
+    "orientation": "vertical",
+    "wideLayout": true,
+    "showPercentChange": false,
+    "text": {
+     "titleSize": 14,
+     "valueSize": 24
+    }
+   }
+  },
+  {
+   "id": 3,
+   "type": "stat",
+   "title": "Replica lag",
+   "description": "Largest replay delay of any replica, in seconds. 0 when caught up. Orange over 1 s, red over 15 s.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 0,
+    "w": 3,
+    "h": 5
+   },
+   "transparent": false,
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "max(cnpg_pg_replication_lag{namespace=\"$namespace\", cluster=\"$cluster\"})",
+     "legendFormat": "",
+     "refId": "A",
+     "range": false,
+     "instant": true,
+     "format": "time_series"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "dark-green",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 1
+       },
+       {
+        "color": "red",
+        "value": 15
+       }
+      ]
+     },
+     "mappings": [],
+     "color": {
+      "mode": "thresholds"
+     },
+     "decimals": 1
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background_solid",
+    "graphMode": "none",
+    "textMode": "auto",
+    "justifyMode": "center",
+    "orientation": "auto",
+    "wideLayout": true,
+    "showPercentChange": false,
+    "text": {
+     "valueSize": 30
+    }
+   }
+  },
+  {
+   "id": 4,
+   "type": "stat",
+   "title": "Rule checks",
+   "description": "Role and mapping checks (CNPG custom query). Violations found; missing means the checks stopped reporting.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "gridPos": {
+    "x": 15,
+    "y": 0,
+    "w": 3,
+    "h": 5
+   },
+   "transparent": false,
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "sum(max by (rule, check) (cnpg_compliance_violations{namespace=\"$namespace\", cluster=\"$cluster\"}))",
+     "legendFormat": "",
+     "refId": "A",
+     "range": false,
+     "instant": true,
+     "format": "time_series"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "dark-green",
+        "value": null
+       },
+       {
+        "color": "red",
+        "value": 1
+       }
+      ]
+     },
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "0": {
+         "text": "All pass",
+         "index": 0
+        }
+       }
+      },
+      {
+       "type": "special",
+       "options": {
+        "match": "null",
+        "result": {
+         "text": "Missing",
+         "color": "red",
+         "index": 1
+        }
+       }
+      }
+     ],
+     "color": {
+      "mode": "thresholds"
+     },
+     "noValue": "Missing"
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background_solid",
+    "graphMode": "none",
+    "textMode": "auto",
+    "justifyMode": "center",
+    "orientation": "auto",
+    "wideLayout": true,
+    "showPercentChange": false,
+    "text": {
+     "valueSize": 24
+    }
+   }
+  },
+  {
+   "id": 5,
+   "type": "stat",
+   "title": "Certificates",
+   "description": "Days until the first cert-manager certificate expires. Certificates made without cert-manager are not counted. Orange under 14 days, red under 3.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "gridPos": {
+    "x": 18,
+    "y": 0,
+    "w": 3,
+    "h": 5
+   },
+   "transparent": false,
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "min(((certmanager_certificate_expiration_timestamp_seconds > 0) - time()) / 86400)",
+     "legendFormat": "",
+     "refId": "A",
+     "range": false,
+     "instant": true,
+     "format": "time_series"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "suffix: days",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 3
+       },
+       {
+        "color": "dark-green",
+        "value": 14
+       }
+      ]
+     },
+     "mappings": [],
+     "color": {
+      "mode": "thresholds"
+     },
+     "decimals": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background_solid",
+    "graphMode": "none",
+    "textMode": "auto",
+    "justifyMode": "center",
+    "orientation": "auto",
+    "wideLayout": true,
+    "showPercentChange": false,
+    "text": {
+     "valueSize": 30
+    }
+   }
+  },
+  {
+   "id": 6,
+   "type": "stat",
+   "title": "Disks",
+   "description": "The fullest disk of any node. Every disk is listed under Nodes. Orange over 80 %, red over 90 %.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "gridPos": {
+    "x": 21,
+    "y": 0,
+    "w": 3,
+    "h": 5
+   },
+   "transparent": false,
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "topk(1, max by (node, device) (container_fs_usage_bytes{id=\"/\", device=~\"/dev/(sd|vd|hd|xvd|nvme|mapper|md|dm-).*\"} / container_fs_limit_bytes{id=\"/\", device=~\"/dev/(sd|vd|hd|xvd|nvme|mapper|md|dm-).*\"}))",
+     "legendFormat": "{{node}} {{device}}",
+     "refId": "A",
+     "range": false,
+     "instant": true,
+     "format": "time_series"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "dark-green",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 0.8
+       },
+       {
+        "color": "red",
+        "value": 0.9
+       }
+      ]
+     },
+     "mappings": [],
+     "color": {
+      "mode": "thresholds"
+     },
+     "decimals": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background_solid",
+    "graphMode": "none",
+    "textMode": "value_and_name",
+    "justifyMode": "center",
+    "orientation": "auto",
+    "wideLayout": true,
+    "showPercentChange": false,
+    "text": {
+     "titleSize": 12,
+     "valueSize": 30
+    }
+   }
+  },
+  {
+   "id": 7,
+   "type": "state-timeline",
+   "title": "Leader and replicas",
+   "description": "State of each instance over time. Purple is the leader (primary); a purple band moving to another node is a failover or switchover.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 5,
+    "w": 24,
+    "h": 7
+   },
+   "transparent": true,
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "((((max by (namespace, pod) (cnpg_collector_fencing_on{namespace=\"$namespace\", cluster=\"$cluster\"}) == 1) * 0 - 6) or on (namespace, pod) ((((((1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 2 + max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * max by (namespace, pod) (cnpg_pg_replication_is_wal_receiver_up{namespace=\"$namespace\", cluster=\"$cluster\"}) - (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * 3 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 4) or on (namespace, pod) (max by (namespace, pod) (cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}) == 0) - 1 or on (namespace, pod) (max by (namespace, pod) (max_over_time(cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}[1h])) * 0 - 2)) == 2 and on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_streaming_replicas{namespace=\"$namespace\", cluster=\"$cluster\"}) < max by (namespace, pod) (cnpg_collector_sync_replicas{namespace=\"$namespace\", cluster=\"$cluster\", value=\"expected\"}))) * 0 - 5) or on (namespace, pod) (((1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 2 + max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * max by (namespace, pod) (cnpg_pg_replication_is_wal_receiver_up{namespace=\"$namespace\", cluster=\"$cluster\"}) - (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * 3 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 4) or on (namespace, pod) (max by (namespace, pod) (cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}) == 0) - 1 or on (namespace, pod) (max by (namespace, pod) (max_over_time(cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}[1h])) * 0 - 2)))) * on (namespace, pod) group_left (node) (topk by (namespace, pod) (1, max by (namespace, pod, node) (max_over_time(timestamp(container_memory_working_set_bytes{namespace=\"$namespace\", pod=~\"$cluster-[0-9]+\", container=\"postgres\"})[1h:1m]))) * 0 + 1)) or on (namespace, pod) label_replace(((max by (namespace, pod) (cnpg_collector_fencing_on{namespace=\"$namespace\", cluster=\"$cluster\"}) == 1) * 0 - 6) or on (namespace, pod) ((((((1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 2 + max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * max by (namespace, pod) (cnpg_pg_replication_is_wal_receiver_up{namespace=\"$namespace\", cluster=\"$cluster\"}) - (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * 3 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 4) or on (namespace, pod) (max by (namespace, pod) (cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}) == 0) - 1 or on (namespace, pod) (max by (namespace, pod) (max_over_time(cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}[1h])) * 0 - 2)) == 2 and on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_streaming_replicas{namespace=\"$namespace\", cluster=\"$cluster\"}) < max by (namespace, pod) (cnpg_collector_sync_replicas{namespace=\"$namespace\", cluster=\"$cluster\", value=\"expected\"}))) * 0 - 5) or on (namespace, pod) (((1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 2 + max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * max by (namespace, pod) (cnpg_pg_replication_is_wal_receiver_up{namespace=\"$namespace\", cluster=\"$cluster\"}) - (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * 3 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 4) or on (namespace, pod) (max by (namespace, pod) (cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}) == 0) - 1 or on (namespace, pod) (max by (namespace, pod) (max_over_time(cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}[1h])) * 0 - 2))), \"node\", \"unknown node\", \"\", \"\")",
+     "legendFormat": "{{node}}",
+     "refId": "A",
+     "range": true,
+     "instant": false,
+     "format": "time_series"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "red"
+     },
+     "custom": {
+      "fillOpacity": 85,
+      "lineWidth": 0
+     },
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "2": {
+         "text": "Primary",
+         "color": "purple",
+         "index": 0
+        },
+        "1": {
+         "text": "Replica",
+         "color": "dark-green",
+         "index": 1
+        },
+        "0": {
+         "text": "Not streaming",
+         "color": "red",
+         "index": 2
+        },
+        "-5": {
+         "text": "Writes blocked",
+         "color": "red",
+         "index": 3
+        },
+        "-3": {
+         "text": "Primary without lease",
+         "color": "red",
+         "index": 4
+        },
+        "-4": {
+         "text": "Promoting",
+         "color": "orange",
+         "index": 5
+        },
+        "-6": {
+         "text": "Fenced",
+         "color": "orange",
+         "index": 6
+        },
+        "-1": {
+         "text": "PostgreSQL down",
+         "color": "red",
+         "index": 7
+        },
+        "-2": {
+         "text": "Not reporting",
+         "color": "red",
+         "index": 8
+        }
+       }
+      }
+     ]
+    },
+    "overrides": []
+   },
+   "options": {
+    "showValue": "auto",
+    "rowHeight": 0.85,
+    "mergeValues": true,
+    "alignValue": "left",
+    "legend": {
+     "showLegend": false
+    },
+    "tooltip": {
+     "mode": "single"
+    }
+   }
+  },
+  {
+   "id": 8,
+   "type": "row",
+   "title": "Workload",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 12
+   },
+   "panels": []
+  },
+  {
+   "id": 9,
+   "type": "timeseries",
+   "title": "Transactions per second",
+   "description": "Commits and rollbacks per second, per instance.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 13,
+    "w": 8,
+    "h": 8
+   },
+   "transparent": true,
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "(((sum by (namespace, pod) (rate(cnpg_pg_stat_database_xact_commit{namespace=\"$namespace\", cluster=\"$cluster\"}[$__rate_interval]) + rate(cnpg_pg_stat_database_xact_rollback{namespace=\"$namespace\", cluster=\"$cluster\"}[$__rate_interval]))) * on (namespace, pod) group_left (role) ((label_replace((((1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 2 + max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * max by (namespace, pod) (cnpg_pg_replication_is_wal_receiver_up{namespace=\"$namespace\", cluster=\"$cluster\"}) - (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * 3 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 4) or on (namespace, pod) (max by (namespace, pod) (cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}) == 0) - 1 or on (namespace, pod) (max by (namespace, pod) (max_over_time(cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}[1h])) * 0 - 2)) == 2, \"role\", \"primary\", \"\", \"\") * 0 + 1) or on (namespace, pod) (label_replace((((1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 2 + max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * max by (namespace, pod) (cnpg_pg_replication_is_wal_receiver_up{namespace=\"$namespace\", cluster=\"$cluster\"}) - (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * 3 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 4) or on (namespace, pod) (max by (namespace, pod) (cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}) == 0) - 1 or on (namespace, pod) (max by (namespace, pod) (max_over_time(cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}[1h])) * 0 - 2)) != 2, \"role\", \"replica\", \"\", \"\") * 0 + 1))) * on (namespace, pod) group_left (node) (topk by (namespace, pod) (1, max by (namespace, pod, node) (max_over_time(timestamp(container_memory_working_set_bytes{namespace=\"$namespace\", pod=~\"$cluster-[0-9]+\", container=\"postgres\"})[1h:1m]))) * 0 + 1)) or on (namespace, pod) label_replace((sum by (namespace, pod) (rate(cnpg_pg_stat_database_xact_commit{namespace=\"$namespace\", cluster=\"$cluster\"}[$__rate_interval]) + rate(cnpg_pg_stat_database_xact_rollback{namespace=\"$namespace\", cluster=\"$cluster\"}[$__rate_interval]))) * on (namespace, pod) group_left (role) ((label_replace((((1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 2 + max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * max by (namespace, pod) (cnpg_pg_replication_is_wal_receiver_up{namespace=\"$namespace\", cluster=\"$cluster\"}) - (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * 3 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 4) or on (namespace, pod) (max by (namespace, pod) (cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}) == 0) - 1 or on (namespace, pod) (max by (namespace, pod) (max_over_time(cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}[1h])) * 0 - 2)) == 2, \"role\", \"primary\", \"\", \"\") * 0 + 1) or on (namespace, pod) (label_replace((((1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 2 + max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * max by (namespace, pod) (cnpg_pg_replication_is_wal_receiver_up{namespace=\"$namespace\", cluster=\"$cluster\"}) - (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * 3 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 4) or on (namespace, pod) (max by (namespace, pod) (cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}) == 0) - 1 or on (namespace, pod) (max by (namespace, pod) (max_over_time(cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}[1h])) * 0 - 2)) != 2, \"role\", \"replica\", \"\", \"\") * 0 + 1)), \"node\", \"unknown node\", \"\", \"\")",
+     "legendFormat": "{{node}} {{role}}",
+     "refId": "A",
+     "range": true,
+     "instant": false,
+     "format": "time_series"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "suffix: tps",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 0,
+      "showPoints": "never",
+      "spanNulls": false,
+      "axisSoftMin": 0,
+      "axisBorderShow": false,
+      "gradientMode": "none",
+      "lineInterpolation": "linear",
+      "thresholdsStyle": {
+       "mode": "off"
+      },
+      "axisPlacement": "auto",
+      "axisLabel": ""
+     },
+     "color": {
+      "mode": "palette-classic"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "transparent",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": ".*primary.*"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "purple"
+        }
+       },
+       {
+        "id": "custom.lineWidth",
+        "value": 2
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": ".*replica.*"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "text"
+        }
+       },
+       {
+        "id": "custom.lineWidth",
+        "value": 1
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
+  },
+  {
+   "id": 10,
+   "type": "timeseries",
+   "title": "Connections",
+   "description": "Open backends per instance; the dashed line is max_connections.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "gridPos": {
+    "x": 8,
+    "y": 13,
+    "w": 8,
+    "h": 8
+   },
+   "transparent": true,
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "(((sum by (namespace, pod) (cnpg_backends_total{namespace=\"$namespace\", cluster=\"$cluster\"})) * on (namespace, pod) group_left (role) ((label_replace((((1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 2 + max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * max by (namespace, pod) (cnpg_pg_replication_is_wal_receiver_up{namespace=\"$namespace\", cluster=\"$cluster\"}) - (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * 3 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 4) or on (namespace, pod) (max by (namespace, pod) (cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}) == 0) - 1 or on (namespace, pod) (max by (namespace, pod) (max_over_time(cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}[1h])) * 0 - 2)) == 2, \"role\", \"primary\", \"\", \"\") * 0 + 1) or on (namespace, pod) (label_replace((((1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 2 + max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * max by (namespace, pod) (cnpg_pg_replication_is_wal_receiver_up{namespace=\"$namespace\", cluster=\"$cluster\"}) - (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * 3 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 4) or on (namespace, pod) (max by (namespace, pod) (cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}) == 0) - 1 or on (namespace, pod) (max by (namespace, pod) (max_over_time(cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}[1h])) * 0 - 2)) != 2, \"role\", \"replica\", \"\", \"\") * 0 + 1))) * on (namespace, pod) group_left (node) (topk by (namespace, pod) (1, max by (namespace, pod, node) (max_over_time(timestamp(container_memory_working_set_bytes{namespace=\"$namespace\", pod=~\"$cluster-[0-9]+\", container=\"postgres\"})[1h:1m]))) * 0 + 1)) or on (namespace, pod) label_replace((sum by (namespace, pod) (cnpg_backends_total{namespace=\"$namespace\", cluster=\"$cluster\"})) * on (namespace, pod) group_left (role) ((label_replace((((1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 2 + max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * max by (namespace, pod) (cnpg_pg_replication_is_wal_receiver_up{namespace=\"$namespace\", cluster=\"$cluster\"}) - (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * 3 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 4) or on (namespace, pod) (max by (namespace, pod) (cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}) == 0) - 1 or on (namespace, pod) (max by (namespace, pod) (max_over_time(cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}[1h])) * 0 - 2)) == 2, \"role\", \"primary\", \"\", \"\") * 0 + 1) or on (namespace, pod) (label_replace((((1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 2 + max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * max by (namespace, pod) (cnpg_pg_replication_is_wal_receiver_up{namespace=\"$namespace\", cluster=\"$cluster\"}) - (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * 3 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 4) or on (namespace, pod) (max by (namespace, pod) (cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}) == 0) - 1 or on (namespace, pod) (max by (namespace, pod) (max_over_time(cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}[1h])) * 0 - 2)) != 2, \"role\", \"replica\", \"\", \"\") * 0 + 1)), \"node\", \"unknown node\", \"\", \"\")",
+     "legendFormat": "{{node}} {{role}}",
+     "refId": "A",
+     "range": true,
+     "instant": false,
+     "format": "time_series"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "max(cnpg_pg_settings_setting{name=\"max_connections\", namespace=\"$namespace\", cluster=\"$cluster\"})",
+     "legendFormat": "max_connections",
+     "refId": "B",
+     "range": true,
+     "instant": false,
+     "format": "time_series"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 0,
+      "showPoints": "never",
+      "spanNulls": false,
+      "axisSoftMin": 0,
+      "axisBorderShow": false,
+      "gradientMode": "none",
+      "lineInterpolation": "linear",
+      "thresholdsStyle": {
+       "mode": "off"
+      },
+      "axisPlacement": "auto",
+      "axisLabel": ""
+     },
+     "color": {
+      "mode": "palette-classic"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "transparent",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": ".*primary.*"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "purple"
+        }
+       },
+       {
+        "id": "custom.lineWidth",
+        "value": 2
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": ".*replica.*"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "text"
+        }
+       },
+       {
+        "id": "custom.lineWidth",
+        "value": 1
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "max_connections"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "text"
+        }
+       },
+       {
+        "id": "custom.lineStyle",
+        "value": {
+         "fill": "dash",
+         "dash": [
+          6,
+          4
+         ]
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
+  },
+  {
+   "id": 11,
+   "type": "timeseries",
+   "title": "Longest open transaction",
+   "description": "Age of the oldest running transaction per instance. Long ones block vacuum.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 13,
+    "w": 8,
+    "h": 8
+   },
+   "transparent": true,
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "(((max by (namespace, pod) (cnpg_backends_max_tx_duration_seconds{namespace=\"$namespace\", cluster=\"$cluster\"})) * on (namespace, pod) group_left (role) ((label_replace((((1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 2 + max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * max by (namespace, pod) (cnpg_pg_replication_is_wal_receiver_up{namespace=\"$namespace\", cluster=\"$cluster\"}) - (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * 3 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 4) or on (namespace, pod) (max by (namespace, pod) (cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}) == 0) - 1 or on (namespace, pod) (max by (namespace, pod) (max_over_time(cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}[1h])) * 0 - 2)) == 2, \"role\", \"primary\", \"\", \"\") * 0 + 1) or on (namespace, pod) (label_replace((((1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 2 + max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * max by (namespace, pod) (cnpg_pg_replication_is_wal_receiver_up{namespace=\"$namespace\", cluster=\"$cluster\"}) - (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * 3 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 4) or on (namespace, pod) (max by (namespace, pod) (cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}) == 0) - 1 or on (namespace, pod) (max by (namespace, pod) (max_over_time(cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}[1h])) * 0 - 2)) != 2, \"role\", \"replica\", \"\", \"\") * 0 + 1))) * on (namespace, pod) group_left (node) (topk by (namespace, pod) (1, max by (namespace, pod, node) (max_over_time(timestamp(container_memory_working_set_bytes{namespace=\"$namespace\", pod=~\"$cluster-[0-9]+\", container=\"postgres\"})[1h:1m]))) * 0 + 1)) or on (namespace, pod) label_replace((max by (namespace, pod) (cnpg_backends_max_tx_duration_seconds{namespace=\"$namespace\", cluster=\"$cluster\"})) * on (namespace, pod) group_left (role) ((label_replace((((1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 2 + max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * max by (namespace, pod) (cnpg_pg_replication_is_wal_receiver_up{namespace=\"$namespace\", cluster=\"$cluster\"}) - (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * 3 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 4) or on (namespace, pod) (max by (namespace, pod) (cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}) == 0) - 1 or on (namespace, pod) (max by (namespace, pod) (max_over_time(cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}[1h])) * 0 - 2)) == 2, \"role\", \"primary\", \"\", \"\") * 0 + 1) or on (namespace, pod) (label_replace((((1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 2 + max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * max by (namespace, pod) (cnpg_pg_replication_is_wal_receiver_up{namespace=\"$namespace\", cluster=\"$cluster\"}) - (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * 3 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 4) or on (namespace, pod) (max by (namespace, pod) (cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}) == 0) - 1 or on (namespace, pod) (max by (namespace, pod) (max_over_time(cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}[1h])) * 0 - 2)) != 2, \"role\", \"replica\", \"\", \"\") * 0 + 1)), \"node\", \"unknown node\", \"\", \"\")",
+     "legendFormat": "{{node}} {{role}}",
+     "refId": "A",
+     "range": true,
+     "instant": false,
+     "format": "time_series"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 0,
+      "showPoints": "never",
+      "spanNulls": false,
+      "axisSoftMin": 0,
+      "axisBorderShow": false,
+      "gradientMode": "none",
+      "lineInterpolation": "linear",
+      "thresholdsStyle": {
+       "mode": "dashed"
+      },
+      "axisPlacement": "auto",
+      "axisLabel": ""
+     },
+     "color": {
+      "mode": "palette-classic"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "transparent",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 300
+       }
+      ]
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": ".*primary.*"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "purple"
+        }
+       },
+       {
+        "id": "custom.lineWidth",
+        "value": 2
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": ".*replica.*"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "text"
+        }
+       },
+       {
+        "id": "custom.lineWidth",
+        "value": 1
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
+  },
+  {
+   "id": 12,
+   "type": "row",
+   "title": "Replication",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 21
+   },
+   "panels": []
+  },
+  {
+   "id": 13,
+   "type": "timeseries",
+   "title": "Replica lag",
+   "description": "Seconds each replica is behind in replaying the primary's changes.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 22,
+    "w": 12,
+    "h": 8
+   },
+   "transparent": true,
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "((max by (namespace, pod) (cnpg_pg_replication_lag{namespace=\"$namespace\", cluster=\"$cluster\"}) and on (namespace, pod) ((((max by (namespace, pod) (cnpg_collector_fencing_on{namespace=\"$namespace\", cluster=\"$cluster\"}) == 1) * 0 - 6) or on (namespace, pod) ((((((1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 2 + max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * max by (namespace, pod) (cnpg_pg_replication_is_wal_receiver_up{namespace=\"$namespace\", cluster=\"$cluster\"}) - (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * 3 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 4) or on (namespace, pod) (max by (namespace, pod) (cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}) == 0) - 1 or on (namespace, pod) (max by (namespace, pod) (max_over_time(cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}[1h])) * 0 - 2)) == 2 and on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_streaming_replicas{namespace=\"$namespace\", cluster=\"$cluster\"}) < max by (namespace, pod) (cnpg_collector_sync_replicas{namespace=\"$namespace\", cluster=\"$cluster\", value=\"expected\"}))) * 0 - 5) or on (namespace, pod) (((1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 2 + max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * max by (namespace, pod) (cnpg_pg_replication_is_wal_receiver_up{namespace=\"$namespace\", cluster=\"$cluster\"}) - (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * 3 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 4) or on (namespace, pod) (max by (namespace, pod) (cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}) == 0) - 1 or on (namespace, pod) (max by (namespace, pod) (max_over_time(cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}[1h])) * 0 - 2)))) != 2)) * on (namespace, pod) group_left (node) (topk by (namespace, pod) (1, max by (namespace, pod, node) (max_over_time(timestamp(container_memory_working_set_bytes{namespace=\"$namespace\", pod=~\"$cluster-[0-9]+\", container=\"postgres\"})[1h:1m]))) * 0 + 1)) or on (namespace, pod) label_replace(max by (namespace, pod) (cnpg_pg_replication_lag{namespace=\"$namespace\", cluster=\"$cluster\"}) and on (namespace, pod) ((((max by (namespace, pod) (cnpg_collector_fencing_on{namespace=\"$namespace\", cluster=\"$cluster\"}) == 1) * 0 - 6) or on (namespace, pod) ((((((1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 2 + max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * max by (namespace, pod) (cnpg_pg_replication_is_wal_receiver_up{namespace=\"$namespace\", cluster=\"$cluster\"}) - (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * 3 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 4) or on (namespace, pod) (max by (namespace, pod) (cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}) == 0) - 1 or on (namespace, pod) (max by (namespace, pod) (max_over_time(cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}[1h])) * 0 - 2)) == 2 and on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_streaming_replicas{namespace=\"$namespace\", cluster=\"$cluster\"}) < max by (namespace, pod) (cnpg_collector_sync_replicas{namespace=\"$namespace\", cluster=\"$cluster\", value=\"expected\"}))) * 0 - 5) or on (namespace, pod) (((1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 2 + max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * max by (namespace, pod) (cnpg_pg_replication_is_wal_receiver_up{namespace=\"$namespace\", cluster=\"$cluster\"}) - (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * 3 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 4) or on (namespace, pod) (max by (namespace, pod) (cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}) == 0) - 1 or on (namespace, pod) (max by (namespace, pod) (max_over_time(cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}[1h])) * 0 - 2)))) != 2), \"node\", \"unknown node\", \"\", \"\")",
+     "legendFormat": "{{node}}",
+     "refId": "A",
+     "range": true,
+     "instant": false,
+     "format": "time_series"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 0,
+      "showPoints": "never",
+      "spanNulls": false,
+      "axisSoftMin": 0,
+      "axisBorderShow": false,
+      "gradientMode": "none",
+      "lineInterpolation": "linear",
+      "thresholdsStyle": {
+       "mode": "dashed"
+      },
+      "axisPlacement": "auto",
+      "axisLabel": ""
+     },
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "text"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "transparent",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 1
+       },
+       {
+        "color": "red",
+        "value": 15
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
+  },
+  {
+   "id": 14,
+   "type": "timeseries",
+   "title": "Bytes not yet replayed",
+   "description": "WAL the primary has sent that each replica has not replayed yet.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 22,
+    "w": 12,
+    "h": 8
+   },
+   "transparent": true,
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "((label_replace(max by (namespace, application_name) (cnpg_pg_stat_replication_replay_diff_bytes{namespace=\"$namespace\", cluster=\"$cluster\"}), \"pod\", \"$1\", \"application_name\", \"(.+)\")) * on (namespace, pod) group_left (node) (topk by (namespace, pod) (1, max by (namespace, pod, node) (max_over_time(timestamp(container_memory_working_set_bytes{namespace=\"$namespace\", pod=~\"$cluster-[0-9]+\", container=\"postgres\"})[1h:1m]))) * 0 + 1)) or on (namespace, pod) label_replace(label_replace(max by (namespace, application_name) (cnpg_pg_stat_replication_replay_diff_bytes{namespace=\"$namespace\", cluster=\"$cluster\"}), \"pod\", \"$1\", \"application_name\", \"(.+)\"), \"node\", \"unknown node\", \"\", \"\")",
+     "legendFormat": "{{node}}",
+     "refId": "A",
+     "range": true,
+     "instant": false,
+     "format": "time_series"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "bytes",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 0,
+      "showPoints": "never",
+      "spanNulls": false,
+      "axisSoftMin": 0,
+      "axisBorderShow": false,
+      "gradientMode": "none",
+      "lineInterpolation": "linear",
+      "thresholdsStyle": {
+       "mode": "off"
+      },
+      "axisPlacement": "auto",
+      "axisLabel": ""
+     },
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "text"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "transparent",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
+  },
+  {
+   "id": 15,
+   "type": "row",
+   "title": "Certificates and rule checks",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 30
+   },
+   "panels": []
+  },
+  {
+   "id": 16,
+   "type": "bargauge",
+   "title": "Days until each cert-manager certificate expires",
+   "description": "Every Certificate that cert-manager manages in the Kubernetes cluster. Certificates made without cert-manager, such as a CA or client certificate supplied as a Secret, have no expiry metric and are not shown. Orange under 14 days, red under 3.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 31,
+    "w": 12,
+    "h": 8
+   },
+   "transparent": true,
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "sort(((certmanager_certificate_expiration_timestamp_seconds > 0) - time()) / 86400)",
+     "legendFormat": "{{name}}  ({{namespace}})",
+     "refId": "A",
+     "range": false,
+     "instant": true,
+     "format": "time_series"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "suffix: days",
+     "decimals": 0,
+     "min": 0,
+     "max": 90,
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 3
+       },
+       {
+        "color": "green",
+        "value": 14
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "orientation": "horizontal",
+    "displayMode": "basic",
+    "valueMode": "color",
+    "namePlacement": "left",
+    "showUnfilled": true,
+    "sizing": "manual",
+    "minVizHeight": 16,
+    "maxVizHeight": 22,
+    "minVizWidth": 8,
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "legend": {
+     "showLegend": false
+    }
+   }
+  },
+  {
+   "id": 17,
+   "type": "table",
+   "title": "Rule checks",
+   "description": "Each role and mapping check from the CNPG custom query and how many violations it finds.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 31,
+    "w": 12,
+    "h": 8
+   },
+   "transparent": true,
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "max by (rule, check) (cnpg_compliance_violations{namespace=\"$namespace\", cluster=\"$cluster\"})",
+     "legendFormat": "",
+     "refId": "A",
+     "range": false,
+     "instant": true,
+     "format": "table"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true
+      },
+      "renameByName": {
+       "rule": "Rule",
+       "check": "Check",
+       "Value": "Violations"
+      },
+      "indexByName": {
+       "rule": 0,
+       "check": 1,
+       "Value": 2
+      }
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "align": "left",
+      "cellOptions": {
+       "type": "auto"
+      }
+     },
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       },
+       {
+        "color": "red",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Violations"
+      },
+      "properties": [
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       },
+       {
+        "id": "custom.width",
+        "value": 110
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false
+    }
+   }
+  },
+  {
+   "id": 18,
+   "type": "row",
+   "title": "Nodes",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 39
+   },
+   "panels": []
+  },
+  {
+   "id": 19,
+   "type": "timeseries",
+   "title": "CPU",
+   "description": "Share of each node's CPU in use.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 40,
+    "w": 8,
+    "h": 7
+   },
+   "transparent": true,
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "sum by (node) (rate(container_cpu_usage_seconds_total{id=\"/\"}[$__rate_interval])) / max by (node) (machine_cpu_cores)",
+     "legendFormat": "{{node}}",
+     "refId": "A",
+     "range": true,
+     "instant": false,
+     "format": "time_series"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 0,
+      "showPoints": "never",
+      "spanNulls": false,
+      "axisSoftMin": 0,
+      "axisBorderShow": false,
+      "gradientMode": "none",
+      "lineInterpolation": "linear",
+      "thresholdsStyle": {
+       "mode": "dashed"
+      },
+      "axisPlacement": "auto",
+      "axisLabel": "",
+      "axisSoftMax": 1
+     },
+     "color": {
+      "mode": "palette-classic"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "transparent",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 0.9
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
+  },
+  {
+   "id": 20,
+   "type": "timeseries",
+   "title": "Memory",
+   "description": "Share of each node's memory in use (working set).",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "gridPos": {
+    "x": 8,
+    "y": 40,
+    "w": 8,
+    "h": 7
+   },
+   "transparent": true,
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "max by (node) (container_memory_working_set_bytes{id=\"/\"}) / max by (node) (machine_memory_bytes)",
+     "legendFormat": "{{node}}",
+     "refId": "A",
+     "range": true,
+     "instant": false,
+     "format": "time_series"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 0,
+      "showPoints": "never",
+      "spanNulls": false,
+      "axisSoftMin": 0,
+      "axisBorderShow": false,
+      "gradientMode": "none",
+      "lineInterpolation": "linear",
+      "thresholdsStyle": {
+       "mode": "dashed"
+      },
+      "axisPlacement": "auto",
+      "axisLabel": "",
+      "axisSoftMax": 1
+     },
+     "color": {
+      "mode": "palette-classic"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "transparent",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 0.9
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
+  },
+  {
+   "id": 21,
+   "type": "bargauge",
+   "title": "Disks",
+   "description": "Every disk of every node. Orange over 80 %, red over 90 %.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 40,
+    "w": 8,
+    "h": 7
+   },
+   "transparent": true,
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "sort_desc(max by (node, device) (container_fs_usage_bytes{id=\"/\", device=~\"/dev/(sd|vd|hd|xvd|nvme|mapper|md|dm-).*\"} / container_fs_limit_bytes{id=\"/\", device=~\"/dev/(sd|vd|hd|xvd|nvme|mapper|md|dm-).*\"}))",
+     "legendFormat": "{{node}}  {{device}}",
+     "refId": "A",
+     "range": false,
+     "instant": true,
+     "format": "time_series"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "decimals": 0,
+     "min": 0,
+     "max": 1,
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 0.8
+       },
+       {
+        "color": "red",
+        "value": 0.9
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "orientation": "horizontal",
+    "displayMode": "basic",
+    "valueMode": "color",
+    "namePlacement": "left",
+    "showUnfilled": true,
+    "sizing": "manual",
+    "minVizHeight": 16,
+    "maxVizHeight": 22,
+    "minVizWidth": 8,
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "legend": {
+     "showLegend": false
+    }
+   }
+  },
+  {
+   "id": 27,
+   "type": "row",
+   "title": "Storage, backups, WAL and vacuum",
+   "collapsed": true,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 47
+   },
+   "panels": [
+    {
+     "id": 22,
+     "type": "timeseries",
+     "title": "Volume use",
+     "description": "PGDATA volume use per instance.",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "gridPos": {
+      "x": 0,
+      "y": 48,
+      "w": 8,
+      "h": 7
+     },
+     "transparent": true,
+     "targets": [
+      {
+       "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+       },
+       "expr": "((label_replace(max by (namespace, persistentvolumeclaim) (1 - kubelet_volume_stats_available_bytes{namespace=\"$namespace\"} / kubelet_volume_stats_capacity_bytes{namespace=\"$namespace\"}), \"pod\", \"$1\", \"persistentvolumeclaim\", \"($cluster-[0-9]+)(-wal)?\")) * on (namespace, pod) group_left (node) (topk by (namespace, pod) (1, max by (namespace, pod, node) (max_over_time(timestamp(container_memory_working_set_bytes{namespace=\"$namespace\", pod=~\"$cluster-[0-9]+\", container=\"postgres\"})[1h:1m]))) * 0 + 1)) or on (namespace, pod) label_replace(label_replace(max by (namespace, persistentvolumeclaim) (1 - kubelet_volume_stats_available_bytes{namespace=\"$namespace\"} / kubelet_volume_stats_capacity_bytes{namespace=\"$namespace\"}), \"pod\", \"$1\", \"persistentvolumeclaim\", \"($cluster-[0-9]+)(-wal)?\"), \"node\", \"unknown node\", \"\", \"\")",
+       "legendFormat": "{{node}}",
+       "refId": "A",
+       "range": true,
+       "instant": false,
+       "format": "time_series"
+      }
+     ],
+     "fieldConfig": {
+      "defaults": {
+       "unit": "percentunit",
+       "custom": {
+        "drawStyle": "line",
+        "lineWidth": 1,
+        "fillOpacity": 0,
+        "showPoints": "never",
+        "spanNulls": false,
+        "axisSoftMin": 0,
+        "axisBorderShow": false,
+        "gradientMode": "none",
+        "lineInterpolation": "linear",
+        "thresholdsStyle": {
+         "mode": "off"
+        },
+        "axisPlacement": "auto",
+        "axisLabel": "",
+        "axisSoftMax": 1
+       },
+       "color": {
+        "mode": "palette-classic"
+       },
+       "thresholds": {
+        "mode": "absolute",
+        "steps": [
+         {
+          "color": "transparent",
+          "value": null
+         }
+        ]
+       }
+      },
+      "overrides": []
+     },
+     "options": {
+      "legend": {
+       "displayMode": "list",
+       "placement": "bottom",
+       "showLegend": true
+      },
+      "tooltip": {
+       "mode": "multi",
+       "sort": "desc"
+      }
+     }
+    },
+    {
+     "id": 23,
+     "type": "timeseries",
+     "title": "Time since last WAL archived",
+     "description": "On the primary. Grows when archiving to the object store fails.",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "gridPos": {
+      "x": 8,
+      "y": 48,
+      "w": 8,
+      "h": 7
+     },
+     "transparent": true,
+     "targets": [
+      {
+       "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+       },
+       "expr": "((max by (namespace, pod) (cnpg_pg_stat_archiver_seconds_since_last_archival{namespace=\"$namespace\", cluster=\"$cluster\"}) and on (namespace, pod) ((((1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 2 + max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * max by (namespace, pod) (cnpg_pg_replication_is_wal_receiver_up{namespace=\"$namespace\", cluster=\"$cluster\"}) - (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * 3 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 4) or on (namespace, pod) (max by (namespace, pod) (cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}) == 0) - 1 or on (namespace, pod) (max by (namespace, pod) (max_over_time(cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}[1h])) * 0 - 2)) == 2)) * on (namespace, pod) group_left (node) (topk by (namespace, pod) (1, max by (namespace, pod, node) (max_over_time(timestamp(container_memory_working_set_bytes{namespace=\"$namespace\", pod=~\"$cluster-[0-9]+\", container=\"postgres\"})[1h:1m]))) * 0 + 1)) or on (namespace, pod) label_replace(max by (namespace, pod) (cnpg_pg_stat_archiver_seconds_since_last_archival{namespace=\"$namespace\", cluster=\"$cluster\"}) and on (namespace, pod) ((((1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 2 + max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * max by (namespace, pod) (cnpg_pg_replication_is_wal_receiver_up{namespace=\"$namespace\", cluster=\"$cluster\"}) - (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * 3 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 4) or on (namespace, pod) (max by (namespace, pod) (cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}) == 0) - 1 or on (namespace, pod) (max by (namespace, pod) (max_over_time(cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}[1h])) * 0 - 2)) == 2), \"node\", \"unknown node\", \"\", \"\")",
+       "legendFormat": "{{node}}",
+       "refId": "A",
+       "range": true,
+       "instant": false,
+       "format": "time_series"
+      }
+     ],
+     "fieldConfig": {
+      "defaults": {
+       "unit": "s",
+       "custom": {
+        "drawStyle": "line",
+        "lineWidth": 1,
+        "fillOpacity": 0,
+        "showPoints": "never",
+        "spanNulls": false,
+        "axisSoftMin": 0,
+        "axisBorderShow": false,
+        "gradientMode": "none",
+        "lineInterpolation": "linear",
+        "thresholdsStyle": {
+         "mode": "off"
+        },
+        "axisPlacement": "auto",
+        "axisLabel": ""
+       },
+       "color": {
+        "mode": "fixed",
+        "fixedColor": "purple"
+       },
+       "thresholds": {
+        "mode": "absolute",
+        "steps": [
+         {
+          "color": "transparent",
+          "value": null
+         }
+        ]
+       }
+      },
+      "overrides": []
+     },
+     "options": {
+      "legend": {
+       "displayMode": "list",
+       "placement": "bottom",
+       "showLegend": true
+      },
+      "tooltip": {
+       "mode": "multi",
+       "sort": "desc"
+      }
+     }
+    },
+    {
+     "id": 24,
+     "type": "timeseries",
+     "title": "Transaction ID age",
+     "description": "Oldest unfrozen transaction ID per database. Wraparound trouble starts near 2 billion.",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "gridPos": {
+      "x": 16,
+      "y": 48,
+      "w": 8,
+      "h": 7
+     },
+     "transparent": true,
+     "targets": [
+      {
+       "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+       },
+       "expr": "max by (datname) (cnpg_pg_database_xid_age{namespace=\"$namespace\", cluster=\"$cluster\"})",
+       "legendFormat": "{{datname}}",
+       "refId": "A",
+       "range": true,
+       "instant": false,
+       "format": "time_series"
+      }
+     ],
+     "fieldConfig": {
+      "defaults": {
+       "unit": "short",
+       "custom": {
+        "drawStyle": "line",
+        "lineWidth": 1,
+        "fillOpacity": 0,
+        "showPoints": "never",
+        "spanNulls": false,
+        "axisSoftMin": 0,
+        "axisBorderShow": false,
+        "gradientMode": "none",
+        "lineInterpolation": "linear",
+        "thresholdsStyle": {
+         "mode": "off"
+        },
+        "axisPlacement": "auto",
+        "axisLabel": ""
+       },
+       "color": {
+        "mode": "palette-classic"
+       },
+       "thresholds": {
+        "mode": "absolute",
+        "steps": [
+         {
+          "color": "transparent",
+          "value": null
+         }
+        ]
+       }
+      },
+      "overrides": []
+     },
+     "options": {
+      "legend": {
+       "displayMode": "list",
+       "placement": "bottom",
+       "showLegend": true
+      },
+      "tooltip": {
+       "mode": "multi",
+       "sort": "desc"
+      }
+     }
+    },
+    {
+     "id": 25,
+     "type": "stat",
+     "title": "Last backup",
+     "description": "Age of the newest completed base backup (Barman Cloud plugin). Red after 26 h, the daily schedule plus 2 h.",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "gridPos": {
+      "x": 0,
+      "y": 55,
+      "w": 4,
+      "h": 5
+     },
+     "transparent": false,
+     "targets": [
+      {
+       "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+       },
+       "expr": "time() - max(barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace=\"$namespace\", cluster=\"$cluster\"} > 0)",
+       "legendFormat": "",
+       "refId": "A",
+       "range": false,
+       "instant": true,
+       "format": "time_series"
+      }
+     ],
+     "fieldConfig": {
+      "defaults": {
+       "unit": "s",
+       "thresholds": {
+        "mode": "absolute",
+        "steps": [
+         {
+          "color": "green",
+          "value": null
+         },
+         {
+          "color": "red",
+          "value": 93600
+         }
+        ]
+       },
+       "mappings": [],
+       "color": {
+        "mode": "thresholds"
+       },
+       "decimals": 0,
+       "noValue": "None"
+      },
+      "overrides": []
+     },
+     "options": {
+      "reduceOptions": {
+       "calcs": [
+        "lastNotNull"
+       ],
+       "fields": "",
+       "values": false
+      },
+      "colorMode": "background_solid",
+      "graphMode": "none",
+      "textMode": "auto",
+      "justifyMode": "center",
+      "orientation": "auto",
+      "wideLayout": true,
+      "showPercentChange": false,
+      "text": {
+       "valueSize": 28
+      }
+     }
+    },
+    {
+     "id": 26,
+     "type": "timeseries",
+     "title": "WAL archive failures",
+     "description": "Failed WAL archive attempts per minute on the primary.",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "gridPos": {
+      "x": 4,
+      "y": 55,
+      "w": 10,
+      "h": 5
+     },
+     "transparent": true,
+     "targets": [
+      {
+       "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+       },
+       "expr": "((max by (namespace, pod) (rate(cnpg_pg_stat_archiver_failed_count{namespace=\"$namespace\", cluster=\"$cluster\"}[$__rate_interval]) * 60) and on (namespace, pod) ((((1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 2 + max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * max by (namespace, pod) (cnpg_pg_replication_is_wal_receiver_up{namespace=\"$namespace\", cluster=\"$cluster\"}) - (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * 3 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 4) or on (namespace, pod) (max by (namespace, pod) (cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}) == 0) - 1 or on (namespace, pod) (max by (namespace, pod) (max_over_time(cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}[1h])) * 0 - 2)) == 2)) * on (namespace, pod) group_left (node) (topk by (namespace, pod) (1, max by (namespace, pod, node) (max_over_time(timestamp(container_memory_working_set_bytes{namespace=\"$namespace\", pod=~\"$cluster-[0-9]+\", container=\"postgres\"})[1h:1m]))) * 0 + 1)) or on (namespace, pod) label_replace(max by (namespace, pod) (rate(cnpg_pg_stat_archiver_failed_count{namespace=\"$namespace\", cluster=\"$cluster\"}[$__rate_interval]) * 60) and on (namespace, pod) ((((1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 2 + max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * max by (namespace, pod) (cnpg_pg_replication_is_wal_receiver_up{namespace=\"$namespace\", cluster=\"$cluster\"}) - (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})) * (1 - ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"})))) * 3 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * ((max by (namespace, pod) (label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\")) * 0 + 1) or on (namespace, pod) (max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}) * 0 and on () count(label_replace(max by (namespace, lease_holder) (kube_lease_owner{namespace=\"$namespace\", lease=\"$cluster\", owner_kind=\"Cluster\"}), \"pod\", \"$1\", \"lease_holder\", \"(.+)\"))) or on (namespace, pod) (1 - max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=\"$namespace\", cluster=\"$cluster\"}))) * 4) or on (namespace, pod) (max by (namespace, pod) (cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}) == 0) - 1 or on (namespace, pod) (max by (namespace, pod) (max_over_time(cnpg_collector_up{namespace=\"$namespace\", cluster=\"$cluster\"}[1h])) * 0 - 2)) == 2), \"node\", \"unknown node\", \"\", \"\")",
+       "legendFormat": "{{node}}",
+       "refId": "A",
+       "range": true,
+       "instant": false,
+       "format": "time_series"
+      }
+     ],
+     "fieldConfig": {
+      "defaults": {
+       "unit": "short",
+       "custom": {
+        "drawStyle": "line",
+        "lineWidth": 1,
+        "fillOpacity": 0,
+        "showPoints": "never",
+        "spanNulls": false,
+        "axisSoftMin": 0,
+        "axisBorderShow": false,
+        "gradientMode": "none",
+        "lineInterpolation": "linear",
+        "thresholdsStyle": {
+         "mode": "off"
+        },
+        "axisPlacement": "auto",
+        "axisLabel": ""
+       },
+       "color": {
+        "mode": "fixed",
+        "fixedColor": "red"
+       },
+       "thresholds": {
+        "mode": "absolute",
+        "steps": [
+         {
+          "color": "transparent",
+          "value": null
+         }
+        ]
+       }
+      },
+      "overrides": []
+     },
+     "options": {
+      "legend": {
+       "displayMode": "list",
+       "placement": "bottom",
+       "showLegend": true
+      },
+      "tooltip": {
+       "mode": "multi",
+       "sort": "desc"
+      }
+     }
+    }
+   ]
+  }
+ ]
+}
