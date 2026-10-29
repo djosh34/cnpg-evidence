@@ -1,0 +1,346 @@
+# Unit tests of rules.yaml: promtool test rules rules.test.yaml
+# The input series carry the labels the scrape adds (namespace, cluster, pod).
+rule_files: [rules.yaml]
+evaluation_interval: 1m
+
+tests:
+  # pg-1 is the primary, pg-2 and pg-3 stream from it. Nothing fires.
+  - name: healthy
+    interval: 1m
+    input_series:
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-1"}', values: '1x20'}
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-2"}', values: '1x20'}
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-3"}', values: '1x20'}
+      - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x20'}
+      - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-2"}', values: '1x20'}
+      - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-3"}', values: '1x20'}
+      - {series: 'cnpg_pg_replication_slots_active{namespace="databases",cluster="pg",pod="pg-1",slot_name="_cnpg_pg_2",slot_type="physical"}', values: '1x20'}
+      - {series: 'cnpg_pg_replication_slots_active{namespace="databases",cluster="pg",pod="pg-1",slot_name="_cnpg_pg_3",slot_type="physical"}', values: '1x20'}
+      # The replicas keep copies of the other replica's slot, inactive.
+      - {series: 'cnpg_pg_replication_slots_active{namespace="databases",cluster="pg",pod="pg-2",slot_name="_cnpg_pg_3",slot_type="physical"}', values: '0x20'}
+      - {series: 'cnpg_pg_replication_slots_active{namespace="databases",cluster="pg",pod="pg-3",slot_name="_cnpg_pg_2",slot_type="physical"}', values: '0x20'}
+      - {series: 'cnpg_pg_replication_lag{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x20'}
+      - {series: 'cnpg_pg_replication_lag{namespace="databases",cluster="pg",pod="pg-2"}', values: '1x20'}
+      - {series: 'cnpg_pg_replication_lag{namespace="databases",cluster="pg",pod="pg-3"}', values: '0x20'}
+      - {series: 'barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace="databases",cluster="pg",pod="pg-1"}', values: '600x20'}
+      - {series: 'barman_cloud_cloudnative_pg_io_last_failed_backup_timestamp{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x20'}
+      - {series: 'cnpg_pg_stat_archiver_last_archived_time{namespace="databases",cluster="pg",pod="pg-1"}', values: '800x20'}
+      - {series: 'cnpg_pg_stat_archiver_last_failed_time{namespace="databases",cluster="pg",pod="pg-1"}', values: '100x20'}
+      # A replica does not archive; its archiver numbers do not count.
+      - {series: 'cnpg_pg_stat_archiver_last_archived_time{namespace="databases",cluster="pg",pod="pg-2"}', values: '0x20'}
+      - {series: 'cnpg_pg_stat_archiver_last_failed_time{namespace="databases",cluster="pg",pod="pg-2"}', values: '100x20'}
+      - {series: 'kubelet_volume_stats_used_bytes{namespace="databases",persistentvolumeclaim="pg-1"}', values: '50x20'}
+      - {series: 'kubelet_volume_stats_capacity_bytes{namespace="databases",persistentvolumeclaim="pg-1"}', values: '100x20'}
+      - {series: 'certmanager_certificate_expiration_timestamp_seconds{namespace="databases",name="pg-server"}', values: '7776000x20'}
+      - {series: 'cnpg_backends_total{namespace="databases",cluster="pg",pod="pg-1",datname="orders",state="active"}', values: '10x20'}
+      - {series: 'cnpg_pg_settings_setting{namespace="databases",cluster="pg",pod="pg-1",name="max_connections"}', values: '100x20'}
+      - {series: 'cnpg_pg_database_xid_age{namespace="databases",cluster="pg",pod="pg-1",datname="orders"}', values: '1000x20'}
+      - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-1",rule="1",check="unexpected_role"}', values: '0x20'}
+      - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-1",rule="4",check="app_role"}', values: '0x20'}
+      - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-1",rule="3",check="role_attribute"}', values: '0x20'}
+      - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-1",rule="1",check="cn_mapping"}', values: '0x20'}
+      - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-2",rule="1",check="unexpected_role"}', values: '0x20'}
+      - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-2",rule="4",check="app_role"}', values: '0x20'}
+      - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-2",rule="3",check="role_attribute"}', values: '0x20'}
+      - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-2",rule="1",check="cn_mapping"}', values: '0x20'}
+      - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-3",rule="1",check="unexpected_role"}', values: '0x20'}
+      - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-3",rule="4",check="app_role"}', values: '0x20'}
+      - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-3",rule="3",check="role_attribute"}', values: '0x20'}
+      - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-3",rule="1",check="cn_mapping"}', values: '0x20'}
+    promql_expr_test:
+      - expr: cnpg_sample:replica_streaming
+        eval_time: 5m
+        exp_samples:
+          - {labels: 'cnpg_sample:replica_streaming{namespace="databases",cluster="pg",pod="pg-2"}', value: 1}
+          - {labels: 'cnpg_sample:replica_streaming{namespace="databases",cluster="pg",pod="pg-3"}', value: 1}
+      - expr: cnpg_sample:volume_used_ratio
+        eval_time: 5m
+        exp_samples:
+          - {labels: 'cnpg_sample:volume_used_ratio{namespace="databases",cluster="pg",persistentvolumeclaim="pg-1"}', value: 0.5}
+    alert_rule_test:
+      - {eval_time: 20m, alertname: CNPGDatabaseDown}
+      - {eval_time: 20m, alertname: CNPGReplicaDown}
+      - {eval_time: 20m, alertname: CNPGReplicaLag}
+      - {eval_time: 20m, alertname: CNPGBackupFailing}
+      - {eval_time: 20m, alertname: CNPGVolumeFull}
+      - {eval_time: 20m, alertname: CNPGCertificateExpiring}
+      - {eval_time: 20m, alertname: CNPGConnectionsHigh}
+      - {eval_time: 20m, alertname: CNPGTransactionIDWraparound}
+      - {eval_time: 20m, alertname: CNPGComplianceViolation}
+      - {eval_time: 20m, alertname: CNPGMetricsMissing}
+
+  # PostgreSQL is down on every instance: one alert for the database.
+  - name: database down
+    interval: 1m
+    input_series:
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x10'}
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-2"}', values: '0x10'}
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-3"}', values: '0x10'}
+    alert_rule_test:
+      - {eval_time: 2m, alertname: CNPGDatabaseDown}
+      - eval_time: 4m
+        alertname: CNPGDatabaseDown
+        exp_alerts:
+          - exp_labels: {severity: critical, namespace: databases, cluster: pg}
+            exp_annotations:
+              summary: No instance of databases/pg reports a running primary.
+              description: PostgreSQL is down on every instance, no replica was promoted, or the metrics of the primary do not arrive.
+
+  # No metric of the database arrives at all.
+  - name: database down, no metrics
+    interval: 1m
+    input_series:
+      - {series: 'cnpg_collector_up{namespace="other",cluster="other",pod="other-1"}', values: '1x10'}
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: CNPGDatabaseDown
+        exp_alerts:
+          - exp_labels: {severity: critical, namespace: databases, cluster: pg}
+            exp_annotations:
+              summary: No instance of databases/pg reports a running primary.
+              description: PostgreSQL is down on every instance, no replica was promoted, or the metrics of the primary do not arrive.
+
+  # The primary's pod is gone for 2 min until pg-2 is promoted: shorter than
+  # the 3 min the alert waits.
+  - name: failover
+    interval: 1m
+    input_series:
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-1"}', values: '1 1 _x8'}
+      - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-1"}', values: '0 0 _x8'}
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-2"}', values: '1x10'}
+      - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-2"}', values: '1 1 1 1 0x6'}
+    alert_rule_test:
+      - {eval_time: 10m, alertname: CNPGDatabaseDown}
+
+  # pg-3's node is down: the primary's slot for it is inactive and its own
+  # metrics are gone. Alertmanager mutes the metrics alert under the replica one.
+  - name: replica down
+    interval: 1m
+    input_series:
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-1"}', values: '1x15'}
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-2"}', values: '1x15'}
+      - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x15'}
+      - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-2"}', values: '1x15'}
+      - {series: 'cnpg_pg_replication_slots_active{namespace="databases",cluster="pg",pod="pg-1",slot_name="_cnpg_pg_2",slot_type="physical"}', values: '1x15'}
+      - {series: 'cnpg_pg_replication_slots_active{namespace="databases",cluster="pg",pod="pg-1",slot_name="_cnpg_pg_3",slot_type="physical"}', values: '0x15'}
+      - {series: 'cnpg_pg_replication_slots_active{namespace="databases",cluster="pg",pod="pg-2",slot_name="_cnpg_pg_3",slot_type="physical"}', values: '0x15'}
+      - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-1",rule="1",check="unexpected_role"}', values: '0x15'}
+      - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-1",rule="4",check="app_role"}', values: '0x15'}
+      - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-1",rule="3",check="role_attribute"}', values: '0x15'}
+      - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-1",rule="1",check="cn_mapping"}', values: '0x15'}
+      - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-2",rule="1",check="unexpected_role"}', values: '0x15'}
+      - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-2",rule="4",check="app_role"}', values: '0x15'}
+      - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-2",rule="3",check="role_attribute"}', values: '0x15'}
+      - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-2",rule="1",check="cn_mapping"}', values: '0x15'}
+    alert_rule_test:
+      - {eval_time: 4m, alertname: CNPGReplicaDown}
+      - eval_time: 6m
+        alertname: CNPGReplicaDown
+        exp_alerts:
+          - exp_labels: {severity: critical, namespace: databases, cluster: pg, pod: pg-3}
+            exp_annotations:
+              summary: Replica pg-3 of databases/pg does not stream from the primary.
+      - eval_time: 11m
+        alertname: CNPGMetricsMissing
+        exp_alerts:
+          - exp_labels: {severity: critical, namespace: databases, cluster: pg, pod: pg-3}
+            exp_annotations:
+              summary: Metrics of instance pg-3 of databases/pg are missing.
+              description: Its scrape fails, or the compliance query fails on it, for example without its grants.
+      - {eval_time: 11m, alertname: CNPGDatabaseDown}
+
+  - name: replica lag
+    interval: 1m
+    input_series:
+      - {series: 'cnpg_pg_replication_lag{namespace="databases",cluster="pg",pod="pg-2"}', values: '0x4 20x10'}
+      - {series: 'cnpg_pg_replication_lag{namespace="databases",cluster="pg",pod="pg-3"}', values: '15x14'}
+    alert_rule_test:
+      - {eval_time: 6m, alertname: CNPGReplicaLag}
+      - eval_time: 7m
+        alertname: CNPGReplicaLag
+        exp_alerts:
+          - exp_labels: {severity: critical, namespace: databases, cluster: pg, pod: pg-2}
+            exp_annotations:
+              summary: Replica pg-2 of databases/pg is 20s behind the primary.
+
+  # The last backup ran at 1 h; at 27 h it is older than 26 h.
+  - name: backup too old
+    interval: 10m
+    input_series:
+      - {series: 'barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace="databases",cluster="pg",pod="pg-1"}', values: '3600x200'}
+      - {series: 'barman_cloud_cloudnative_pg_io_last_failed_backup_timestamp{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x200'}
+    alert_rule_test:
+      - {eval_time: 26h, alertname: CNPGBackupFailing}
+      - eval_time: 28h
+        alertname: CNPGBackupFailing
+        exp_alerts:
+          - exp_labels: {severity: critical, namespace: databases, cluster: pg}
+            exp_annotations:
+              summary: Backups of databases/pg fail or are too old.
+              description: The last backup is older than 26 h or missing, the last backup failed, or WAL archiving fails.
+
+  - name: backup failed
+    interval: 1m
+    input_series:
+      - {series: 'barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace="databases",cluster="pg",pod="pg-1"}', values: '100x20'}
+      - {series: 'barman_cloud_cloudnative_pg_io_last_failed_backup_timestamp{namespace="databases",cluster="pg",pod="pg-1"}', values: '200x20'}
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: CNPGBackupFailing
+        exp_alerts:
+          - exp_labels: {severity: critical, namespace: databases, cluster: pg}
+            exp_annotations:
+              summary: Backups of databases/pg fail or are too old.
+              description: The last backup is older than 26 h or missing, the last backup failed, or WAL archiving fails.
+
+  - name: WAL archiving fails
+    interval: 1m
+    input_series:
+      - {series: 'barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace="databases",cluster="pg",pod="pg-1"}', values: '100x20'}
+      - {series: 'barman_cloud_cloudnative_pg_io_last_failed_backup_timestamp{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x20'}
+      - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x20'}
+      - {series: 'cnpg_pg_stat_archiver_last_archived_time{namespace="databases",cluster="pg",pod="pg-1"}', values: '400x20'}
+      - {series: 'cnpg_pg_stat_archiver_last_failed_time{namespace="databases",cluster="pg",pod="pg-1"}', values: '400+60x20'}
+    alert_rule_test:
+      - {eval_time: 9m, alertname: CNPGBackupFailing}
+      - eval_time: 11m
+        alertname: CNPGBackupFailing
+        exp_alerts:
+          - exp_labels: {severity: critical, namespace: databases, cluster: pg}
+            exp_annotations:
+              summary: Backups of databases/pg fail or are too old.
+              description: The last backup is older than 26 h or missing, the last backup failed, or WAL archiving fails.
+
+  # The backup plugin reports nothing.
+  - name: backup metrics missing
+    interval: 1m
+    input_series:
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-1"}', values: '1x20'}
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: CNPGBackupFailing
+        exp_alerts:
+          - exp_labels: {severity: critical, namespace: databases, cluster: pg}
+            exp_annotations:
+              summary: Backups of databases/pg fail or are too old.
+              description: The last backup is older than 26 h or missing, the last backup failed, or WAL archiving fails.
+
+  # pg-1 at 85 % warns; pg-2 at 95 % fires both, and Alertmanager mutes the
+  # warning. A volume of another application does not count.
+  - name: volume full
+    interval: 1m
+    input_series:
+      - {series: 'kubelet_volume_stats_used_bytes{namespace="databases",persistentvolumeclaim="pg-1"}', values: '85x10'}
+      - {series: 'kubelet_volume_stats_capacity_bytes{namespace="databases",persistentvolumeclaim="pg-1"}', values: '100x10'}
+      - {series: 'kubelet_volume_stats_used_bytes{namespace="databases",persistentvolumeclaim="pg-2-wal"}', values: '95x10'}
+      - {series: 'kubelet_volume_stats_capacity_bytes{namespace="databases",persistentvolumeclaim="pg-2-wal"}', values: '100x10'}
+      - {series: 'kubelet_volume_stats_used_bytes{namespace="storage",persistentvolumeclaim="data-store-0"}', values: '99x10'}
+      - {series: 'kubelet_volume_stats_capacity_bytes{namespace="storage",persistentvolumeclaim="data-store-0"}', values: '100x10'}
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: CNPGVolumeFull
+        exp_alerts:
+          - exp_labels: {severity: warning, namespace: databases, cluster: pg, persistentvolumeclaim: pg-1}
+            exp_annotations:
+              summary: Volume pg-1 of databases/pg is 85% full.
+          - exp_labels: {severity: warning, namespace: databases, cluster: pg, persistentvolumeclaim: pg-2-wal}
+            exp_annotations:
+              summary: Volume pg-2-wal of databases/pg is 95% full.
+          - exp_labels: {severity: critical, namespace: databases, cluster: pg, persistentvolumeclaim: pg-2-wal}
+            exp_annotations:
+              summary: Volume pg-2-wal of databases/pg is 95% full.
+
+  # pg-server expires in 10 days, pg-replication in 2. A certificate not yet
+  # issued reports 0 and does not count.
+  - name: certificates expiring
+    interval: 1m
+    input_series:
+      - {series: 'certmanager_certificate_expiration_timestamp_seconds{namespace="databases",name="pg-server"}', values: '864000x20'}
+      - {series: 'certmanager_certificate_expiration_timestamp_seconds{namespace="databases",name="pg-replication"}', values: '172800x20'}
+      - {series: 'certmanager_certificate_expiration_timestamp_seconds{namespace="databases",name="new"}', values: '0x20'}
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: CNPGCertificateExpiring
+        exp_alerts:
+          - exp_labels: {severity: warning, namespace: databases, name: pg-server}
+            exp_annotations:
+              summary: Certificate databases/pg-server expires in 9d 23h 40m 0s.
+          - exp_labels: {severity: warning, namespace: databases, name: pg-replication}
+            exp_annotations:
+              summary: Certificate databases/pg-replication expires in 1d 23h 40m 0s.
+          - exp_labels: {severity: critical, namespace: databases, name: pg-replication}
+            exp_annotations:
+              summary: Certificate databases/pg-replication expires in 1d 23h 40m 0s.
+
+  - name: connections high
+    interval: 1m
+    input_series:
+      - {series: 'cnpg_backends_total{namespace="databases",cluster="pg",pod="pg-1",datname="orders",state="active"}', values: '50x10'}
+      - {series: 'cnpg_backends_total{namespace="databases",cluster="pg",pod="pg-1",datname="billing",state="idle"}', values: '45x10'}
+      - {series: 'cnpg_pg_settings_setting{namespace="databases",cluster="pg",pod="pg-1",name="max_connections"}', values: '100x10'}
+      - {series: 'cnpg_backends_total{namespace="databases",cluster="pg",pod="pg-2",datname="orders",state="active"}', values: '90x10'}
+      - {series: 'cnpg_pg_settings_setting{namespace="databases",cluster="pg",pod="pg-2",name="max_connections"}', values: '100x10'}
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: CNPGConnectionsHigh
+        exp_alerts:
+          - exp_labels: {severity: critical, namespace: databases, cluster: pg, pod: pg-1}
+            exp_annotations:
+              summary: Instance pg-1 of databases/pg uses 95% of max_connections.
+
+  - name: transaction ID wraparound
+    interval: 1m
+    input_series:
+      - {series: 'cnpg_pg_database_xid_age{namespace="databases",cluster="pg",pod="pg-1",datname="orders"}', values: '1200000000x20'}
+      - {series: 'cnpg_pg_database_xid_age{namespace="databases",cluster="pg",pod="pg-1",datname="billing"}', values: '5000x20'}
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: CNPGTransactionIDWraparound
+        exp_alerts:
+          - exp_labels: {severity: critical, namespace: databases, cluster: pg}
+            exp_annotations:
+              summary: The oldest transaction ID of databases/pg is 1.2G transactions old.
+              description: Vacuum does not freeze old rows; find the database with the highest cnpg_pg_database_xid_age.
+
+  # A new role on the primary reaches every instance: one alert for the check.
+  - name: compliance violation
+    interval: 1m
+    input_series:
+      - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-1",rule="1",check="unexpected_role"}', values: '0 1x10'}
+      - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-2",rule="1",check="unexpected_role"}', values: '0 1x10'}
+      - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-1",rule="3",check="role_attribute"}', values: '0x10'}
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: CNPGComplianceViolation
+        exp_alerts:
+          - exp_labels: {severity: critical, namespace: databases, cluster: pg, rule: "1", check: unexpected_role}
+            exp_annotations:
+              summary: Check unexpected_role of rule 1 fails on databases/pg.
+              description: Run evidence.sh against desired.yaml to see which role, attribute or mapping changed.
+
+  # pg-2 reports three of the four checks, pg-3 none; pg-1 all four.
+  - name: compliance checks missing
+    interval: 1m
+    input_series:
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-1"}', values: '1x15'}
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-2"}', values: '1x15'}
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-3"}', values: '1x15'}
+      - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-1",rule="1",check="unexpected_role"}', values: '0x15'}
+      - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-1",rule="4",check="app_role"}', values: '0x15'}
+      - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-1",rule="3",check="role_attribute"}', values: '0x15'}
+      - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-1",rule="1",check="cn_mapping"}', values: '0x15'}
+      - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-2",rule="1",check="unexpected_role"}', values: '0x15'}
+      - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-2",rule="4",check="app_role"}', values: '0x15'}
+      - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-2",rule="3",check="role_attribute"}', values: '0x15'}
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: CNPGMetricsMissing
+        exp_alerts:
+          - exp_labels: {severity: critical, namespace: databases, cluster: pg, pod: pg-2}
+            exp_annotations:
+              summary: Metrics of instance pg-2 of databases/pg are missing.
+              description: Its scrape fails, or the compliance query fails on it, for example without its grants.
+          - exp_labels: {severity: critical, namespace: databases, cluster: pg, pod: pg-3}
+            exp_annotations:
+              summary: Metrics of instance pg-3 of databases/pg are missing.
+              description: Its scrape fails, or the compliance query fails on it, for example without its grants.

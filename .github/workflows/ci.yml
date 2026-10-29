@@ -25,6 +25,8 @@ jobs:
           python3 --version
       - name: Script tests
         run: bash scripts/test.sh
+      - name: Monitoring rules
+        run: bash samples/monitoring/check.sh
 
   page:
     runs-on: ubuntu-24.04
