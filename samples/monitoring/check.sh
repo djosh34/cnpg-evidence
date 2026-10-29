@@ -41,7 +41,7 @@ echo "ok: every alert goes to the databases receiver"
 
 # dashboard.json is up to date with dashboard.py and rules.yaml.
 python3 -I "$here/dashboard.py" --out "$tmp/dashboard.json"
-if ! diff -u "$here/dashboard.json" "$tmp/dashboard.json" >/dev/null; then
+if ! diff -u "$here/dashboard.json" "$tmp/dashboard.json" >&2; then
   echo "check.sh: dashboard.json is out of date; run python3 samples/monitoring/dashboard.py" >&2
   exit 1
 fi

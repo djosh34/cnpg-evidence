@@ -344,7 +344,7 @@ def dashboard(rules):
     y += 1
     panels.append(ts(
         "Replica lag", "Seconds each replica is behind in replaying the primary's changes.",
-        [tgt(by_node(f"max by (namespace, pod) (cnpg_pg_replication_lag{{{S}}}) and on (namespace, pod) (({STATE}) != 2)"), "{{node}}")],
+        [tgt(by_node(f"max by (namespace, pod) (cnpg_pg_replication_lag{{{S}}}) and on (namespace, pod) ({RR} == 1)"), "{{node}}")],
         gp(0, y, 12, 8), unit="s", fixed=REPLICA, thr=thresholds((None, "transparent"), (1, WARN), (15, BAD)), thr_style="dashed"))
     panels.append(ts(
         "Bytes not yet replayed", "WAL the primary has sent that each replica has not replayed yet.",
@@ -393,7 +393,7 @@ def dashboard(rules):
     # ---- Detail, collapsed
     detail = [
         ts("Volume use", "PGDATA volume use per instance.",
-           [tgt(by_node('label_replace(max by (namespace, persistentvolumeclaim) (1 - kubelet_volume_stats_available_bytes{namespace="$namespace"}'
+           [tgt(by_node('label_replace(max by (namespace, persistentvolumeclaim) (kubelet_volume_stats_used_bytes{namespace="$namespace"}'
                         ' / kubelet_volume_stats_capacity_bytes{namespace="$namespace"}), "pod", "$1", "persistentvolumeclaim", "($cluster-[0-9]+)(-wal)?")'),
                 "{{node}}")],
            gp(0, y + 1, 8, 7), unit="percentunit", soft_max=1),
@@ -433,8 +433,10 @@ def dashboard(rules):
 def healthy_test(rules, tests, rules_dir):
     """A promtool test: on every case of rules.test.yaml, at every time it checks, the Healthy
     expression equals the number of critical alerts that are pending or firing for the database."""
-    database = next(r for g in rules["groups"] for r in g["rules"] if r.get("record") == "cnpg_sample:database")["labels"]
     expr, _ = healthy(rules)
+    database = next((r.get("labels") for g in rules["groups"] for r in g["rules"] if r.get("record") == "cnpg_sample:database"), None)
+    if not database or set(database) != {"namespace", "cluster"}:
+        sys.exit("dashboard.py: rules.yaml has no cnpg_sample:database rule with a namespace and cluster label")
     expr = expr.replace("$namespace", database["namespace"]).replace("$cluster", database["cluster"])
     alerts = (f'count(ALERTS{{severity="critical", namespace="{database["namespace"]}", cluster="{database["cluster"]}"}})'
               " or vector(0)")
