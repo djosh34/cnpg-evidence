@@ -26,10 +26,11 @@ inhibit_rules:
   - source_matchers: ['alertname="CNPGDatabaseDown"']
     target_matchers: ['alertname=~"CNPGReplicaDown|CNPGReplicaLag|CNPGBackupFailing|CNPGMetricsMissing"']
     equal: [namespace, cluster]
-  # A replica that is down mutes its own missing metrics.
+  # A replica that is down mutes missing metrics of the same database: while
+  # an instance's node is lost, CNPG can stop the query metrics everywhere.
   - source_matchers: ['alertname="CNPGReplicaDown"']
     target_matchers: ['alertname="CNPGMetricsMissing"']
-    equal: [namespace, cluster, pod]
+    equal: [namespace, cluster]
   # Critical mutes the warning of the same alert and object.
   - source_matchers: ['alertname=~"CNPG.+"', 'severity="critical"']
     target_matchers: ['alertname=~"CNPG.+"', 'severity="warning"']

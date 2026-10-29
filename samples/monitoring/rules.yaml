@@ -53,13 +53,23 @@ groups:
           summary: No instance of {{ $labels.namespace }}/{{ $labels.cluster }} reports a running primary.
           description: PostgreSQL is down or fenced on every instance, no replica was promoted, or the metrics of the primary do not arrive.
 
+      # A replica the primary keeps an inactive slot for, or an instance seen in
+      # the last day whose metrics stopped: its pod or node is gone, or its
+      # scrape fails. The second part also holds while the exporters report
+      # no query metrics, and so no slots.
       - alert: CNPGReplicaDown
-        expr: cnpg_sample:replica_streaming == 0
+        expr: |
+          cnpg_sample:replica_streaming == 0
+          or
+          (
+            max by (namespace, cluster, pod) (max_over_time(cnpg_collector_up[1d]))
+              unless on (namespace, pod) cnpg_collector_up
+          )
         for: 5m
         labels:
           severity: critical
         annotations:
-          summary: Replica {{ $labels.pod }} of {{ $labels.namespace }}/{{ $labels.cluster }} does not stream from the primary.
+          summary: Instance {{ $labels.pod }} of {{ $labels.namespace }}/{{ $labels.cluster }} does not stream from the primary or reports no metrics.
 
       - alert: CNPGReplicaLag
         expr: max by (namespace, cluster, pod) (cnpg_pg_replication_lag) > 15
@@ -167,13 +177,10 @@ groups:
           summary: Check {{ $labels.check }} of rule {{ $labels.rule }} fails on {{ $labels.namespace }}/{{ $labels.cluster }}.
           description: Run evidence.sh against desired.yaml to see which role, attribute or mapping changed.
 
-      # A replica the primary keeps a slot for that reports no metrics, or an
-      # instance that answers but reports fewer than the four checks of the
-      # compliance query.
+      # An instance that answers but reports fewer than the four checks of the
+      # compliance query. An instance that reports nothing is CNPGReplicaDown.
       - alert: CNPGMetricsMissing
         expr: |
-          (cnpg_sample:replica_streaming unless on (namespace, pod) cnpg_collector_up)
-          or
           (
             count by (namespace, cluster, pod) (cnpg_compliance_violations)
             or
@@ -184,4 +191,4 @@ groups:
           severity: critical
         annotations:
           summary: Metrics of instance {{ $labels.pod }} of {{ $labels.namespace }}/{{ $labels.cluster }} are missing.
-          description: Its scrape fails, or its exporter answers without the metrics of its queries, for example when the compliance query lacks its grants.
+          description: Its exporter answers without the metrics of its queries, or the compliance query fails, for example without its grants.
