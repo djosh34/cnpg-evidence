@@ -71,6 +71,7 @@ v0.2.0 adds the optional read LoadBalancer and a rule 9 for the ways into Postgr
 |---|---|---|
 | `desired.yaml` | The desired state of the cluster, read by the chart, `evidence.sh` and `desired.sh` | [samples.md](docs/samples.md) |
 | `samples/` | Helm chart rendered from `desired.yaml`, operator and plugin values, RBAC for both | [samples.md](docs/samples.md) |
+| `samples/monitoring/` | Alert rules and the Alertmanager route and inhibition rules for the cluster | [monitoring.md](docs/monitoring.md) |
 | `scripts/evidence/evidence.sh` | Who can do what in PostgreSQL and Kubernetes, and every rule the live state breaks | [evidence.md](docs/evidence.md) |
 | `scripts/host-check/host-check.sh` | SELinux, accounts, modes, k3s credentials and low ports on one node | [host-check.md](docs/host-check.md) |
 | `scripts/prove/prove.sh` | Login and host-uid attempts that must fail | [prove.md](docs/prove.md) |
@@ -78,7 +79,7 @@ v0.2.0 adds the optional read LoadBalancer and a rule 9 for the ways into Postgr
 | `report/` | `cnpg-report`, which draws a desired and an actual image for each piece of evidence: its page, build and tests | [report.md](docs/report.md), [report/README.md](report/README.md) |
 | `scripts/lib/` | Logging and exit helpers shared by the scripts | |
 | `scripts/test.sh` | Runs the `*.test.sh` next to every part of the three scripts | |
-| `.github/workflows/ci.yml` | Runs `scripts/test.sh`, the page tests and the test of the built `cnpg-report` on every pull request and push to `main`, and as part of `release.yml` | |
+| `.github/workflows/ci.yml` | Runs `scripts/test.sh`, `samples/monitoring/check.sh`, the page tests and the test of the built `cnpg-report` on every pull request and push to `main`, and as part of `release.yml` | |
 | `.github/workflows/release.yml` | On a pushed tag `v*`, runs `ci.yml`, pushes the tested `cnpg-report` as the image `ghcr.io/djosh34/cnpg-report:<tag>`, then pulls it, copies the binary out and renders the clean samples | [report.md](docs/report.md#get-the-binary) |
 | `.shellcheckrc` | ShellCheck settings for the scripts | |
 | `LICENSE` | Apache License 2.0 | |

@@ -13,6 +13,7 @@ What is in `desired.yaml` and `samples/`, how to install it, and how to keep it 
 | [`samples/values-barman-cloud.yaml`](../samples/values-barman-cloud.yaml) | Values for the plugin chart: chart RBAC off. |
 | [`samples/rbac-cnpg-operator.yaml`](../samples/rbac-cnpg-operator.yaml) | The operator's RBAC: a small ClusterRole for nodes, webhook configurations and cluster image catalogs, and the chart's namespaced rules bound only in `cnpg-system` and `databases`. |
 | [`samples/rbac-barman-cloud.yaml`](../samples/rbac-barman-cloud.yaml) | The plugin's RBAC: cluster-wide `list,watch` on object stores, roles and role bindings, and the chart's other rules bound only in `databases`, with Secrets cut to `get,list,watch`. |
+| [`samples/monitoring/`](../samples/monitoring) | Alert rules and an Alertmanager configuration for the cluster, used outside it (see [monitoring.md](monitoring.md)). |
 
 ## What the chart renders
 
@@ -79,7 +80,7 @@ Pods with `hostUsers: false` need a kernel with idmapped mounts on tmpfs.
    kubectl get pods -n databases -l cnpg.io/cluster=<cluster>,cnpg.io/podRole=instance \
      -o custom-columns=NAME:.metadata.name,HOSTUSERS:.spec.hostUsers
    ```
-8. Point the OTel collectors at `https://<pod address>:9187/metrics`, with the CA of the server certificate as `ca_file` and one of its `dnsNames` as `server_name`.
+8. Point the OTel collectors at `https://<pod address>:9187/metrics`, with the CA of the server certificate as `ca_file` and one of its `dnsNames` as `server_name`. Add the labels that [monitoring.md](monitoring.md#scrape-targets-and-labels) lists, which its alert rules need.
    Run the collectors without `hostNetwork`, in the OTel namespace.
    If a collector does use `hostNetwork`, run it with `securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}`; otherwise it can bind a port below 1024 on its node.
 
@@ -165,10 +166,10 @@ The chart gives CNPG's metrics exporter one more query, which it runs on every i
 | 3 | `role_attribute` | Each role and attribute it should not have: superuser, create roles, create databases, replication or bypass row security. A role has an attribute when it can `SET ROLE` to a role that has it. Only `postgres` holds them, and `streaming_replica` replication. |
 | 1 | `cn_mapping` | The instance's pg_ident lines that are not expected or that PostgreSQL cannot read, and the expected lines that are missing. The expected lines are CNPG's own and those of the chart, so each client CN maps only to its own role. |
 
-The `rule` label is the rule `evidence.sh` reports the same finding under. Alert on two things:
+The `rule` label is the rule `evidence.sh` reports the same finding under. Two alerts of [monitoring.md](monitoring.md) watch it:
 
-- `cnpg_compliance_violations > 0`: a role, an attribute or a mapping changed. `evidence.sh` shows which.
-- The series missing for an instance: the query failed, for example without the grants below, or the instance is not scraped.
+- `CNPGComplianceViolation`, on `cnpg_compliance_violations > 0`: a role, an attribute or a mapping changed. `evidence.sh` shows which.
+- `CNPGMetricsMissing`, when an instance that answers reports fewer than the four checks: the query failed, for example without the grants below, or the exporter returns no query metrics. An instance that is not scraped is `CNPGReplicaDown`.
 
 The exporter caches query results for `metricsQueriesTTL` in the `Cluster`, 30 s by default, so a change shows within that time plus one scrape. The query cannot see passwords; `evidence.sh` checks them. `evidence.sh` counts writing ConfigMaps in the cluster's namespace as PostgreSQL superuser, and `evidence.sh` against `desired.yaml` remains the full check.
 

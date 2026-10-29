@@ -1,0 +1,37 @@
+# Alertmanager route and inhibition rules for the alerts of rules.yaml.
+# Copy the route under routes: and the inhibit_rules into your Alertmanager
+# configuration. The root route and the receivers are placeholders.
+route:
+  receiver: default
+  routes:
+    # One notification per database and alert name, and one when it resolves.
+    # A new pod or volume in a firing group, or warning turning critical, sends
+    # an update. A reminder every 4 h while it fires.
+    - matchers: ['alertname=~"CNPG.+"']
+      receiver: databases
+      group_by: [namespace, cluster, alertname]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+
+receivers:
+  - name: default
+  - name: databases
+    webhook_configs:
+      - url: https://alerts.example.com/hook
+        send_resolved: true
+
+inhibit_rules:
+  # A database that is down mutes what follows from it.
+  - source_matchers: ['alertname="CNPGDatabaseDown"']
+    target_matchers: ['alertname=~"CNPGReplicaDown|CNPGReplicaLag|CNPGBackupFailing|CNPGMetricsMissing"']
+    equal: [namespace, cluster]
+  # A replica that is down mutes missing metrics of the same database: while
+  # an instance's node is lost, CNPG can stop the query metrics everywhere.
+  - source_matchers: ['alertname="CNPGReplicaDown"']
+    target_matchers: ['alertname="CNPGMetricsMissing"']
+    equal: [namespace, cluster]
+  # Critical mutes the warning of the same alert and object.
+  - source_matchers: ['alertname=~"CNPG.+"', 'severity="critical"']
+    target_matchers: ['alertname=~"CNPG.+"', 'severity="warning"']
+    equal: [alertname, namespace, cluster, name, persistentvolumeclaim]
