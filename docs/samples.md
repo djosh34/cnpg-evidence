@@ -131,7 +131,7 @@ The chart's settings in the `Cluster`:
 What clients see, from tests on a three-node k3s cluster with these settings, a new connection every 0.25 s and all three nodes in the host list:
 
 - **A replica's node is lost.** Reads keep working on the other nodes. Writes go on without a pause.
-- **The primary's node is lost.** Reads keep working on the replicas. Writes fail until CNPG has promoted a replica, about a minute after the loss, up to about a minute and a half when the lost node also ran the leader of the Kubernetes controller manager. Most of that time is Kubernetes noticing that the node is gone and the old primary's lease running out. The node does not need to come back.
+- **The primary's node is lost.** Reads keep working on the replicas. Writes fail until CNPG has promoted a replica, about a minute after the loss, up to about a minute and a half when the lost node also ran the leader of the Kubernetes controller manager. Most of that time is Kubernetes noticing that the node is gone and the old primary's lease running out. The node does not need to come back. When the lost node also ran the barman-cloud plugin's pod, the failover took about 6 minutes: CNPG waits for the plugin until Kubernetes has started its pod on another node.
 - **A node comes back.** Its instance opens the read port about half a minute after the node starts, once it streams and has caught up. An old primary first rewinds itself and comes back as a replica.
 - After each of these, every replica caught up fully by itself.
 
