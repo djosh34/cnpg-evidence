@@ -94,7 +94,7 @@ The dashboard reads the sources of the rules, with the same labels, and two more
 The node of each instance comes from cAdvisor's series of its `postgres` container. A primary is an instance that is not in recovery and holds the lease; without lease data the dashboard decides by PostgreSQL alone.
 
 - **Healthy** counts what the critical alerts see now, without their `for` time: `dashboard.py` writes their expressions into the tile, with the database set by the dashboard's variables. Change a critical alert in `rules.yaml`, then run `python3 samples/monitoring/dashboard.py`.
-- **Writes blocked** is a primary with fewer standbys connected (`cnpg_pg_replication_streaming_replicas`) than the synchronous standbys it needs. A connected standby does not prove that it confirms commits.
+- **Writes blocked** is a primary with fewer standbys connected (`cnpg_pg_replication_streaming_replicas`) than the synchronous standbys it needs (`cnpg_collector_sync_replicas{value="expected"}`). A connected standby does not prove that it confirms commits.
 - **Certificates** shows only certificates that cert-manager manages, every one in the Kubernetes cluster. A CA or client certificate supplied as a Secret without a cert-manager Certificate has no expiry metric and does not appear.
 - Panels that read metrics only some setups report stay empty without them: the backup panel without the barman-cloud plugin, the rule checks without the [compliance metric](samples.md#compliance-metric).
 

@@ -389,7 +389,7 @@
    "id": 3,
    "type": "stat",
    "title": "Replica lag",
-   "description": "Largest replay delay of any replica, in seconds. 0 when caught up. Orange over 1 s, red over 15 s.",
+   "description": "Largest replay delay of any replica, in seconds. 0 when caught up. Orange over 1 s, red over 15 s. Missing: no instance reports it.",
    "datasource": {
     "type": "prometheus",
     "uid": "${datasource}"
@@ -435,11 +435,24 @@
        }
       ]
      },
-     "mappings": [],
+     "mappings": [
+      {
+       "type": "special",
+       "options": {
+        "match": "null",
+        "result": {
+         "text": "Missing",
+         "color": "red",
+         "index": 0
+        }
+       }
+      }
+     ],
      "color": {
       "mode": "thresholds"
      },
-     "decimals": 1
+     "decimals": 1,
+     "noValue": "Missing"
     },
     "overrides": []
    },

@@ -280,9 +280,11 @@ def dashboard(rules):
         thr=thresholds((None, BAD)), text_mode="value_and_name", orientation="vertical", mappings=state_mappings(OK_FILL),
         text_size={"titleSize": 14, "valueSize": 24}))
     panels.append(stat(
-        "Replica lag", "Largest replay delay of any replica, in seconds. 0 when caught up. Orange over 1 s, red over 15 s.",
+        "Replica lag", "Largest replay delay of any replica, in seconds. 0 when caught up. Orange over 1 s, red over 15 s. Missing: no instance reports it.",
         [tgt(f"max(cnpg_pg_replication_lag{{{S}}})", instant=True)], gp(12, y, 3, H5), unit="s", decimals=1,
-        thr=thresholds((None, OK_FILL), (1, WARN), (15, BAD)), text_size={"valueSize": 30}))
+        thr=thresholds((None, OK_FILL), (1, WARN), (15, BAD)), no_value="Missing",
+        mappings=[{"type": "special", "options": {"match": "null", "result": {"text": "Missing", "color": BAD, "index": 0}}}],
+        text_size={"valueSize": 30}))
     panels.append(stat(
         "Rule checks", "Role and mapping checks (CNPG custom query). Violations found; missing means the checks stopped reporting.",
         [tgt(f"sum(max by (rule, check) (cnpg_compliance_violations{{{S}}}))", instant=True)], gp(15, y, 3, H5),
