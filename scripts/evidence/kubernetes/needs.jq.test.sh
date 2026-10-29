@@ -11,6 +11,7 @@ input=$(cat <<'EOF'
   "named_in": {"databases": ["alice"], "otel": ["group:system:serviceaccounts:otel"]},
   "namespaces": ["cnpg-system", "databases", "otel"],
   "secrets": {"databases": ["pg-replication"], "cnpg-system": ["cnpg-ca-secret"], "otel": ["otel-token"]},
+  "configmaps": ["pg-compliance"],
   "instance_pods": ["pg-1", "pg-2"],
   "nodes": ["node-a"],
   "accounts": [{"namespace": "databases", "name": "pg"}, {"namespace": "cnpg-system", "name": "op"}],
@@ -38,8 +39,8 @@ same "named through its ServiceAccount group" \
 same "cluster-wide rights are asked cluster-wide" \
   '[["", "-"]]' "$(jq -c 'select(.right == "become_cluster_admin" and .subject == "alice" and .ask.verb == "get") | [.in, .ask.namespace]' <<<"$needs" | jq -sc unique)"
 
-same "superuser in the cluster's namespace: the instance pods by name, workloads, its Secrets, its token and its CNPG objects" \
-  '[["create","clusters.postgresql.cnpg.io","-"],["create","cronjobs.batch","-"],["create","daemonsets.apps","-"],
+same "superuser in the cluster's namespace: the instance pods by name, workloads, its Secrets and ConfigMaps, its token and its CNPG objects" \
+  '[["create","clusters.postgresql.cnpg.io","-"],["create","configmaps","-"],["create","cronjobs.batch","-"],["create","daemonsets.apps","-"],
     ["create","databaseroles.postgresql.cnpg.io","-"],["create","databases.postgresql.cnpg.io","-"],["create","deployments.apps","-"],
     ["create","jobs.batch","-"],["create","objectstores.barmancloud.cnpg.io","-"],
     ["create","pods","-"],["create","pods/pg-1","attach"],["create","pods/pg-1","exec"],["create","pods/pg-2","attach"],["create","pods/pg-2","exec"],
@@ -47,12 +48,12 @@ same "superuser in the cluster's namespace: the instance pods by name, workloads
     ["create","serviceaccounts/pg","token"],["create","statefulsets.apps","-"],
     ["get","pods/pg-1","attach"],["get","pods/pg-1","exec"],["get","pods/pg-2","attach"],["get","pods/pg-2","exec"],
     ["get","secrets/pg-replication","-"],["list","secrets","-"],
-    ["patch","clusters.postgresql.cnpg.io/pg","-"],["patch","cronjobs.batch","-"],["patch","daemonsets.apps","-"],
+    ["patch","clusters.postgresql.cnpg.io/pg","-"],["patch","configmaps/pg-compliance","-"],["patch","cronjobs.batch","-"],["patch","daemonsets.apps","-"],
     ["patch","databaseroles.postgresql.cnpg.io","-"],["patch","databases.postgresql.cnpg.io","-"],["patch","deployments.apps","-"],
     ["patch","jobs.batch","-"],["patch","objectstores.barmancloud.cnpg.io","-"],
     ["patch","pods","-"],["patch","pods/pg-1","-"],["patch","pods/pg-1","ephemeralcontainers"],["patch","pods/pg-2","-"],["patch","pods/pg-2","ephemeralcontainers"],
     ["patch","replicasets.apps","-"],["patch","replicationcontrollers","-"],["patch","secrets/pg-replication","-"],["patch","statefulsets.apps","-"],
-    ["update","clusters.postgresql.cnpg.io/pg","-"],["update","cronjobs.batch","-"],["update","daemonsets.apps","-"],
+    ["update","clusters.postgresql.cnpg.io/pg","-"],["update","configmaps/pg-compliance","-"],["update","cronjobs.batch","-"],["update","daemonsets.apps","-"],
     ["update","databaseroles.postgresql.cnpg.io","-"],["update","databases.postgresql.cnpg.io","-"],["update","deployments.apps","-"],
     ["update","jobs.batch","-"],["update","objectstores.barmancloud.cnpg.io","-"],
     ["update","pods","-"],["update","pods/pg-1","-"],["update","pods/pg-2","-"],

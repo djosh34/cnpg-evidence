@@ -56,6 +56,10 @@
     "can_write_all_data": [
       "postgres"
     ],
+    "can_read_ident_mappings": [
+      "cnpg_metrics_exporter",
+      "postgres"
+    ],
     "have_password": [
       "billing"
     ],

@@ -27,6 +27,13 @@ spec:
       source: origin
     {{- else }}
     initdb:
+      # Lets the metrics exporter read pg_ident for the compliance query
+      # (compliance-queries.yaml). CNPG creates cnpg_metrics_exporter only
+      # after this SQL, so it is created here, as CNPG would.
+      postInitSQL:
+        - CREATE ROLE cnpg_metrics_exporter WITH LOGIN PASSWORD NULL
+        - GRANT SELECT ON pg_ident_file_mappings TO cnpg_metrics_exporter
+        - GRANT EXECUTE ON FUNCTION pg_ident_file_mappings() TO cnpg_metrics_exporter
     {{- end }}
       database: postgres  # no app database
       owner: postgres     # no app role
@@ -122,6 +129,9 @@ spec:
   monitoring:
     tls:
       enabled: true  # metrics on 9187 over TLS with the server certificate
+    customQueriesConfigMap:
+      - name: {{ $c.name }}-compliance  # cnpg_compliance_violations, from compliance-queries.yaml
+        key: queries
 
   plugins:
     - name: barman-cloud.cloudnative-pg.io

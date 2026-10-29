@@ -38,6 +38,10 @@
     "can_write_all_data": [
       "postgres"
     ],
+    "can_read_ident_mappings": [
+      "cnpg_metrics_exporter",
+      "postgres"
+    ],
     "have_password": [],
     "can_log_in": [
       "billing",
@@ -146,6 +150,7 @@
         "system:serviceaccount:kube-system:replicaset-controller",
         "system:serviceaccount:kube-system:replication-controller",
         "system:serviceaccount:kube-system:resourcequota-controller",
+        "system:serviceaccount:kube-system:root-ca-cert-publisher",
         "system:serviceaccount:kube-system:statefulset-controller",
         "system:serviceaccount:kube-system:helm-traefik",
         "system:serviceaccount:kube-system:helm-traefik-crd",
@@ -174,6 +179,7 @@
         "system:serviceaccount:kube-system:replicaset-controller",
         "system:serviceaccount:kube-system:replication-controller",
         "system:serviceaccount:kube-system:resourcequota-controller",
+        "system:serviceaccount:kube-system:root-ca-cert-publisher",
         "system:serviceaccount:kube-system:statefulset-controller",
         "system:serviceaccount:kube-system:helm-traefik",
         "system:serviceaccount:kube-system:helm-traefik-crd"
@@ -206,6 +212,7 @@
         "system:serviceaccount:kube-system:replicaset-controller",
         "system:serviceaccount:kube-system:replication-controller",
         "system:serviceaccount:kube-system:resourcequota-controller",
+        "system:serviceaccount:kube-system:root-ca-cert-publisher",
         "system:serviceaccount:kube-system:statefulset-controller",
         "system:serviceaccount:kube-system:helm-traefik",
         "system:serviceaccount:kube-system:helm-traefik-crd"
@@ -238,6 +245,7 @@
         "system:serviceaccount:kube-system:replicaset-controller",
         "system:serviceaccount:kube-system:replication-controller",
         "system:serviceaccount:kube-system:resourcequota-controller",
+        "system:serviceaccount:kube-system:root-ca-cert-publisher",
         "system:serviceaccount:kube-system:statefulset-controller",
         "system:serviceaccount:kube-system:helm-traefik",
         "system:serviceaccount:kube-system:helm-traefik-crd"
@@ -270,6 +278,7 @@
         "system:serviceaccount:kube-system:replicaset-controller",
         "system:serviceaccount:kube-system:replication-controller",
         "system:serviceaccount:kube-system:resourcequota-controller",
+        "system:serviceaccount:kube-system:root-ca-cert-publisher",
         "system:serviceaccount:kube-system:statefulset-controller",
         "system:serviceaccount:kube-system:helm-traefik",
         "system:serviceaccount:kube-system:helm-traefik-crd"

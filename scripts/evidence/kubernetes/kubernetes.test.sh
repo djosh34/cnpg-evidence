@@ -19,6 +19,8 @@ kubectl() {
       echo '{"items": [{"metadata": {"name": "databases"}}, {"metadata": {"name": "cnpg-system"}}]}' ;;
     "get nodes -o json")
       echo '{"items": [{"metadata": {"name": "node-a"}}]}' ;;
+    "get configmaps -n databases -o json")
+      echo '{"items": [{"metadata": {"name": "pg-compliance"}}]}' ;;
     "get secrets --all-namespaces -o json")
       echo '{"items": [{"metadata": {"namespace": "databases", "name": "pg-replication"}}]}' ;;
     "api-resources --api-group=traefik.io -o name") ;;
@@ -61,7 +63,7 @@ kubectl() {
     "get clusterrolebindings -o json")
       echo '{"items": [{"metadata": {}, "subjects": [{"kind": "User", "name": "tcp-updater"}, {"kind": "User", "name": "tcp-patcher"}]}]}' ;;
     "get namespaces -o json") echo '{"items": [{"metadata": {"name": "databases"}}]}' ;;
-    "get nodes -o json" | "get secrets --all-namespaces -o json") echo '{"items": []}' ;;
+    "get nodes -o json" | "get secrets --all-namespaces -o json" | "get configmaps -n databases -o json") echo '{"items": []}' ;;
     "api-resources --api-group=traefik.io -o name")
       printf '%s\n' ingressroutes.traefik.io ingressroutetcps.traefik.io middlewares.traefik.io ;;
     "create -o json -f -")
@@ -77,6 +79,27 @@ section=$(bash "$here/kubernetes.sh" databases pg cnpg-system op plug cert-manag
 same "an update-only and a patch-only holder of IngressRouteTCPs can write routes" '["tcp-patcher","tcp-updater"]' \
   "$(jq -c .write_routes <<<"$section")"
 same "with both routes served, nothing is listed as not served" null "$(jq -c .not_served <<<"$section")"
+
+# query-editor may only patch the ConfigMap pg-compliance in databases.
+kubectl() {
+  case "$*" in
+    "get rolebindings --all-namespaces -o json")
+      echo '{"items": [{"metadata": {"namespace": "databases"}, "subjects": [{"kind": "User", "name": "query-editor"}]}]}' ;;
+    "get clusterrolebindings -o json" | "get nodes -o json" | "get secrets --all-namespaces -o json") echo '{"items": []}' ;;
+    "get namespaces -o json") echo '{"items": [{"metadata": {"name": "databases"}}]}' ;;
+    "get configmaps -n databases -o json") echo '{"items": [{"metadata": {"name": "pg-compliance"}}]}' ;;
+    "api-resources --api-group=traefik.io -o name") ;;
+    "create -o json -f -")
+      jq -c '.items[]
+             | .spec.resourceAttributes as $a
+             | .status.allowed = ($a.verb == "patch" and $a.resource == "configmaps" and $a.name == "pg-compliance"
+                                  and $a.namespace == "databases")' ;;
+    *) return 1 ;;
+  esac
+}
+export -f kubectl
+same "a patch of the custom queries' ConfigMap by name equals superuser" '["query-editor"]' \
+  "$(bash "$here/kubernetes.sh" databases pg cnpg-system op plug cert-manager pg-1 | jq -c .superuser_in_cluster_namespace)"
 
 kubectl() {
   case "$*" in

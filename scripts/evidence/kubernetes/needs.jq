@@ -6,7 +6,7 @@
 # A Role can grant a verb on named objects only (resourceNames). The API
 # server answers a question about a named object yes for such a grant and for
 # a grant on every object, so existing objects are asked by name: the
-# instance pods, the Cluster, the Secrets of the cluster's namespace, nodes,
+# instance pods, the Cluster, the Secrets and ConfigMaps of the cluster's namespace, nodes,
 # the ServiceAccounts of CNPG and cert-manager, system:masters and
 # cluster-admin. create cannot be limited to a name, so it is asked without one.
 #
@@ -15,7 +15,7 @@
 # groups, the cluster-wide answer is the same, so that one is asked instead.
 #
 # Input: {subjects, named_in, namespaces, namespace, cluster,
-#         secrets: {<namespace>: [name]}, instance_pods, nodes,
+#         secrets: {<namespace>: [name]}, configmaps: the names in namespace, instance_pods, nodes,
 #         accounts: [{namespace, name}], operator_namespace, operator_account,
 #         plugin_account, ingress_routes: the Traefik route resources the cluster serves}
 
@@ -23,9 +23,10 @@ def write: "create", "update", "patch";
 
 # Rights in the cluster's namespace that equal PostgreSQL superuser: enter
 # or change the instance pods, start a pod that mounts their volumes or runs
-# as their ServiceAccount, read or write its Secrets, or change the CNPG
-# objects that configure the cluster, its roles, databases and backups.
-def superuser_in_cluster_namespace($cluster; $pods; $secrets):
+# as their ServiceAccount, read or write its Secrets, write its ConfigMaps,
+# whose custom queries the instances run, or change the CNPG objects that
+# configure the cluster, its roles, databases and backups.
+def superuser_in_cluster_namespace($cluster; $pods; $secrets; $configmaps):
   [
     ($pods[]
      | {verb: ("get", "create"), resource: "pods/\(.)", subresource: ("exec", "attach")},
@@ -37,6 +38,8 @@ def superuser_in_cluster_namespace($cluster; $pods; $secrets):
     ($secrets[] | {verb: "get", resource: "secrets/\(.)", secret_read: true}, {verb: ("update", "patch"), resource: "secrets/\(.)"}),
     {verb: ("list", "watch"), resource: "secrets", secret_read: true},
     {verb: "create", resource: "secrets"},
+    ($configmaps[] | {verb: ("update", "patch"), resource: "configmaps/\(.)"}),
+    {verb: "create", resource: "configmaps"},
     {verb: "create", resource: "serviceaccounts/\($cluster)", subresource: "token"},
     {verb: "create", resource: "clusters.postgresql.cnpg.io"},
     {verb: ("update", "patch"), resource: "clusters.postgresql.cnpg.io/\($cluster)"},
@@ -100,7 +103,8 @@ def need($subject; $in; $named_in):
 | .named_in as $named_in
 | (
     .subjects[] as $subject
-    | (superuser_in_cluster_namespace($input.cluster; $input.instance_pods; $input.secrets[$input.namespace] // [])[]
+    | (superuser_in_cluster_namespace($input.cluster; $input.instance_pods; $input.secrets[$input.namespace] // [];
+                                    $input.configmaps)[]
        | need($subject; $input.namespace; $named_in)),
       (become_cluster_admin($input.nodes)[] | need($subject; ""; $named_in)),
       ($input.accounts[] as $account | $account | impersonate_account | need($subject; $account.namespace; $named_in)),
