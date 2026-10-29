@@ -71,7 +71,7 @@ v0.2.0 adds the optional read LoadBalancer and a rule 9 for the ways into Postgr
 |---|---|---|
 | `desired.yaml` | The desired state of the cluster, read by the chart, `evidence.sh` and `desired.sh` | [samples.md](docs/samples.md) |
 | `samples/` | Helm chart rendered from `desired.yaml`, operator and plugin values, RBAC for both | [samples.md](docs/samples.md) |
-| `samples/monitoring/` | Alert rules and the Alertmanager route and inhibition rules for the cluster | [monitoring.md](docs/monitoring.md) |
+| `samples/monitoring/` | Alert rules, the Alertmanager route and inhibition rules, and a Grafana dashboard for the cluster | [monitoring.md](docs/monitoring.md) |
 | `scripts/evidence/evidence.sh` | Who can do what in PostgreSQL and Kubernetes, and every rule the live state breaks | [evidence.md](docs/evidence.md) |
 | `scripts/host-check/host-check.sh` | SELinux, accounts, modes, k3s credentials and low ports on one node | [host-check.md](docs/host-check.md) |
 | `scripts/prove/prove.sh` | Login and host-uid attempts that must fail | [prove.md](docs/prove.md) |

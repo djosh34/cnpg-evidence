@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Checks rules.yaml and alertmanager.yaml with promtool and amtool, and runs
-# the unit tests in rules.test.yaml. Needs docker; pulls the two images below.
+# Checks rules.yaml and alertmanager.yaml with promtool and amtool, runs the
+# unit tests in rules.test.yaml, and checks that dashboard.json is what
+# dashboard.py writes and that its Healthy tile counts what the critical alerts
+# see. Needs docker, python3 and yq; pulls the two images below.
 #
 # Usage: bash samples/monitoring/check.sh
 set -euo pipefail
@@ -11,7 +13,11 @@ alertmanager=prom/alertmanager:v0.34.1@sha256:e9733bafb1bdef9b00e25a21f8f99dc26a
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
-promtool() { docker run --rm -v "$here:/w:ro" -w /w --entrypoint promtool "$prometheus" "$@"; }
+tmp=$(mktemp -d)
+chmod 0755 "$tmp"  # the containers read it as another user
+trap 'rm -rf "$tmp"' EXIT
+
+promtool() { docker run --rm -v "$here:/w:ro" -v "$tmp:/t:ro" -w /w --entrypoint promtool "$prometheus" "$@"; }
 amtool() { docker run --rm -v "$here:/w:ro" -w /w --entrypoint amtool "$alertmanager" "$@"; }
 
 promtool check rules rules.yaml
@@ -32,3 +38,15 @@ for alert in $alerts; do
   fi
 done
 echo "ok: every alert goes to the databases receiver"
+
+# dashboard.json is up to date with dashboard.py and rules.yaml.
+python3 -I "$here/dashboard.py" --out "$tmp/dashboard.json"
+if ! diff -u "$here/dashboard.json" "$tmp/dashboard.json" >&2; then
+  echo "check.sh: dashboard.json is out of date; run python3 samples/monitoring/dashboard.py" >&2
+  exit 1
+fi
+echo "ok: dashboard.json is up to date"
+
+# On every case of rules.test.yaml, Healthy counts the critical alerts.
+python3 -I "$here/dashboard.py" --healthy-test "$tmp/healthy.test.json" --rules-dir /w
+promtool test rules /t/healthy.test.json

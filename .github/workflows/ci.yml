@@ -23,6 +23,7 @@ jobs:
           jq --version
           openssl version
           python3 --version
+          yq --version
       - name: Script tests
         run: bash scripts/test.sh
       - name: Monitoring rules

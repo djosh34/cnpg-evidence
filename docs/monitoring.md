@@ -1,6 +1,6 @@
 # Monitoring
 
-Alert rules and an Alertmanager configuration for the sample's cluster, in `samples/monitoring/`. Nothing of it runs in the Kubernetes cluster: a rule evaluator outside it reads the metrics, and Alertmanager sends the notifications.
+Alert rules, an Alertmanager configuration and a Grafana dashboard for the sample's cluster, in `samples/monitoring/`. Nothing of it runs in the Kubernetes cluster: a rule evaluator outside it reads the metrics, Alertmanager sends the notifications, and Grafana shows the dashboard.
 
 ## Files
 
@@ -9,14 +9,16 @@ Alert rules and an Alertmanager configuration for the sample's cluster, in `samp
 | [`rules.yaml`](../samples/monitoring/rules.yaml) | The ten alerts as Prometheus rules, and the databases they watch |
 | [`rules.test.yaml`](../samples/monitoring/rules.test.yaml) | Unit tests of the rules, for `promtool test rules` |
 | [`alertmanager.yaml`](../samples/monitoring/alertmanager.yaml) | The route and inhibition rules for those alerts |
-| [`check.sh`](../samples/monitoring/check.sh) | Checks both files with `promtool` and `amtool` and runs the unit tests, in the Prometheus and Alertmanager images |
+| [`dashboard.json`](../samples/monitoring/dashboard.json) | The Grafana dashboard (see [Dashboard](#dashboard)) |
+| [`dashboard.py`](../samples/monitoring/dashboard.py) | Writes `dashboard.json`; its Healthy tile from the critical alerts of `rules.yaml` |
+| [`check.sh`](../samples/monitoring/check.sh) | Checks the rules and the Alertmanager configuration with `promtool` and `amtool`, runs the unit tests, and checks that `dashboard.json` is up to date and that its Healthy tile counts what the critical alerts see |
 
 ## Set up
 
 1. In `rules.yaml`, set the namespace and cluster name in the `cnpg_sample:database` rule, one rule per CNPG cluster. Every alert covers only the clusters listed there. The thresholds are in the expressions of the alerts, each in one place.
 2. Load `rules.yaml` into the rule evaluator: Prometheus (`rule_files:`) or the Mimir ruler (`mimirtool rules load samples/monitoring/rules.yaml --address=<Mimir URL> --id=<tenant>`). The evaluator sends firing alerts to Alertmanager. Alertmanager evaluates no rules; it only groups, mutes and sends them.
 3. Copy the route under `routes:` and the `inhibit_rules` of `alertmanager.yaml` into the Alertmanager configuration, and set the receiver.
-4. Run `bash samples/monitoring/check.sh` after a change. It needs docker.
+4. Run `bash samples/monitoring/check.sh` after a change. It needs docker, python3 and [yq](https://github.com/mikefarah/yq).
 
 ## Scrape targets and labels
 
@@ -68,13 +70,33 @@ scrape_configs:
 
 The 26 h backup age fits a daily backup; change it to the schedule. CPU, memory, deadlocks, long transactions and primary changes are on the dashboard only.
 
-The critical alerts are also the list of conditions for the dashboard's Healthy tile, which counts the same expressions with the same thresholds.
+The critical alerts are also the list of conditions for the dashboard's Healthy tile, which counts the same expressions with the same thresholds. `check.sh` tests that on every case of `rules.test.yaml`.
 
 ### Replica lag
 
 Each replica reports `cnpg_pg_replication_lag`: the seconds since the last transaction it replayed, or 0 once it has replayed everything it received. Every commit waits for one replica only, so the other one can fall behind while writes go on, and it still serves reads on its node's read port. `CNPGReplicaLag` fires when a replica stays more than 15 s behind for 2 minutes.
 
 A replica that receives nothing reports 0 too. `CNPGReplicaDown` covers that case.
+
+## Dashboard
+
+`dashboard.json` is a Grafana dashboard (Grafana 12 or later) for one CNPG cluster: a status strip, the state of each instance over time, then rows for workload, replication, certificates and rule checks, and nodes. Storage, backups, WAL and vacuum are in a collapsed row. Instances are named by the node they run on; purple marks the primary.
+
+To import it, in Grafana open *Dashboards*, *New*, *Import*, and upload `dashboard.json`. It expects a Prometheus-type data source, such as Prometheus or Mimir, that holds the metrics below; pick it in the *Data source* variable at the top. The *Namespace* and *Cluster* variables select the CNPG cluster by the `namespace` and `cluster` labels.
+
+The dashboard reads the sources of the rules, with the same labels, and two more:
+
+| Source | Metrics the dashboard reads | Labels |
+|---|---|---|
+| The kubelet's `/metrics/cadvisor` on every node | `container_cpu_usage_seconds_total`, `container_memory_working_set_bytes`, `container_fs_usage_bytes`, `container_fs_limit_bytes`, `machine_cpu_cores`, `machine_memory_bytes` | Their own `namespace`, `pod`, `container`, `id` and `device`; the scrape adds `node` |
+| kube-state-metrics, with the `leases` resource | `kube_lease_owner`: which pod holds CNPG's primary lease, named after the cluster | Their own `namespace`, `lease`, `owner_kind` and `lease_holder`, kept as they are (`honor_labels: true`) |
+
+The node of each instance comes from cAdvisor's series of its `postgres` container. A primary is an instance that is not in recovery and holds the lease; without lease data the dashboard decides by PostgreSQL alone.
+
+- **Healthy** counts what the critical alerts see now, without their `for` time: `dashboard.py` writes their expressions into the tile, with the database set by the dashboard's variables. Change a critical alert in `rules.yaml`, then run `python3 samples/monitoring/dashboard.py`. The Certificates and Disks tiles cover more than the alerts: every cert-manager certificate and every node disk. One of them can be red while Healthy says Yes.
+- **Writes blocked** is a primary with fewer standbys connected (`cnpg_pg_replication_streaming_replicas`) than the synchronous standbys it needs (`cnpg_collector_sync_replicas{value="expected"}`). A connected standby does not prove that it confirms commits.
+- **Certificates** shows only certificates that cert-manager manages, every one in the Kubernetes cluster. A CA or client certificate supplied as a Secret without a cert-manager Certificate has no expiry metric and does not appear.
+- Panels that read metrics only some setups report stay empty without them: the backup panel without the barman-cloud plugin, the rule checks without the [compliance metric](samples.md#compliance-metric).
 
 ## One notification per problem
 
