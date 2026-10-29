@@ -69,12 +69,14 @@ tests:
       - {eval_time: 20m, alertname: CNPGComplianceViolation}
       - {eval_time: 20m, alertname: CNPGMetricsMissing}
 
-  # PostgreSQL is down on every instance: one alert for the database.
+  # PostgreSQL is down on every instance: one alert for the database. The
+  # exporter skips its queries and keeps cnpg_collector_up at its last value,
+  # as it does on fenced instances.
   - name: database down
     interval: 1m
     input_series:
-      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x10'}
-      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-2"}', values: '0x10'}
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-1"}', values: '1x10'}
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-2"}', values: '1x10'}
       - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-3"}', values: '0x10'}
     alert_rule_test:
       - {eval_time: 2m, alertname: CNPGDatabaseDown}
@@ -84,7 +86,8 @@ tests:
           - exp_labels: {severity: critical, namespace: databases, cluster: pg}
             exp_annotations:
               summary: No instance of databases/pg reports a running primary.
-              description: PostgreSQL is down on every instance, no replica was promoted, or the metrics of the primary do not arrive.
+              description: PostgreSQL is down or fenced on every instance, no replica was promoted, or the metrics of the primary do not arrive.
+      - {eval_time: 10m, alertname: CNPGMetricsMissing}
 
   # No metric of the database arrives at all.
   - name: database down, no metrics
@@ -98,7 +101,7 @@ tests:
           - exp_labels: {severity: critical, namespace: databases, cluster: pg}
             exp_annotations:
               summary: No instance of databases/pg reports a running primary.
-              description: PostgreSQL is down on every instance, no replica was promoted, or the metrics of the primary do not arrive.
+              description: PostgreSQL is down or fenced on every instance, no replica was promoted, or the metrics of the primary do not arrive.
 
   # The primary's pod is gone for 2 min until pg-2 is promoted: shorter than
   # the 3 min the alert waits.
@@ -325,6 +328,9 @@ tests:
       - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-1"}', values: '1x15'}
       - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-2"}', values: '1x15'}
       - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-3"}', values: '1x15'}
+      - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x15'}
+      - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-2"}', values: '1x15'}
+      - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-3"}', values: '1x15'}
       - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-1",rule="1",check="unexpected_role"}', values: '0x15'}
       - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-1",rule="4",check="app_role"}', values: '0x15'}
       - {series: 'cnpg_compliance_violations{namespace="databases",cluster="pg",pod="pg-1",rule="3",check="role_attribute"}', values: '0x15'}

@@ -55,7 +55,7 @@ scrape_configs:
 
 | Alert | Severity | Fires when | For |
 |---|---|---|---|
-| `CNPGDatabaseDown` | critical | No instance reports a running primary: PostgreSQL is down on every instance, no replica has been promoted yet, or the primary's metrics do not arrive | 3 min |
+| `CNPGDatabaseDown` | critical | No instance reports a running primary: PostgreSQL is down or fenced on every instance, no replica has been promoted yet, or the primary's metrics do not arrive | 3 min |
 | `CNPGReplicaDown` | critical | The primary's replication slot for a replica is inactive: the replica is down or does not stream | 5 min |
 | `CNPGReplicaLag` | critical | A replica is more than 15 s behind (see [Replica lag](#replica-lag)) | 2 min |
 | `CNPGBackupFailing` | critical | The last backup is older than 26 h or there is none, the last backup failed, or WAL archiving fails on the primary | 10 min |
@@ -64,7 +64,7 @@ scrape_configs:
 | `CNPGConnectionsHigh` | critical | An instance has more than 90 % of `max_connections` open | 5 min |
 | `CNPGTransactionIDWraparound` | critical | The oldest transaction ID of a database is more than 1 billion transactions old; PostgreSQL stops at about 2.1 billion | 15 min |
 | `CNPGComplianceViolation` | critical | A check of the [compliance metric](samples.md#compliance-metric) counts a violation | 1 min |
-| `CNPGMetricsMissing` | critical | A replica that the primary keeps a slot for reports no metrics, or an instance reports fewer than the four compliance checks | 10 min |
+| `CNPGMetricsMissing` | critical | A replica that the primary keeps a slot for reports no metrics, or an instance whose PostgreSQL answers reports fewer than the four compliance checks | 10 min |
 
 The 26 h backup age fits a daily backup; change it to the schedule. CPU, memory, deadlocks, long transactions and primary changes are on the dashboard only.
 
