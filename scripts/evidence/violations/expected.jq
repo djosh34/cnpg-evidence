@@ -44,7 +44,8 @@ def role_rights:
     can_write_server_files: ["postgres"],
     can_read_all_data: ["postgres"],
     can_write_all_data: ["postgres"],
-    can_read_ident_mappings: ["cnpg_metrics_exporter", "postgres"]
+    can_read_ident_view: ["cnpg_metrics_exporter", "postgres"],
+    can_run_ident_function: ["cnpg_metrics_exporter", "postgres"]
   };
 
 # CNPG's roles, cnpg_metrics_exporter logs in for metrics, and one role per database.

@@ -7,7 +7,7 @@ source "$here/../../lib/test.sh"
 
 # The postgres facts of a clean cluster.
 facts=$(cat <<'JSON'
-{"postgres": {"superusers":["postgres"],"can_create_roles":["postgres"],"can_create_databases":["postgres"],"can_replicate":["postgres","streaming_replica"],"can_bypass_row_security":["postgres"],"can_run_server_programs":["postgres"],"can_read_server_files":["postgres","streaming_replica"],"can_write_server_files":["postgres"],"can_read_all_data":["postgres"],"can_write_all_data":["postgres"],"can_read_ident_mappings":["cnpg_metrics_exporter","postgres"],"have_password":[],"can_log_in":["billing","cnpg_metrics_exporter","orders","postgres","streaming_replica"],"roles":["billing","cnpg_metrics_exporter","orders","postgres","streaming_replica"],"databases":["billing","orders","postgres","template0","template1"]}}
+{"postgres": {"superusers":["postgres"],"can_create_roles":["postgres"],"can_create_databases":["postgres"],"can_replicate":["postgres","streaming_replica"],"can_bypass_row_security":["postgres"],"can_run_server_programs":["postgres"],"can_read_server_files":["postgres","streaming_replica"],"can_write_server_files":["postgres"],"can_read_all_data":["postgres"],"can_write_all_data":["postgres"],"can_read_ident_view":["cnpg_metrics_exporter","postgres"],"can_run_ident_function":["cnpg_metrics_exporter","postgres"],"have_password":[],"can_log_in":["billing","cnpg_metrics_exporter","orders","postgres","streaming_replica"],"roles":["billing","cnpg_metrics_exporter","orders","postgres","streaming_replica"],"databases":["billing","orders","postgres","template0","template1"]}}
 JSON
 )
 
@@ -39,12 +39,16 @@ same "CREATEDB on an application role" '["rule 3: role orders can create databas
 same "file writes through pg_monitor" '["rule 3: role cnpg_metrics_exporter can write server files"]' \
   "$(violations '.postgres.can_write_server_files += ["cnpg_metrics_exporter"]')"
 
-same "pg_ident read by an application role" '["rule 3: role orders can read pg_ident"]' \
-  "$(violations '.postgres.can_read_ident_mappings += ["orders"]')"
+same "the pg_ident function run by an application role" '["rule 3: role orders can run the pg_ident function"]' \
+  "$(violations '.postgres.can_run_ident_function += ["orders"]')"
 
-same "pg_ident not readable by the metrics exporter" \
-  '["rule 3: role cnpg_metrics_exporter is missing from can_read_ident_mappings"]' \
-  "$(violations '.postgres.can_read_ident_mappings -= ["cnpg_metrics_exporter"]')"
+same "the metrics exporter without SELECT on the pg_ident view" \
+  '["rule 3: role cnpg_metrics_exporter is missing from can_read_ident_view"]' \
+  "$(violations '.postgres.can_read_ident_view -= ["cnpg_metrics_exporter"]')"
+
+same "the metrics exporter without EXECUTE on the pg_ident function" \
+  '["rule 3: role cnpg_metrics_exporter is missing from can_run_ident_function"]' \
+  "$(violations '.postgres.can_run_ident_function -= ["cnpg_metrics_exporter"]')"
 
 same "the app role, even NOLOGIN" '["rule 4: role app exists"]' \
   "$(violations '.postgres.roles += ["app"]')"

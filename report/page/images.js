@@ -39,7 +39,8 @@ const RIGHTS = [
   ['can_write_server_files', 'Write server files'],
   ['can_read_all_data', 'Read all data'],
   ['can_write_all_data', 'Write all data'],
-  ['can_read_ident_mappings', 'Read pg_ident'],
+  ['can_read_ident_view', 'Read pg_ident view'],
+  ['can_run_ident_function', 'Run pg_ident function'],
 ];
 
 // The certificate names and databases of an account, from the certificate

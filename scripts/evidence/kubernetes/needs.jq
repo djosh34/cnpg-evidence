@@ -6,18 +6,20 @@
 # A Role can grant a verb on named objects only (resourceNames). The API
 # server answers a question about a named object yes for such a grant and for
 # a grant on every object, so existing objects are asked by name: the
-# instance pods, the Cluster, the Secrets and ConfigMaps of the cluster's namespace, nodes,
-# the ServiceAccounts of CNPG and cert-manager, system:masters and
-# cluster-admin. create cannot be limited to a name, so it is asked without one.
+# instance pods, the Cluster, the Secrets and ConfigMaps of the cluster's
+# namespace, nodes, the ServiceAccounts of CNPG and cert-manager,
+# system:masters and cluster-admin. create cannot be limited to a name, so it
+# is asked without one.
 #
 # A right in a namespace comes from a ClusterRoleBinding or a RoleBinding in
 # that namespace. Where no RoleBinding there names the subject or one of its
 # groups, the cluster-wide answer is the same, so that one is asked instead.
 #
 # Input: {subjects, named_in, namespaces, namespace, cluster,
-#         secrets: {<namespace>: [name]}, configmaps: the names in namespace, instance_pods, nodes,
-#         accounts: [{namespace, name}], operator_namespace, operator_account,
-#         plugin_account, ingress_routes: the Traefik route resources the cluster serves}
+#         secrets: {<namespace>: [name]}, configmaps: [name in namespace],
+#         instance_pods, nodes, accounts: [{namespace, name}], operator_namespace,
+#         operator_account, plugin_account,
+#         ingress_routes: the Traefik route resources the cluster serves}
 
 def write: "create", "update", "patch";
 

@@ -170,7 +170,7 @@ The `rule` label is the rule `evidence.sh` reports the same finding under. Alert
 - `cnpg_compliance_violations > 0`: a role, an attribute or a mapping changed. `evidence.sh` shows which.
 - The series missing for an instance: the query failed, for example without the grants below, or the instance is not scraped.
 
-The exporter caches query results for `metricsQueriesTTL` in the `Cluster`, 30 s by default, so a change shows within that time plus one scrape. The query cannot see passwords; `evidence.sh` checks them. The expected values are written into the ConfigMap from `desired.yaml` at install time, so whoever can write ConfigMaps in the cluster's namespace can change the query and run SQL as `cnpg_metrics_exporter` on every instance. `evidence.sh` counts that right as PostgreSQL superuser, and a run of `evidence.sh` against `desired.yaml` from git shows what the metric would hide.
+The exporter caches query results for `metricsQueriesTTL` in the `Cluster`, 30 s by default, so a change shows within that time plus one scrape. The query cannot see passwords; `evidence.sh` checks them. `evidence.sh` counts writing ConfigMaps in the cluster's namespace as PostgreSQL superuser, and `evidence.sh` against `desired.yaml` remains the full check.
 
 ### Grants
 
@@ -186,7 +186,7 @@ kubectl exec -n databases <primary pod> -c postgres -- psql \
 
 A restore copies the grants with the rest of the catalog when the backup was taken after them. After a restore from an older backup, run the same step on the new cluster's primary. Until then the metric is missing.
 
-`evidence.sh` expects exactly these grants: `can_read_ident_mappings` must list `postgres` and `cnpg_metrics_exporter`, no other role.
+`evidence.sh` expects exactly these grants: `can_read_ident_view` and `can_run_ident_function` must each list `postgres` and `cnpg_metrics_exporter`, no other role.
 
 ## Outside the chart
 

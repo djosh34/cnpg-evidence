@@ -20,7 +20,8 @@ include "expected";
     can_write_server_files: "can write server files",
     can_read_all_data: "can read all data",
     can_write_all_data: "can write all data",
-    can_read_ident_mappings: "can read pg_ident"
+    can_read_ident_view: "can read the pg_ident view",
+    can_run_ident_function: "can run the pg_ident function"
   } as $says
 | (.values | expected_roles) as $expected_roles
 | (.values | expected_databases) as $expected_databases

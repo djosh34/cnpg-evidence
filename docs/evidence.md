@@ -61,7 +61,7 @@ details: {primary: pg-1, instances: [pg-1, pg-2, pg-3], pg_hba: [{number: 1, lin
 - `can_run_server_programs`, `can_read_all_data`, `can_write_all_data`: through `pg_execute_server_program`, `pg_read_all_data` or `pg_write_all_data`, by `SET ROLE` or inheritance. Expected `postgres`.
 - `can_read_server_files`: through `pg_read_server_files` or `EXECUTE` on `pg_read_file`, `pg_read_binary_file` or the server-side `lo_import`. Expected `postgres` and `streaming_replica`, which CNPG lets read files for `pg_rewind`.
 - `can_write_server_files`: through `pg_write_server_files` or `EXECUTE` on the server-side `lo_export`. Expected `postgres`.
-- `can_read_ident_mappings`: through `SELECT` on `pg_ident_file_mappings` or `EXECUTE` on its function, by `SET ROLE` or inheritance. Expected `postgres` and `cnpg_metrics_exporter`, which reads pg_ident for the [compliance metric](samples.md#compliance-metric).
+- `can_read_ident_view`, `can_run_ident_function`: `SELECT` on the view `pg_ident_file_mappings` and `EXECUTE` on its function, by `SET ROLE` or inheritance. Reading the view needs both. Expected `postgres` and `cnpg_metrics_exporter`, which reads pg_ident for the [compliance metric](samples.md#compliance-metric).
 - `have_password`: roles with a stored password. Expected none.
 - `can_log_in`: roles with `LOGIN`. Expected every role in `roles`.
 - `roles`: every role except the built-in `pg_*` ones. Expected `postgres`, `streaming_replica`, `cnpg_metrics_exporter` and the role of each database in `desired.yaml`. `app` is a rule 4 violation, even without `LOGIN`.

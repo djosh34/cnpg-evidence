@@ -38,7 +38,11 @@
     "can_write_all_data": [
       "postgres"
     ],
-    "can_read_ident_mappings": [
+    "can_read_ident_view": [
+      "cnpg_metrics_exporter",
+      "postgres"
+    ],
+    "can_run_ident_function": [
       "cnpg_metrics_exporter",
       "postgres"
     ],
