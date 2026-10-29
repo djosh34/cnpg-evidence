@@ -13,7 +13,7 @@ Alert rules and an Alertmanager configuration for the sample's cluster, in `samp
 
 ## Set up
 
-1. In `rules.yaml`, set the namespace and cluster name in the `cnpg_sample:database` rule, one rule per CNPG cluster. The thresholds are in the expressions of the alerts, each in one place.
+1. In `rules.yaml`, set the namespace and cluster name in the `cnpg_sample:database` rule, one rule per CNPG cluster. Every alert covers only the clusters listed there. The thresholds are in the expressions of the alerts, each in one place.
 2. Load `rules.yaml` into the rule evaluator: Prometheus (`rule_files:`) or the Mimir ruler (`mimirtool rules load samples/monitoring/rules.yaml --address=<Mimir URL> --id=<tenant>`). The evaluator sends firing alerts to Alertmanager. Alertmanager evaluates no rules; it only groups, mutes and sends them.
 3. Copy the route under `routes:` and the `inhibit_rules` of `alertmanager.yaml` into the Alertmanager configuration, and set the receiver.
 4. Run `bash samples/monitoring/check.sh` after a change. It needs docker.
@@ -60,7 +60,7 @@ scrape_configs:
 | `CNPGReplicaLag` | critical | A replica is more than 15 s behind (see [Replica lag](#replica-lag)) | 2 min |
 | `CNPGBackupFailing` | critical | The last backup is older than 26 h or there is none, the last backup failed, or WAL archiving fails on the primary | 10 min |
 | `CNPGVolumeFull` | warning, critical | A volume of an instance is more than 80 % or 90 % used | 5 min |
-| `CNPGCertificateExpiring` | warning, critical | A certificate expires within 14 or 3 days | 15 min |
+| `CNPGCertificateExpiring` | warning, critical | The chart's server or replication certificate (`<cluster>-server`, `<cluster>-replication`) expires within 14 or 3 days | 15 min |
 | `CNPGConnectionsHigh` | critical | An instance has more than 90 % of `max_connections` open | 5 min |
 | `CNPGTransactionIDWraparound` | critical | The oldest transaction ID of a database is more than 1 billion transactions old; PostgreSQL stops at about 2.1 billion | 15 min |
 | `CNPGComplianceViolation` | critical | A check of the [compliance metric](samples.md#compliance-metric) counts a violation | 1 min |
@@ -89,7 +89,7 @@ Alertmanager does not promise exactly one notification. After a restart that los
 ## What the rules do not see
 
 - `CNPGDatabaseDown` also fires when PostgreSQL runs but the primary's metrics stop arriving. The rules cannot tell the two apart.
-- The exporter can answer without the metrics of its queries. In tests with CNPG 1.30.1, every instance did so from about five minutes after a node was lost, when Kubernetes marked the pod on it for deletion, until the node returned; meanwhile the instances reconciled the `Cluster` many times a second. The rules then cannot tell which instance is the primary, nor read the replication slots. `CNPGReplicaDown` still fires for the lost instance, as its metrics are gone, and `CNPGMetricsMissing` for the others.
+- The exporter can answer without the metrics of its queries. In tests with CNPG 1.30.1, every instance did so from about five minutes after a node was lost, when Kubernetes marked the pod on it for deletion, until the node returned; meanwhile the instances reconciled the `Cluster` many times a second. The rules then cannot tell which instance is the primary, nor read the replication slots. `CNPGReplicaDown` still fires for the lost instance, as its metrics are gone, and `CNPGMetricsMissing` for the others. If the lost node ran the primary and no replica has been promoted, `CNPGDatabaseDown` resolves once the replicas stop reporting their query metrics; only `CNPGReplicaDown` for the old primary is left.
 - `CNPGReplicaDown` reads the primary's replication slots for its replicas, which CNPG keeps by default (`replicationSlots.highAvailability`). Without them it sees only instances whose metrics stopped. An instance removed on purpose keeps the alert for a day, until it drops out of the rule's one-day window; silence it in Alertmanager.
-- `CNPGCertificateExpiring` covers only Certificates that cert-manager manages. The CA in `caSecret` and client certificates made without cert-manager have no expiry metric; watch them another way.
+- `CNPGCertificateExpiring` covers only the chart's two Certificates, as cert-manager reports them. Client certificates and the CA in `caSecret` belong to no database in the rules: a cert-manager Certificate for one needs its own rule on `certmanager_certificate_expiration_timestamp_seconds`, and one made without cert-manager has no expiry metric at all.
 - `CNPGVolumeFull` needs a storage driver that reports kubelet volume stats. Volumes of the `local-path` provisioner report the whole filesystem they are on.

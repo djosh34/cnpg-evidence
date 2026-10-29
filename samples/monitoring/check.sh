@@ -19,11 +19,16 @@ promtool test rules rules.test.yaml
 amtool check-config alertmanager.yaml
 
 # Every alert of rules.yaml reaches the databases receiver.
-while IFS= read -r alert; do
+alerts=$(sed -n 's/^ *- alert: //p' "$here/rules.yaml" | sort -u)
+if [ -z "$alerts" ]; then
+  echo "check.sh: no alerts found in rules.yaml" >&2
+  exit 1
+fi
+for alert in $alerts; do
   receiver=$(amtool config routes test --config.file=alertmanager.yaml "alertname=$alert")
   if [ "$receiver" != databases ]; then
     echo "check.sh: $alert goes to $receiver, not databases" >&2
     exit 1
   fi
-done < <(sed -n 's/^ *- alert: //p' "$here/rules.yaml" | sort -u)
+done
 echo "ok: every alert goes to the databases receiver"

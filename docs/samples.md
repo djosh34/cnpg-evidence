@@ -169,7 +169,7 @@ The chart gives CNPG's metrics exporter one more query, which it runs on every i
 The `rule` label is the rule `evidence.sh` reports the same finding under. Two alerts of [monitoring.md](monitoring.md) watch it:
 
 - `CNPGComplianceViolation`, on `cnpg_compliance_violations > 0`: a role, an attribute or a mapping changed. `evidence.sh` shows which.
-- `CNPGMetricsMissing`, when an instance reports fewer than the four checks: the query failed, for example without the grants below, or the instance is not scraped.
+- `CNPGMetricsMissing`, when an instance that answers reports fewer than the four checks: the query failed, for example without the grants below, or the exporter returns no query metrics. An instance that is not scraped is `CNPGReplicaDown`.
 
 The exporter caches query results for `metricsQueriesTTL` in the `Cluster`, 30 s by default, so a change shows within that time plus one scrape. The query cannot see passwords; `evidence.sh` checks them. `evidence.sh` counts writing ConfigMaps in the cluster's namespace as PostgreSQL superuser, and `evidence.sh` against `desired.yaml` remains the full check.
 
