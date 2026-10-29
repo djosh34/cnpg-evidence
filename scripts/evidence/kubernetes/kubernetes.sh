@@ -30,6 +30,7 @@ subjects=$(
 names() { jq -c '[.items[].metadata.name]'; }
 namespaces=$(kubectl get namespaces -o json | names)
 nodes=$(kubectl get nodes -o json | names)
+configmaps=$(kubectl get configmaps -n "$namespace" -o json | names)
 secrets=$(
   kubectl get secrets --all-namespaces -o json |
     jq -c '.items | group_by(.metadata.namespace) | map({key: .[0].metadata.namespace, value: map(.metadata.name)}) | from_entries'
@@ -48,6 +49,7 @@ needs=$(
     --argjson namespaces "$namespaces" \
     --argjson nodes "$nodes" \
     --argjson secrets "$secrets" \
+    --argjson configmaps "$configmaps" \
     --argjson instance_pods "$instance_pods" \
     --arg namespace "$namespace" \
     --arg cluster "$cluster" \
@@ -57,7 +59,7 @@ needs=$(
     --arg cert_manager_namespace "$cert_manager_namespace" \
     --argjson ingress_routes "$ingress_routes" \
     '$subjects[0] + {
-       $namespaces, $nodes, $secrets, $instance_pods, $namespace, $cluster,
+       $namespaces, $nodes, $secrets, $configmaps, $instance_pods, $namespace, $cluster,
        $operator_namespace, $operator_account, $plugin_account, $ingress_routes,
        accounts: [
          {namespace: $namespace, name: $cluster},

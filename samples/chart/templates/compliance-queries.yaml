@@ -1,0 +1,82 @@
+{{- $c := .Values.cluster }}
+{{- $replicationCN := required "replication.commonName is required" .Values.replication.commonName }}
+# A custom query that CNPG's metrics exporter runs on every instance, as
+# cnpg_metrics_exporter. It exports cnpg_compliance_violations{rule, check}:
+# per check the number of roles, attributes or pg_ident lines that break it,
+# 0 when it passes. The expected values come from desired.yaml and CNPG's
+# fixed roles and lines, as in scripts/evidence/violations/expected.jq.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $c.name }}-compliance
+  namespace: {{ $c.namespace }}
+  labels:
+    cnpg.io/reload: ""  # the instances load a changed query without a restart
+data:
+  queries: |
+    compliance:
+      query: |
+        WITH expected_roles(name) AS (
+          VALUES ('postgres'), ('streaming_replica'), ('cnpg_metrics_exporter')
+          {{- range .Values.databases }}, ('{{ .role | replace "'" "''" }}'){{ end }}
+        ),
+        -- The roles that may hold each attribute: CNPG's postgres and streaming_replica.
+        allowed_attributes(attribute, name) AS (
+          VALUES ('superuser', 'postgres'), ('createrole', 'postgres'), ('createdb', 'postgres'),
+                 ('replication', 'postgres'), ('replication', 'streaming_replica'), ('bypassrls', 'postgres')
+        ),
+        -- CNPG's fixed lines, then the lines of cluster.yaml.
+        expected_ident(map, cn, role) AS (
+          VALUES ('local', 'postgres', 'postgres'),
+                 ('cnpg_streaming_replica', 'streaming_replica', 'streaming_replica'),
+                 ('cnpg_pooler_pgbouncer', 'cnpg_pooler_pgbouncer', 'cnpg_pooler_pgbouncer'),
+                 ('cnpg_metrics_exporter', 'postgres', 'cnpg_metrics_exporter'),
+                 ('cnpg_streaming_replica', '{{ $replicationCN | replace "'" "''" }}', 'streaming_replica')
+                 {{- range .Values.databases }}
+                 {{- $role := .role }}
+                 {{- range .clientCNs }},
+                 ('clients', '{{ . | replace "'" "''" }}', '{{ $role | replace "'" "''" }}')
+                 {{- end }}
+                 {{- end }}
+        ),
+        roles AS (
+          SELECT rolname AS name FROM pg_roles WHERE rolname !~ '^pg_'
+        ),
+        -- An attribute counts when the role can SET ROLE to a role that has it.
+        attributes AS (
+          SELECT DISTINCT member.rolname AS name, a.attribute
+          FROM pg_roles member
+          JOIN pg_roles target ON pg_has_role(member.oid, target.oid, 'SET')
+          CROSS JOIN LATERAL (VALUES ('superuser', target.rolsuper), ('createrole', target.rolcreaterole),
+                                     ('createdb', target.rolcreatedb), ('replication', target.rolreplication),
+                                     ('bypassrls', target.rolbypassrls)) a(attribute, held)
+          WHERE member.rolname !~ '^pg_' AND a.held
+        ),
+        ident AS (
+          SELECT map_name AS map, sys_name AS cn, pg_username AS role, error FROM pg_ident_file_mappings
+        )
+        SELECT '1' AS rule, 'unexpected_role' AS check, count(*) AS violations
+          FROM roles WHERE name <> 'app' AND name NOT IN (SELECT name FROM expected_roles)
+        UNION ALL
+        SELECT '4', 'app_role', count(*) FROM roles WHERE name = 'app'
+        UNION ALL
+        SELECT '3', 'role_attribute', count(*)
+          FROM attributes WHERE (attribute, name) NOT IN (SELECT attribute, name FROM allowed_attributes)
+        UNION ALL
+        -- Every line that is not expected or has an error, and every expected line that is missing.
+        SELECT '1', 'cn_mapping',
+          (SELECT count(*) FROM ident i
+           WHERE i.error IS NOT NULL
+              OR NOT EXISTS (SELECT 1 FROM expected_ident e WHERE (e.map, e.cn, e.role) = (i.map, i.cn, i.role)))
+          + (SELECT count(*) FROM expected_ident e
+             WHERE NOT EXISTS (SELECT 1 FROM ident i WHERE (i.map, i.cn, i.role) = (e.map, e.cn, e.role)))
+      metrics:
+        - rule:
+            usage: LABEL
+            description: The rule of evidence.sh the check belongs to
+        - check:
+            usage: LABEL
+            description: The name of the check
+        - violations:
+            usage: GAUGE
+            description: Roles, attributes or pg_ident lines that break the check on this instance, 0 when it passes

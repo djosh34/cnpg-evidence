@@ -30,7 +30,8 @@ def values_needed:
   "the desired state needs cluster.name, cluster.namespace, cluster.instances, caSecret, rwLoadBalancer.name, network.operatorNamespace, replication.commonName and databases with name, role and clientCNs";
 
 # The roles that hold each special right. CNPG's own roles: postgres is the
-# superuser, streaming_replica replicates and reads files for pg_rewind.
+# superuser, streaming_replica replicates and reads files for pg_rewind,
+# cnpg_metrics_exporter reads pg_ident for the compliance query of samples/chart.
 def role_rights:
   {
     superusers: ["postgres"],
@@ -42,7 +43,9 @@ def role_rights:
     can_read_server_files: ["postgres", "streaming_replica"],
     can_write_server_files: ["postgres"],
     can_read_all_data: ["postgres"],
-    can_write_all_data: ["postgres"]
+    can_write_all_data: ["postgres"],
+    can_read_ident_view: ["cnpg_metrics_exporter", "postgres"],
+    can_run_ident_function: ["cnpg_metrics_exporter", "postgres"]
   };
 
 # CNPG's roles, cnpg_metrics_exporter logs in for metrics, and one role per database.
@@ -108,7 +111,8 @@ def controllers:
       "endpoint-controller", "endpointslice-controller", "endpointslicemirroring-controller",
       "generic-garbage-collector", "job-controller", "legacy-service-account-token-cleaner",
       "local-path-provisioner-service-account", "namespace-controller", "persistent-volume-binder",
-      "replicaset-controller", "replication-controller", "resourcequota-controller", "statefulset-controller"]
+      "replicaset-controller", "replication-controller", "resourcequota-controller", "root-ca-cert-publisher",
+      "statefulset-controller"]
      | map("system:serviceaccount:kube-system:\(.)"));
 
 # k3s installs Traefik with a Helm job per HelmChart, whose ServiceAccount

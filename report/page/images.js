@@ -20,7 +20,7 @@
 
 const PLATFORM_DESIRED = 'The platform components that may hold these rights. Any other account must hold none of them.';
 const PLATFORM_ACTUAL = 'Every Kubernetes account that holds one of these rights, as the API server answers for it.';
-const RIGHTS_NOTE = 'PostgreSQL superuser is entering or changing the instance pods, starting pods, reading or writing Secrets, or changing the CNPG objects in the cluster\'s namespace. Routes are Ingresses and, where the cluster serves them, Traefik IngressRoutes and IngressRouteTCPs.';
+const RIGHTS_NOTE = 'PostgreSQL superuser is entering or changing the instance pods, starting pods, reading or writing Secrets, writing ConfigMaps, or changing the CNPG objects in the cluster\'s namespace. Routes are Ingresses and, where the cluster serves them, Traefik IngressRoutes and IngressRouteTCPs.';
 
 // Filled when the member is there, empty when it is not or only desired.
 const square = state => [{ mark: state !== null && state !== 'missing', state: state === 'missing' ? '' : state ?? '' }];
@@ -39,6 +39,8 @@ const RIGHTS = [
   ['can_write_server_files', 'Write server files'],
   ['can_read_all_data', 'Read all data'],
   ['can_write_all_data', 'Write all data'],
+  ['can_read_ident_view', 'Read pg_ident view'],
+  ['can_run_ident_function', 'Run pg_ident function'],
 ];
 
 // The certificate names and databases of an account, from the certificate

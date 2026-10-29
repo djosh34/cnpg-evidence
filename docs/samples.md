@@ -7,7 +7,7 @@ What is in `desired.yaml` and `samples/`, how to install it, and how to keep it 
 | File | What it is |
 |---|---|
 | [`desired.yaml`](../desired.yaml) | The desired state of the cluster: name, namespace and instances, the client CA Secret, the rw LoadBalancer name, the optional read LoadBalancer's name and port, the operator and OTel namespaces, the replication certificate names, and the databases with their role and client CNs. `evidence.sh` compares against it; the chart reads it as values. |
-| [`samples/chart/`](../samples/chart) | A Helm chart that renders the `Cluster`, one `Database` per database, the server and replication `Certificate`s, the `<cluster>-bootstrap` Secret, the barman-cloud `ObjectStore` and one ingress `NetworkPolicy`. |
+| [`samples/chart/`](../samples/chart) | A Helm chart that renders the `Cluster`, one `Database` per database, the server and replication `Certificate`s, the `<cluster>-bootstrap` Secret, the barman-cloud `ObjectStore`, one ingress `NetworkPolicy` and the `<cluster>-compliance` ConfigMap. |
 | [`samples/chart/values.yaml`](../samples/chart/values.yaml) | Chart-only settings: image, storage size, cert-manager issuer, object store, recovery. |
 | [`samples/values-cnpg-operator.yaml`](../samples/values-cnpg-operator.yaml) | Values for the operator chart: chart RBAC off, `WATCH_NAMESPACE=cnpg-system,databases`. |
 | [`samples/values-barman-cloud.yaml`](../samples/values-barman-cloud.yaml) | Values for the plugin chart: chart RBAC off. |
@@ -36,6 +36,7 @@ Database objects: pg-orders, pg-billing
 - `cnpg_streaming_replica` is CNPG's map for replication logins; the chart adds the replication CN to it.
 - The server and replication `Certificate`s carry the replication CN and `dnsNames` from `desired.yaml`, and the issuer from `values.yaml`.
 - The `NetworkPolicy` selects every pod of the cluster, including its bootstrap and join Job pods, and admits 5432 and 8000 from the cluster's pods, 8000 from the operator pods, 9187 from the OTel namespace, and 5432 from outside the cluster, from the other nodes and from the svclb pods of the rw LoadBalancer.
+- The `<cluster>-compliance` ConfigMap holds a query that the metrics exporter runs on every instance (see [Compliance metric](#compliance-metric)).
 - The `Cluster` has the rw LoadBalancer and, when `readLoadBalancer` is set, the read LoadBalancer, both without NodePorts (see [LoadBalancers](#loadbalancers)). Every commit waits for one other instance, and a starting replica opens the read port only once it has caught up (see [Writes, reads and failover](#writes-reads-and-failover)).
 
 To see the full output: `helm template pg samples/chart -n databases -f desired.yaml --dry-run=server`. The NetworkPolicy reads every node's `spec.podCIDR` from the cluster with `lookup`, so rendering without a cluster fails. A NetworkPolicy written by hand needs the same pod ranges, from `kubectl get nodes -o jsonpath='{.items[*].spec.podCIDR}'`: each range goes into the `except` list of the `0.0.0.0/0` source, and its network address as `/32` becomes a source of its own. Under flannel, connections from another node itself arrive from that address, the node's `flannel.1` interface. No address range is fixed in the samples or the scripts.
@@ -153,6 +154,40 @@ kubectl cnpg promote <cluster> <instance>
 
 This skips the quorum check. First compare `select pg_last_wal_replay_lsn()` on both replicas, and promote only a replica that is not behind the other; otherwise wait for the primary's node, since a commit that only the other replica confirmed would be lost.
 
+## Compliance metric
+
+The chart gives CNPG's metrics exporter one more query, which it runs on every instance as `cnpg_metrics_exporter`. Port 9187 then reports `cnpg_compliance_violations`, one series per instance and check. Each value counts what breaks the check on that instance; 0 means it passes.
+
+| `rule` | `check` | Counts |
+|---|---|---|
+| 1 | `unexpected_role` | Roles other than `postgres`, `streaming_replica`, `cnpg_metrics_exporter` and the roles in `desired.yaml`, besides `app` |
+| 4 | `app_role` | The role `app` |
+| 3 | `role_attribute` | Each role and attribute it should not have: superuser, create roles, create databases, replication or bypass row security. A role has an attribute when it can `SET ROLE` to a role that has it. Only `postgres` holds them, and `streaming_replica` replication. |
+| 1 | `cn_mapping` | The instance's pg_ident lines that are not expected or that PostgreSQL cannot read, and the expected lines that are missing. The expected lines are CNPG's own and those of the chart, so each client CN maps only to its own role. |
+
+The `rule` label is the rule `evidence.sh` reports the same finding under. Alert on two things:
+
+- `cnpg_compliance_violations > 0`: a role, an attribute or a mapping changed. `evidence.sh` shows which.
+- The series missing for an instance: the query failed, for example without the grants below, or the instance is not scraped.
+
+The exporter caches query results for `metricsQueriesTTL` in the `Cluster`, 30 s by default, so a change shows within that time plus one scrape. The query cannot see passwords; `evidence.sh` checks them. `evidence.sh` counts writing ConfigMaps in the cluster's namespace as PostgreSQL superuser, and `evidence.sh` against `desired.yaml` remains the full check.
+
+### Grants
+
+Reading `pg_ident_file_mappings` needs two grants for `cnpg_metrics_exporter`. On a new cluster, the chart's `postInitSQL` gives them. CNPG creates `cnpg_metrics_exporter` only after that SQL, so the chart creates the role first, as CNPG would; CNPG then keeps it and adds `pg_monitor`.
+
+On a cluster that already runs, give them once on the primary. Replicas get them by replication:
+
+```bash
+kubectl exec -n databases <primary pod> -c postgres -- psql \
+  -c 'GRANT SELECT ON pg_ident_file_mappings TO cnpg_metrics_exporter' \
+  -c 'GRANT EXECUTE ON FUNCTION pg_ident_file_mappings() TO cnpg_metrics_exporter'
+```
+
+A restore copies the grants with the rest of the catalog when the backup was taken after them. After a restore from an older backup, run the same step on the new cluster's primary. Until then the metric is missing.
+
+`evidence.sh` expects exactly these grants: `can_read_ident_view` and `can_run_ident_function` must each list `postgres` and `cnpg_metrics_exporter`, no other role.
+
 ## Outside the chart
 
 ### CoreDNS on every node
@@ -210,7 +245,7 @@ helm install pg-restore samples/chart -n databases -f desired.yaml \
 
 The restore gets its own rw LoadBalancer and no read LoadBalancer: CNPG refuses a Service that another cluster owns. While the old cluster holds 5432, the new LoadBalancer's svclb pods stay Pending, so check the restore through its pods or its `pg-restore-rw` Service inside the cluster.
 
-`bootstrap.recovery` gets the same `database`, `owner` and `secret` fields as `initdb`, so CNPG creates no `app` either. A restore still copies what the backup holds: a backup taken before `app` was removed brings the `app` database and role back. After such a restore, run steps 3 and 4 of the next section on the new cluster.
+`bootstrap.recovery` gets the same `database`, `owner` and `secret` fields as `initdb`, so CNPG creates no `app` either. A restore still copies what the backup holds: a backup taken before `app` was removed brings the `app` database and role back. After such a restore, run steps 3 and 4 of the next section on the new cluster. A backup taken before the [compliance metric's grants](#grants) lacks them; give them on the new cluster.
 
 ## Remove app from a cluster bootstrapped with the defaults
 

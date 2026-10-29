@@ -91,6 +91,7 @@ test('every yes or no is a square: filled when held, red when desired does not g
   assert.deepEqual(accounts.find(r => r[0] === 'postgres').slice(4, 7), ['[x]', '[x]', '[x]']);
   assert.deepEqual(accounts.find(r => r[0] === 'orders').slice(4, 7), ['[ ]', '[ ]', '+[x]']);
   assert.deepEqual(accounts.find(r => r[0] === 'billing').slice(8), ['+[x]']);
+  assert.equal(accounts.find(r => r[0] === 'cnpg_metrics_exporter')[7], 'Read pg_ident view Run pg_ident function');
   const columns = sheet(failing, desired, 'evidence-01-accounts-actual.png').columns;
   assert.deepEqual(columns.filter(c => c.mark).map(c => c.label), ['Logs in', 'Superuser', 'Create roles', 'Create databases', 'Password stored']);
 });

@@ -68,6 +68,14 @@ SELECT json_build_object(
     (SELECT coalesce(json_agg(DISTINCT name ORDER BY name), '[]') FROM by_set_or_inheritance WHERE rolname = 'pg_read_all_data'),
   'can_write_all_data',
     (SELECT coalesce(json_agg(DISTINCT name ORDER BY name), '[]') FROM by_set_or_inheritance WHERE rolname = 'pg_write_all_data'),
+  -- Reading the pg_ident_file_mappings view needs both grants: the metrics
+  -- exporter has them, for the compliance query of samples/chart.
+  'can_read_ident_view',
+    (SELECT coalesce(json_agg(DISTINCT name ORDER BY name), '[]') FROM by_set_or_inheritance
+     WHERE has_table_privilege(oid, 'pg_catalog.pg_ident_file_mappings', 'SELECT')),
+  'can_run_ident_function',
+    (SELECT coalesce(json_agg(DISTINCT name ORDER BY name), '[]') FROM by_set_or_inheritance
+     WHERE has_function_privilege(oid, 'pg_catalog.pg_ident_file_mappings()', 'EXECUTE')),
   'have_password',
     (SELECT coalesce(json_agg(rolname ORDER BY rolname), '[]') FROM own_roles WHERE rolpassword IS NOT NULL),
   'can_log_in',
