@@ -63,7 +63,7 @@ bash scripts/test.sh
 
 ## Upgrade from v0.2.0
 
-v0.3.0 makes the sample chart fail over by itself when the primary's node is lost: streaming readiness is gone, and `failoverQuorum`, `synchronous_commit: remote_apply` and a startup lag check are new. Turn on `failoverQuorum` on its own first and check that every instance reloaded, then apply the rest. Give the metrics exporter its two grants before the upgrade. The scripts keep eight rules and fewer sections, checks and probes, `compare.sh` is gone, and the image list changes. `samples/monitoring/` adds alert rules and a Grafana dashboard. [upgrade.md](docs/upgrade.md) lists every step, also those from v0.1.0.
+v0.3.0 makes the sample chart fail over by itself when the primary's node is lost: streaming readiness is gone, and `failoverQuorum`, `synchronous_commit: remote_apply` and a startup lag check are new. Turn on `failoverQuorum` on its own first and check that every instance reloaded, then apply the rest. Give the metrics exporter its two grants before the upgrade. The scripts now have eight rules and fewer sections, checks and probes, `compare.sh` is gone, and the image list changes. `samples/monitoring/` adds alert rules and a Grafana dashboard. [upgrade.md](docs/upgrade.md) lists every step, also those from v0.1.0.
 
 ## Files
 
