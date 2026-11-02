@@ -27,6 +27,17 @@ prom_value() {
   jq -r '.data.result[0].value[1] // "no data"' <<<"$result"
 }
 
+# The times without a sample of series $1 for 15 s or longer in the last $2
+# seconds, in seconds after T0.
+gaps() {
+  local result
+  result=$(prom_query "$1[$2s]") || fail "Prometheus did not answer"
+  jq -r --argjson t0 "$T0" --argjson now "$(now_ms)" --argjson w "$2" '
+    [($now / 1000 - $w), (.data.result[0].values // [] | map(.[0]))[], $now / 1000] as $t
+    | [range(1; $t | length) | select($t[.] - $t[. - 1] >= 15) | "from \($t[. - 1] - $t0 / 1000 | floor) s to \($t[.] - $t0 / 1000 | floor) s"]
+    | if length == 0 then "no gap found" else join(", ") end' <<<"$result"
+}
+
 # Instances $2... kept their query metrics from $1 (ms) to now: Prometheus
 # got them at least once in every 15 s, three scrapes. A change of the
 # Cluster gives each exporter new, empty query results, so a scrape right
@@ -40,7 +51,7 @@ kept_metrics() {
       # A 15 s window without a sample counts 0, not nothing: sum makes the
       # count one unlabelled series, which vector(0) then fills.
       n=$(prom_value "min_over_time((sum(count_over_time(${series}[15s])) or vector(0))[${window}s:5s])")
-      [[ $n =~ ^[1-9] ]] || fail "$pod went 15 s or longer without $series from $(secs "$from") s on"
+      [[ $n =~ ^[1-9] ]] || fail "$pod went 15 s or longer without $series, $(gaps "$series" "$window")"
       n=$(prom_value "count_over_time(cnpg_collector_up{pod=\"$pod\"}[${window}s]) - on (pod) count_over_time(${series}[${window}s])")
       empty+=("$pod ${series%%\{*} $n")
     done

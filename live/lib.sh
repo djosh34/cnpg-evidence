@@ -555,6 +555,8 @@ YAML
       fail "$d not ready after 300s"
   done
   wait_for 300 "Prometheus with the metrics of every source" prom_has_every_source
+  prom_count 0 "cnpg_sample:data_disk_used_ratio > 0.6" ||
+    fail "a data disk is over 60 % used before the scenario, so CNPGDataDiskFull could fire; the runner's disk: $(df -h / | tail -1)"
   wait_for 600 "the first backup completed" backup_completed "$FIRST_BACKUP"
   MONITOR_START=$(now_ms)
   log "monitoring on $node"
