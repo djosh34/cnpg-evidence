@@ -101,5 +101,6 @@ A k3s node that runs in a docker container, as in `live/`, fails these checks, e
 | --- | --- | --- |
 | `selinux` | `disabled; enable_selinux false` | The runner's kernel has no SELinux, and k3s runs without `--selinux` |
 | `postgres-account` | `getent not found` | The k3s image has no `getent` |
-| `k3s-secrets` | `/var/lib/rancher/k3s/server: 755, root:root, no ACL; secrets-encryption off` | k3s makes the server directory 0755 in the container, and the node runs without `--secrets-encryption` |
+| `dir-modes` | `/var/lib/rancher/k3s/storage: missing` | No volume was made on the node yet; the local-path provisioner makes the directory with the first one |
+| `k3s-secrets` | `secrets-encryption off` | The node runs without `--secrets-encryption` |
 | `low-ports` | `ip_unprivileged_port_start = 0` | Docker sets it to 0 in a container's network namespace |

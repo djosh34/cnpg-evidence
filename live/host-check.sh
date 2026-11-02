@@ -43,6 +43,11 @@ node_ready() {
   [[ $(docker exec "$NODE" kubectl get node "$NODE" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}') == True ]]
 }
 
+# k3s starts its network policy controller after the node is Ready.
+netpol_chains() {
+  [[ $(docker exec "$NODE" iptables-save -t filter) == *"-j KUBE-ROUTER-OUTPUT"* ]]
+}
+
 want=$(known_failures)
 [[ $want != "[]" ]] || fail "no known failures found in docs/host-check.md"
 
@@ -60,6 +65,7 @@ docker run -d --name "$NODE" --hostname "$NODE" \
   -v /var/lib/rancher/k3s \
   "$K3S_IMAGE" server >/dev/null
 wait_for 300 "node $NODE Ready" node_ready
+wait_for 120 "the network policy controller's chains" netpol_chains
 
 log "host-check.sh on $NODE"
 docker exec "$NODE" mkdir -p "$DIR/scripts"
