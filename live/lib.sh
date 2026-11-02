@@ -94,6 +94,15 @@ instances() {
     -o custom-columns=NAME:.metadata.name,NODE:.spec.nodeName
 }
 
+# The instance pod names, one per line. Fails when the listing fails or
+# finds none, so a loop over them cannot pass by checking nothing.
+instance_pods() {
+  local list
+  list=$(instances) || return 1
+  [[ -n $list ]] || { echo "no instance pods of $CLUSTER" >&2; return 1; }
+  awk '{print $1}' <<<"$list"
+}
+
 node_ip() {
   local i
   for i in "${!NODES[@]}"; do

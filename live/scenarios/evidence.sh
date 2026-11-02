@@ -57,7 +57,8 @@ for n in "${NODES[@]}"; do
 done
 PROVE=$(now_ms)
 
-for pod in $(instances | awk '{print $1}'); do
+pods=$(instance_pods)
+for pod in $pods; do
   compliance_zero "$pod" || fail "the compliance metric of $pod is not 0 for its 4 checks"
 done
 METRICS=$(now_ms)

@@ -33,7 +33,7 @@ wal_waiting() {
 }
 
 # Breaks the store and leaves WAL on primary $1 that the store never got.
-break_store() {
+break_store_leaving_wal() {
   store_break "$STORE_MODE"
   psql_on "$1" -c 'create table if not exists live_load (n int, pad text)'
   for _ in 1 2; do
@@ -84,7 +84,7 @@ summary "### store-$STORE_MODE, writer $WRITER"
 old=$(primary)
 node=$(node_of "$old")
 use_api_of "$(other_node "$node")"
-break_store "$old"
+break_store_leaving_wal "$old"
 T0=$(now_ms)
 docker stop -t 0 "$node" >/dev/null
 log "stopped $node, the node of primary $old"
@@ -115,7 +115,7 @@ NODE_LOSS=$T0
 # A switchover.
 old=$(primary)
 target=$(instances | awk -v p="$old" '$1 != p {print $1; exit}')
-break_store "$old"
+break_store_leaving_wal "$old"
 T0=$(now_ms)
 k cnpg promote "$CLUSTER" "$target" -n "$NS" >/dev/null
 log "promoting $target, primary was $old"

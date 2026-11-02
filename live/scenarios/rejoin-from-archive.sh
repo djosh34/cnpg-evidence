@@ -23,8 +23,9 @@ KEEP=64MB
 LOAD_MB=256
 
 wal_keep_size_is() {
-  local pod value
-  for pod in $(instances | awk '{print $1}'); do
+  local pods pod value
+  pods=$(instance_pods) || return 1
+  for pod in $pods; do
     value=$(psql_on "$pod" -c 'show wal_keep_size')
     [[ $value == "$1" ]] || { echo "wal_keep_size on $pod: $value" >&2; return 1; }
   done

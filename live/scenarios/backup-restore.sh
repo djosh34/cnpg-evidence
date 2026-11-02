@@ -56,7 +56,8 @@ CLUSTER=$RESTORED
 wait_for 900 "three ready instances of $RESTORED, two streaming replicas" settled
 RESTORED_AT=$(now_ms)
 RESTORED_COMMITS=$(check_commits)
-for pod in $(instances | awk '{print $1}'); do
+pods=$(instance_pods)
+for pod in $pods; do
   wait_for 120 "cnpg_compliance_violations 0 for 4 checks on $pod" compliance_zero "$pod"
 done
 METRICS=$(now_ms)
