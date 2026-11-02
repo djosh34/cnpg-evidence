@@ -30,6 +30,7 @@ node_restarts() {
 }
 
 show node_restarts
+show docker ps -a --format '{{.Names}} {{.Status}}'
 for n in "${NODES[@]}"; do
   show docker start "$n"
 done

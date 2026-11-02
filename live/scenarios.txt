@@ -7,3 +7,9 @@ replica-node-loss
 replica-restart-during-primary-loss
 rollout
 switchover
+replica-down-long
+store-refuse
+store-hang
+backup-restore
+rejoin-from-archive
+replica-not-streaming

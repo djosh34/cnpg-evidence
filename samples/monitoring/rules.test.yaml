@@ -17,11 +17,8 @@ tests:
       - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x20'}
       - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-2"}', values: '1x20'}
       - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-3"}', values: '1x20'}
-      - {series: 'cnpg_pg_replication_slots_active{namespace="databases",cluster="pg",pod="pg-1",slot_name="_cnpg_pg_2",slot_type="physical"}', values: '1x20'}
-      - {series: 'cnpg_pg_replication_slots_active{namespace="databases",cluster="pg",pod="pg-1",slot_name="_cnpg_pg_3",slot_type="physical"}', values: '1x20'}
-      # The replicas keep copies of the other replica's slot, inactive.
-      - {series: 'cnpg_pg_replication_slots_active{namespace="databases",cluster="pg",pod="pg-2",slot_name="_cnpg_pg_3",slot_type="physical"}', values: '0x20'}
-      - {series: 'cnpg_pg_replication_slots_active{namespace="databases",cluster="pg",pod="pg-3",slot_name="_cnpg_pg_2",slot_type="physical"}', values: '0x20'}
+      - {series: 'cnpg_pg_stat_replication_backend_start{namespace="databases",cluster="pg",pod="pg-1",application_name="pg-2",usename="streaming_replica"}', values: '1000x20'}
+      - {series: 'cnpg_pg_stat_replication_backend_start{namespace="databases",cluster="pg",pod="pg-1",application_name="pg-3",usename="streaming_replica"}', values: '1000x20'}
       - {series: 'cnpg_pg_replication_lag{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x20'}
       - {series: 'cnpg_pg_replication_lag{namespace="databases",cluster="pg",pod="pg-2"}', values: '1x20'}
       - {series: 'cnpg_pg_replication_lag{namespace="databases",cluster="pg",pod="pg-3"}', values: '0x20'}
@@ -161,8 +158,8 @@ tests:
     alert_rule_test:
       - {eval_time: 10m, alertname: CNPGDatabaseDown}
 
-  # pg-3's node is down: the primary's slot for it is inactive and its own
-  # metrics are gone.
+  # pg-3's node is down: it is not in the primary's pg_stat_replication and
+  # its own metrics are gone.
   - name: replica down
     interval: 1m
     input_series:
@@ -171,9 +168,7 @@ tests:
       - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-3"}', values: '1 stale'}
       - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x15'}
       - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-2"}', values: '1x15'}
-      - {series: 'cnpg_pg_replication_slots_active{namespace="databases",cluster="pg",pod="pg-1",slot_name="_cnpg_pg_2",slot_type="physical"}', values: '1x15'}
-      - {series: 'cnpg_pg_replication_slots_active{namespace="databases",cluster="pg",pod="pg-1",slot_name="_cnpg_pg_3",slot_type="physical"}', values: '0x15'}
-      - {series: 'cnpg_pg_replication_slots_active{namespace="databases",cluster="pg",pod="pg-2",slot_name="_cnpg_pg_3",slot_type="physical"}', values: '0x15'}
+      - {series: 'cnpg_pg_stat_replication_backend_start{namespace="databases",cluster="pg",pod="pg-1",application_name="pg-2",usename="streaming_replica"}', values: '1000x15'}
     alert_rule_test:
       - {eval_time: 4m, alertname: CNPGReplicaDown}
       - eval_time: 6m
@@ -191,7 +186,7 @@ tests:
       - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-1"}', values: '1x15'}
       - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-2"}', values: '1 1 stale'}
       - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x15'}
-      - {series: 'cnpg_pg_replication_slots_active{namespace="databases",cluster="pg",pod="pg-1",slot_name="_cnpg_pg_2",slot_type="physical"}', values: '1x15'}
+      - {series: 'cnpg_pg_stat_replication_backend_start{namespace="databases",cluster="pg",pod="pg-1",application_name="pg-2",usename="streaming_replica"}', values: '1000x15'}
     alert_rule_test:
       - eval_time: 8m
         alertname: CNPGReplicaDown
@@ -199,6 +194,33 @@ tests:
           - exp_labels: {severity: critical, namespace: databases, cluster: pg, pod: pg-2}
             exp_annotations:
               summary: Instance pg-2 of databases/pg does not stream from the primary or reports no metrics.
+
+  # pg-3 stops streaming while its exporter still answers: it leaves the
+  # primary's pg_stat_replication.
+  - name: replica stops streaming, exporter up
+    interval: 1m
+    input_series:
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-1"}', values: '1x15'}
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-2"}', values: '1x15'}
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-3"}', values: '1x15'}
+      - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x15'}
+      - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-2"}', values: '1x15'}
+      - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-3"}', values: '1x15'}
+      - {series: 'cnpg_pg_stat_replication_backend_start{namespace="databases",cluster="pg",pod="pg-1",application_name="pg-2",usename="streaming_replica"}', values: '1000x15'}
+      - {series: 'cnpg_pg_stat_replication_backend_start{namespace="databases",cluster="pg",pod="pg-1",application_name="pg-3",usename="streaming_replica"}', values: '1000 1000 stale'}
+    promql_expr_test:
+      - expr: cnpg_sample:replica_streaming
+        eval_time: 5m
+        exp_samples:
+          - {labels: 'cnpg_sample:replica_streaming{namespace="databases",cluster="pg",pod="pg-2"}', value: 1}
+    alert_rule_test:
+      - {eval_time: 6m, alertname: CNPGReplicaDown}
+      - eval_time: 8m
+        alertname: CNPGReplicaDown
+        exp_alerts:
+          - exp_labels: {severity: critical, namespace: databases, cluster: pg, pod: pg-3}
+            exp_annotations:
+              summary: Instance pg-3 of databases/pg does not stream from the primary or reports no metrics.
 
   # pg-3's node is lost and the other instances answer without their query
   # metrics, as CNPG's exporters can while a node is lost. The replica alert
