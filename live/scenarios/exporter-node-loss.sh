@@ -51,20 +51,23 @@ gaps() {
 # scrapes can time out for a while. Adds a row per instance with the answers
 # without query metrics, the failed scrapes and when it did not answer.
 kept_metrics() {
-  local from=$1 window pod series n empty
+  local from=$1 window pod series n empty scrapes
   shift
   window=$((($(now_ms) - from) / 1000))
   for pod in "$@"; do
     empty=()
+    scrapes=$(scrapes_of "$pod" "$window")
     prom_count 0 "min_over_time((sum(count_over_time(cnpg_collector_up{pod=\"$pod\"}[${NO_ANSWER_LIMIT}s])) or vector(0))[${window}s:5s]) == 0" ||
-      fail "the exporter of $pod did not answer for ${NO_ANSWER_LIMIT} s or longer: $(scrapes_of "$pod" "$window")"
+      fail "the exporter of $pod did not answer for ${NO_ANSWER_LIMIT} s or longer: $scrapes"
     for series in "cnpg_compliance_violations{check=\"cn_mapping\", pod=\"$pod\"}" "cnpg_pg_replication_in_recovery{namespace=\"$NS\", pod=\"$pod\"}"; do
-      prom_count 0 "max_over_time((sum(count_over_time(cnpg_collector_up{pod=\"$pod\"}[15s])) > 0 unless on () sum(count_over_time(${series}[15s])))[${window}s:5s])" ||
-        fail "the exporter of $pod answered for 15 s or longer without $series, $(gaps "$series" "$window")"
+      if ! prom_count 0 "max_over_time((sum(count_over_time(cnpg_collector_up{pod=\"$pod\"}[15s])) > 0 unless on () sum(count_over_time(${series}[15s])))[${window}s:5s])"; then
+        n=$(gaps "$series" "$window")
+        fail "the exporter of $pod answered for 15 s or longer without $series, $n"
+      fi
       n=$(prom_value "count_over_time(cnpg_collector_up{pod=\"$pod\"}[${window}s]) - on (pod) count_over_time(${series}[${window}s])")
       empty+=("$n without ${series%%\{*}")
     done
-    row "$pod from $(secs "$from") to $(secs "$(now_ms)"): answers" "$(printf '%s, ' "${empty[@]}")$(scrapes_of "$pod" "$window")"
+    row "$pod from $(secs "$from") to $(secs "$(now_ms)"): answers" "$(printf '%s, ' "${empty[@]}")$scrapes"
   done
 }
 
@@ -72,9 +75,12 @@ kept_metrics() {
 # failed, the longest, and the times without cnpg_collector_up for 15 s or
 # longer.
 scrapes_of() {
-  echo "$(prom_value "count_over_time(up{pod=\"$1\"}[$2s]) - sum_over_time(up{pod=\"$1\"}[$2s])") of $(prom_value "count_over_time(up{pod=\"$1\"}[$2s])") scrapes failed," \
-    "the longest took $(prom_value "max_over_time(scrape_duration_seconds{pod=\"$1\"}[$2s])") s," \
-    "no answer: $(gaps "cnpg_collector_up{pod=\"$1\"}" "$2")"
+  local failed all longest none
+  failed=$(prom_value "count_over_time(up{pod=\"$1\"}[$2s]) - sum_over_time(up{pod=\"$1\"}[$2s])")
+  all=$(prom_value "count_over_time(up{pod=\"$1\"}[$2s])")
+  longest=$(prom_value "max_over_time(scrape_duration_seconds{pod=\"$1\"}[$2s])")
+  none=$(gaps "cnpg_collector_up{pod=\"$1\"}" "$2")
+  echo "$failed of $all scrapes failed, the longest took $longest s, no answer: $none"
 }
 
 wait_for 600 "three ready instances, two streaming replicas" settled

@@ -58,9 +58,15 @@ jobs:
           cache-dependency-path: live/client/go.sum
       # The data disk alerts watch the filesystem the volumes are on, here the
       # runner's, and some runners start with it over 80 % used. Removes
-      # toolchains the scenarios do not use.
+      # toolchains and docker images the scenarios do not use; Go from
+      # setup-go stays.
       - name: Free disk space
-        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /usr/share/swift \
+            /usr/local/share/boost /usr/local/share/powershell /usr/lib/jvm /opt/hostedtoolcache/CodeQL
+          docker image prune --all --force >/dev/null
+          df -h /
       - name: Runner
         run: |
           set -euo pipefail
