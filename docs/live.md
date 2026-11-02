@@ -45,7 +45,7 @@ A scenario runs the writer when `WRITER` is `on`, the default. With `WRITER=off`
 
 Each scenario first waits until all three instances are ready and the primary streams to both replicas. Then, in both modes:
 
-- Every instance must be ready and streaming again within 10 minutes of the event's end.
+- Every instance must be ready and streaming again within 10 minutes of the event's end, and then every node's read port must answer within a minute.
 - Every acknowledged commit, the final write included, must be in `live_writes` on the primary afterwards.
 - The job summary gives, in seconds after the event, when each node's read port was down and back, and when every instance was ready and streaming.
 

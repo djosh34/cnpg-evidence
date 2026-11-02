@@ -126,7 +126,9 @@ func insert(ctx context.Context, pool *pgxpool.Pool) bool {
 		logLine("rw", "ok", fmt.Sprintf("%d %s", n, server))
 		return true
 	}
-	logLine("rw", "fail", oneLine(err))
+	if !errors.Is(ctx.Err(), context.Canceled) { // canceled: the client is stopping
+		logLine("rw", "fail", oneLine(err))
+	}
 	return false
 }
 
@@ -186,6 +188,9 @@ func readHost(ctx context.Context, certs, host string) {
 	defer tick.Stop()
 	for {
 		recovery, err := readOnce(ctx, certs, host)
+		if ctx.Err() != nil {
+			return // stopped: this attempt says nothing about the node
+		}
 		if err != nil {
 			logLine(host, "fail", oneLine(err))
 		} else {

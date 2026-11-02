@@ -27,7 +27,8 @@ fail() {
 }
 
 # Runs "$@" every 2 s until it succeeds or $1 seconds have passed. Returns 1
-# then, with the command's last error in POLL_ERR.
+# then, with the command's last error in POLL_ERR, also when an attempt that
+# started in time succeeded only after the limit.
 poll() {
   local end=$((SECONDS + $1))
   shift
@@ -35,6 +36,10 @@ poll() {
     ((SECONDS < end)) || return 1
     sleep 2
   done
+  if ((SECONDS > end)); then
+    POLL_ERR="it held only after the limit"
+    return 1
+  fi
 }
 
 # Like poll, but fails after $1 seconds with a message that names $2, what it
@@ -182,6 +187,7 @@ wait_first_write() {
   ((left > 0)) || left=1
   wait_for "$left" "a write on $1 within $2 s" has_write_on "$1"
   FIRST_WRITE=$(first_write_on "$1")
+  ((FIRST_WRITE - T0 <= $2 * 1000)) || fail "the first write on $1 came $(secs "$FIRST_WRITE") s after the event, more than $2 s"
 }
 
 # Sleeps until $1 seconds after T0.
@@ -208,6 +214,17 @@ wait_back() {
   final_write
   wait_for 10 "every instance ready and streaming after the final write" settled
   BACK=$(now_ms)
+  ((BACK - FINAL_WRITE <= 10000)) || fail "every instance was back only $(((BACK - FINAL_WRITE) / 1000)) s after the final write, more than 10 s"
+}
+
+# The last read probe of every node answered.
+reads_back() {
+  local n ip last
+  for n in "${NODES[@]}"; do
+    ip=$(node_ip "$n")
+    last=$(awk -v ip="$ip" '$2 == ip {r = $3} END {print r}' "$READ_LOG")
+    [[ $last == ok ]] || { echo "the read port of $n does not answer" >&2; return 1; }
+  done
 }
 
 # The longest time without an acknowledged write between T0 and T_END, as ms.
@@ -249,11 +266,12 @@ read_port() {
     }' "$READ_LOG"
 }
 
-# Ends a scenario: stops the client and, without the writer, makes the final
-# write. Checks that every acknowledged commit is on the primary and, with the
+# Ends a scenario: waits until every node's read port answers, stops the
+# client and, without the writer, makes the final write. Checks that every acknowledged commit is on the primary and, with the
 # writer, that no time without an acknowledged write since T0 was longer than
 # 180 s. Sets COMMITS and GAP (ms).
 finish() {
+  wait_for 60 "the read port of every node" reads_back
   stop_client
   if [[ $WRITER == off && -z $FINAL_WRITE ]]; then
     final_write

@@ -245,7 +245,8 @@ spec:
     kind: Issuer
     name: example-ca
 YAML
-  k wait --for=condition=Ready certificate/live-client -n "$NS" --timeout=120s >/dev/null
+  timeout 130 kubectl wait --for=condition=Ready certificate/live-client -n "$NS" --timeout=120s >/dev/null ||
+    fail "certificate live-client not Ready after 120s"
   mkdir -p "$CERTS"
   local key
   for key in ca.crt tls.crt tls.key; do
