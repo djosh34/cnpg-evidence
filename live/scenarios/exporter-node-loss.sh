@@ -2,10 +2,11 @@
 # A replica's node is lost for 400 s, then the primary's node for 400 s: each
 # longer than the 5 min after which Kubernetes marks the lost pod for
 # deletion. The exporters of the instances that are left must keep their
-# query metrics all along: Prometheus must get cnpg_compliance_violations
-# from the chart's queries and cnpg_pg_replication_in_recovery from CNPG's
-# own from each of them at least once in every 15 s. CNPGReplicaDown must
-# fire for each lost instance and nothing else.
+# query metrics all along: in no 15 s may one answer without
+# cnpg_compliance_violations from the chart's queries or
+# cnpg_pg_replication_in_recovery from CNPG's own. CNPGReplicaDown must fire
+# for each lost instance and nothing else. The summary gives each instance's
+# answers without them and its failed scrapes.
 #
 # While CNPGReplicaDown fires for the lost replica, the scenario sends
 # Alertmanager CNPGMetricsMissing for that replica and for another instance:
@@ -38,36 +39,35 @@ gaps() {
     | if length == 0 then "no gap found" else join(", ") end' <<<"$result"
 }
 
-# How the scrapes of instance $1 in the last $2 seconds went: how many,
-# how many failed, the longest, and the times without a sample of
-# cnpg_collector_up.
-scrapes_of() {
-  echo "$(prom_value "count_over_time(up{pod=\"$1\"}[$2s])") scrapes," \
-    "$(prom_value "count_over_time((up{pod=\"$1\"} == 0)[$2s:5s])") failed," \
-    "longest $(prom_value "max_over_time(scrape_duration_seconds{pod=\"$1\"}[$2s])") s," \
-    "cnpg_collector_up $(gaps "cnpg_collector_up{pod=\"$1\"}" "$2")"
-}
-
-# Instances $2... kept their query metrics from $1 (ms) to now: Prometheus
-# got them at least once in every 15 s, three scrapes. A change of the
-# Cluster gives each exporter new, empty query results, so a scrape right
-# after one can lack them. Adds a row with how many scrapes lacked them.
+# Instances $2... kept their query metrics from $1 (ms) to now: in no 15 s,
+# three scrapes, did an instance's exporter answer without them. A change of
+# the Cluster gives each exporter new, empty query results, so one answer
+# right after one can lack them. A scrape that fails is not an answer; the
+# alerts see those. Adds a row per instance with the answers without query
+# metrics, the failed scrapes and when cnpg_collector_up was away.
 kept_metrics() {
-  local from=$1 window pod series n empty=()
+  local from=$1 window pod series n empty
   shift
   window=$((($(now_ms) - from) / 1000))
   for pod in "$@"; do
+    empty=()
     for series in "cnpg_compliance_violations{check=\"cn_mapping\", pod=\"$pod\"}" "cnpg_pg_replication_in_recovery{namespace=\"$NS\", pod=\"$pod\"}"; do
-      # A 15 s window without a sample counts 0, not nothing: sum makes the
-      # count one unlabelled series, which vector(0) then fills.
-      n=$(prom_value "min_over_time((sum(count_over_time(${series}[15s])) or vector(0))[${window}s:5s])")
-      [[ $n =~ ^[1-9] ]] ||
-        fail "$pod went 15 s or longer without $series, $(gaps "$series" "$window"); its scrapes: $(scrapes_of "$pod" "$window")"
+      prom_count 0 "max_over_time((sum(count_over_time(cnpg_collector_up{pod=\"$pod\"}[15s])) > 0 unless on () sum(count_over_time(${series}[15s])))[${window}s:5s])" ||
+        fail "the exporter of $pod answered for 15 s or longer without $series, $(gaps "$series" "$window")"
       n=$(prom_value "count_over_time(cnpg_collector_up{pod=\"$pod\"}[${window}s]) - on (pod) count_over_time(${series}[${window}s])")
-      empty+=("$pod ${series%%\{*} $n")
+      empty+=("$n without ${series%%\{*}")
     done
+    row "$pod from $(secs "$from") to $(secs "$(now_ms)"): answers" "$(printf '%s, ' "${empty[@]}")$(scrapes_of "$pod" "$window")"
   done
-  row "query metrics never 15 s away from $*, from $(secs "$from") to $(secs "$(now_ms)"); scrapes without them" "$(printf '%s, ' "${empty[@]}" | sed 's/, $//')"
+}
+
+# How the scrapes of instance $1 in the last $2 seconds went: how many
+# failed, the longest, and the times without cnpg_collector_up for 15 s or
+# longer.
+scrapes_of() {
+  echo "$(prom_value "count_over_time((up{pod=\"$1\"} == 0)[$2s:5s])") of $(prom_value "count_over_time(up{pod=\"$1\"}[$2s])") scrapes failed," \
+    "the longest took $(prom_value "max_over_time(scrape_duration_seconds{pod=\"$1\"}[$2s])") s," \
+    "no answer: $(gaps "cnpg_collector_up{pod=\"$1\"}" "$2")"
 }
 
 wait_for 600 "three ready instances, two streaming replicas" settled
