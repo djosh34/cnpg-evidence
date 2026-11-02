@@ -7,6 +7,7 @@ The scripts in `live/` start the samples on a three-node k3s cluster in docker a
 | File | What it is |
 |---|---|
 | [`live/up.sh`](../live/up.sh) | Starts the cluster and installs the samples (see [The cluster](#the-cluster)) |
+| [`live/node-init.sh`](../live/node-init.sh) | The first process of each node container: runs k3s and starts it again when it exits |
 | [`live/values.yaml`](../live/values.yaml) | The chart values on top of `desired.yaml`: the S3 store's address |
 | [`live/lib.sh`](../live/lib.sh) | Functions the scenarios share: bounded waits, the cluster's state, the client, the checks and the summary |
 | [`live/client/`](../live/client) | The writer and the read probes, a small Go program (see [The writer and the read probes](#the-writer-and-the-read-probes)) |
@@ -22,7 +23,7 @@ The scripts in `live/` start the samples on a three-node k3s cluster in docker a
 
 `live/up.sh` takes about 8 minutes on a runner. It starts:
 
-- Three k3s servers with embedded etcd, as the docker containers `k3s-1` to `k3s-3` on the docker network `live` (`10.77.0.0/24`, nodes at `.11` to `.13`). The k3s image is pinned by digest.
+- Three k3s servers with embedded etcd, as the docker containers `k3s-1` to `k3s-3` on the docker network `live` (`10.77.0.0/24`, nodes at `.11` to `.13`). The k3s image is pinned by digest. In each container `live/node-init.sh` runs k3s and starts it again 5 s after it exits, as k3s's systemd unit does, so the node's pods keep running while k3s is down. k3s exits, for example, on the last node when two of three are gone.
 - An S3 store, versitygw in the container `s3` at `10.77.0.20`, with the bucket `example-bucket`. Inside the cluster it is `s3.s3.svc:9000`.
 - cert-manager from `samples/values-cert-manager.yaml`, and in `databases` a self-signed CA behind the Issuer `example-ca`, the issuer that `samples/chart/values.yaml` names. Its certificate is also the client CA in the Secret `client-ca`.
 - The CNPG operator and the barman-cloud plugin from `samples/values-cnpg-operator.yaml`, `samples/values-barman-cloud.yaml` and both RBAC files.
