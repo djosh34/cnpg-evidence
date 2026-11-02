@@ -300,7 +300,6 @@ func (f *fallback) use(pgConn *pgconn.PgConn) bool {
 	return true
 }
 
-
 // startAttempt starts one attempt at rw unless one runs or the last one
 // started less than a second ago. f.mu must be held.
 func (f *fallback) startAttempt() {
