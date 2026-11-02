@@ -20,6 +20,10 @@
 //
 // The config must use TLS on every host, set connect_timeout, and leave
 // target_session_attrs at any.
+//
+// How to set it up, which errors an application sees while there is no
+// primary, and how far behind a read on the read port can be:
+// https://github.com/djosh34/cnpg-evidence/blob/main/docs/pgfallback.md
 package pgfallback
 
 import (
