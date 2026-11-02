@@ -36,7 +36,7 @@ Database objects: pg-orders, pg-billing
 ```
 
 - Each `hostssl ... cert map=clients` line lets one role into one database with a client certificate; `clients` maps each CN to its role. The last line rejects every other TCP connection, with or without TLS.
-- `cnpg_streaming_replica` is CNPG's map for replication logins; the chart adds the replication CN to it. That CN is a node's host name, signed by the issuer's CA; the example uses `node-1.example.test`. pg_ident maps that CN, and besides CNPG's fixed CN `streaming_replica` only that CN, to `streaming_replica`.
+- `cnpg_streaming_replica` is CNPG's map for replication logins. Besides CNPG's fixed CN `streaming_replica`, the chart maps only the replication CN to `streaming_replica`: the host name of one node, `node-1.example.test` in the example, in a certificate that the issuer's CA signs.
 - The server and replication `Certificate`s carry the replication CN and `dnsNames` from `desired.yaml`, and the issuer from `values.yaml`.
 - The `NetworkPolicy` selects every pod of the cluster, including its bootstrap and join Job pods, and admits 5432 and 8000 from the cluster's pods, 8000 from the operator pods, 9187 from the OTel namespace, and 5432 from outside the cluster, from the other nodes and from the svclb pods of the rw LoadBalancer.
 - The `<cluster>-queries` Secret holds the queries that the metrics exporter runs on every instance: the compliance query (see [Compliance metric](#compliance-metric)), and the replica lag and the commits that wait for a standby, which the alerts of [monitoring.md](monitoring.md) read. The `Cluster` lists it in `monitoring.customQueriesSecret`. A Secret rather than a ConfigMap: with a Secret listed there, CNPG 1.30.1 does not rewrite the `Cluster` status many times a second while a lost pod is marked for deletion, which would leave every instance's exporter without its query metrics until the node returns.
@@ -203,7 +203,7 @@ kubectl exec -n databases <primary pod> -c postgres -- psql -U postgres \
   -c 'GRANT EXECUTE ON FUNCTION pg_ident_file_mappings() TO cnpg_metrics_exporter'
 ```
 
-Until then the metric is missing. A restore copies the grants with the rest of the catalog.
+Until then the metric is missing.
 
 `evidence.sh` expects exactly these grants: `can_read_ident_view` and `can_run_ident_function` must each list `postgres` and `cnpg_metrics_exporter`, no other role.
 
