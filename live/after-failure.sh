@@ -42,6 +42,10 @@ show k get cluster "$CLUSTER" -n "$NS" -o jsonpath='{.status.phase}{"\n"}{.statu
 # JSON, since the text output runs du in an instance.
 show timeout 60 kubectl cnpg status "$CLUSTER" -n "$NS" -o json
 show operator_errors
+# The instance manager's last lines of each instance.
+for pod in $(k get pods -n "$NS" -l "cnpg.io/cluster=$CLUSTER,cnpg.io/podRole=instance" -o name); do
+  show k logs -n "$NS" "$pod" -c postgres --tail=40
+done
 # The monitoring stack's view: the alerts that fire and the scrapes that fail.
 show firing_alerts
 show prom_query 'up == 0'

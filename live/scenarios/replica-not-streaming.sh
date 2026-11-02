@@ -38,6 +38,8 @@ p=$(primary)
 replica=$(instances | awk -v p="$p" '$1 != p {print $1; exit}')
 node=$(node_of "$replica")
 expect_alert CNPGReplicaDown "$replica"
+# Without a WAL receiver the replica reports the age of its last transaction.
+expect_alert CNPGReplicaLag "$replica"
 start_client
 
 T0=$(now_ms)

@@ -78,7 +78,7 @@ The dashboard's Healthy tile counts the critical alerts that fire. `check.sh` te
 
 The chart's query on each replica reports `cnpg_replica_lag_seconds`: 0 when the replica has replayed all the WAL its primary last reported (`latest_end_lsn` of `pg_stat_wal_receiver` is not past `pg_last_wal_replay_lsn()`), otherwise the age of the last transaction it replayed. The primary reports none. Every commit waits for one replica only, so the other one can fall behind while writes go on, and it still serves reads on its node's read port. `CNPGReplicaLag` fires when a replica stays more than 15 s behind for 2 minutes.
 
-A replica whose WAL receiver does not run, for example while there is no primary, reports the age of its last transaction. `CNPGDatabaseDown` mutes `CNPGReplicaLag` once no primary has run for 3 minutes.
+A replica whose WAL receiver does not run, for example while there is no primary or while it catches up from the object store, reports the age of its last transaction. `CNPGReplicaDown` mutes `CNPGReplicaLag` of a replica that does not stream, and `CNPGDatabaseDown` mutes it once no primary has run for 3 minutes.
 
 ### Writes blocked
 
@@ -114,7 +114,7 @@ Red means that a critical alert fires, nothing else; orange that a value passed 
 - An alert about the whole database, such as `CNPGDatabaseDown` or `CNPGBackupFailing`, is one alert per database, not one per pod. Alerts that name a pod, certificate or check carry that name.
 - Alertmanager groups by `namespace`, `cluster` and alert name: one notification when the group fires and one when it resolves. A pod that joins a firing group, or a warning that turns critical, sends an update. While the group fires, a reminder comes every 4 h.
 - `CNPGDatabaseDown` mutes the replica, lag, backup and missing-metrics alerts of the same database.
-- `CNPGReplicaDown` mutes `CNPGMetricsMissing` of the same instance.
+- `CNPGReplicaDown` mutes `CNPGMetricsMissing` and `CNPGReplicaLag` of the same instance.
 - A critical alert mutes the warning of the same alert and instance or certificate.
 
 Alertmanager does not promise exactly one notification. After a restart that lost its stored state, or between Alertmanager peers that cannot reach each other, a notification can come again.

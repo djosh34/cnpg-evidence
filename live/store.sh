@@ -47,6 +47,11 @@ break_store_leaving_wal() {
 # T0, then with the writer for its first write. Sets PROMOTED, and
 # FIRST_WRITE with the writer.
 wait_recovered() {
+  # The writer's commits on the new primary wait until a standby streams
+  # from it; CNPGWritesBlocked fires when that takes longer than 10 s.
+  if [[ $WRITER == on ]]; then
+    allow_alert CNPGWritesBlocked "$1"
+  fi
   local left=$((RECOVER_SECONDS - ($(now_ms) - T0) / 1000))
   ((left > 0)) || left=1
   wait_for "$left" "$1 as primary with a streaming standby" primary_with_standby "$1"

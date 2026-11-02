@@ -689,29 +689,34 @@ am_alert_is() {
   grep -qxF "$2 $3" <<<"$alerts" || { echo "Alertmanager has $1: $(paste -sd ';' <<<"$alerts")" >&2; return 1; }
 }
 
-# Sends alert $1 for pod $2 of the database to Alertmanager, as the rule
-# evaluator would, for 2 min.
+# Sends critical alert $1 for pod $2 of the database to Alertmanager, as the
+# rule evaluator would, for 2 min, with amtool in its pod.
 am_send() {
-  local body
-  body=$(jq -cn --arg name "$1" --arg pod "$2" --arg ns "$NS" --arg cluster "$CLUSTER" \
-    --arg end "$(date -u -d '+2 min' +%FT%TZ)" \
-    '[{labels: {alertname: $name, severity: "critical", namespace: $ns, cluster: $cluster, pod: $pod}, endsAt: $end}]')
-  k create --raw "/api/v1/namespaces/$PROM_NS/services/alertmanager:9093/proxy/api/v2/alerts" -f - <<<"$body" >/dev/null
+  k exec -n "$PROM_NS" deploy/alertmanager -- amtool alert add "$1" severity=critical \
+    "namespace=$NS" "cluster=$CLUSTER" "pod=$2" \
+    --end="$(date -u -d '+2 min' +%FT%TZ)" --alertmanager.url=http://localhost:9093 >/dev/null
 }
 
-# The alerts a scenario expects to fire, as "<alertname> <pod>" lines.
+# The alerts a scenario expects to fire, and those it allows: alerts that are
+# true when they fire, but whether they fire depends on how long a step of
+# the event takes compared with the alert's waiting time. As
+# "<alertname> <pod>" lines.
 EXPECTED_ALERTS=()
+ALLOWED_ALERTS=()
 expect_alert() { EXPECTED_ALERTS+=("$1 $2"); }
+allow_alert() { ALLOWED_ALERTS+=("$1 $2"); }
 
-# Every alert has resolved within 3 min, and the alerts that fired since the
-# monitoring started are exactly the expected ones. Sets FIRED.
+# Every alert has resolved within 3 min, every expected alert fired since the
+# monitoring started, and no other one but the allowed ones. Sets FIRED.
 check_alerts() {
-  local expected
+  local expected missing other
   wait_for 180 "every alert resolved" no_alert_firing
   FIRED=$(fired_alerts) || fail "Prometheus did not answer"
   expected=$(printf '%s\n' "${EXPECTED_ALERTS[@]}" | sed '/^$/d' | sort -u)
-  [[ $FIRED == "$expected" ]] ||
-    fail "the alerts that fired, $(paste -sd ';' <<<"${FIRED:-none}"), are not the expected ones, $(paste -sd ';' <<<"${expected:-none}")"
+  missing=$(comm -23 <(echo "$expected") <(echo "$FIRED") | sed '/^$/d')
+  other=$(comm -13 <(printf '%s\n' "$expected" "${ALLOWED_ALERTS[@]}" | sed '/^$/d' | sort -u) <(echo "$FIRED") | sed '/^$/d')
+  [[ -z $missing ]] || fail "expected alerts did not fire: $(paste -sd ';' <<<"$missing"); fired: $(paste -sd ';' <<<"${FIRED:-none}")"
+  [[ -z $other ]] || fail "alerts fired that the scenario does not expect: $(paste -sd ';' <<<"$other")"
 }
 
 # Every query of samples/monitoring/dashboard.json, with the dashboard's

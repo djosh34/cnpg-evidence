@@ -53,7 +53,7 @@ Every scenario runs the samples' monitoring, as [monitoring.md](monitoring.md) d
 
 Both run on a node the scenario does not stop, as a rule evaluator outside the database's nodes would. Before the event the scenario waits until Prometheus has every instance's query metrics, the data disks and the chart's two certificates, and the first backup is done.
 
-Each scenario lists the alerts it expects, by alert and instance. At its end every alert must have resolved within 3 minutes, and the alerts that fired since the stack started must be exactly the expected ones: a missing one or any other fails the scenario. Then every query of `samples/monitoring/dashboard.json`, with the dashboard's variables set to the cluster, must return data for each panel. The summary lists the alerts that fired.
+Each scenario lists the alerts it expects, by alert and instance, and the alerts it allows: alerts that are true when they fire, but whether they fire depends on how long a step of the event takes compared with the alert's waiting time, such as `CNPGWritesBlocked` while a new primary waits for a standby. At its end every alert must have resolved within 3 minutes, every expected alert must have fired since the stack started, and no other alert but the allowed ones. Then every query of `samples/monitoring/dashboard.json`, with the dashboard's variables set to the cluster, must return data for each panel. The summary lists the alerts that fired.
 
 ## Scenarios
 
@@ -123,4 +123,4 @@ rm -rf /tmp/live
 
 ## Add a scenario
 
-Add a script `live/scenarios/<name>.sh` that sources `live/lib.sh`, and the name to `live/scenarios.txt`. Most scenarios follow the shape of the existing ones: wait until `settled`, `start_monitoring` on a node the scenario does not stop, `expect_alert` for each alert that must fire, `start_client`, set `T0` and start the event, wait for what must happen with `wait_for`, then `wait_back`, `finish`, and the summary rows.
+Add a script `live/scenarios/<name>.sh` that sources `live/lib.sh`, and the name to `live/scenarios.txt`. Most scenarios follow the shape of the existing ones: wait until `settled`, `start_monitoring` on a node the scenario does not stop, `expect_alert` for each alert that must fire and `allow_alert` for each that may, `start_client`, set `T0` and start the event, wait for what must happen with `wait_for`, then `wait_back`, `finish`, and the summary rows.

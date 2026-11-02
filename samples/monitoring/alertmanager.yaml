@@ -26,9 +26,11 @@ inhibit_rules:
   - source_matchers: ['alertname="CNPGDatabaseDown"']
     target_matchers: ['alertname=~"CNPGReplicaDown|CNPGReplicaLag|CNPGBackupFailing|CNPGMetricsMissing"']
     equal: [namespace, cluster]
-  # An instance that is down or does not stream mutes its own missing metrics.
+  # An instance that is down or does not stream mutes its own missing metrics
+  # and its lag: without a WAL receiver it reports the age of its last
+  # transaction.
   - source_matchers: ['alertname="CNPGReplicaDown"']
-    target_matchers: ['alertname="CNPGMetricsMissing"']
+    target_matchers: ['alertname=~"CNPGMetricsMissing|CNPGReplicaLag"']
     equal: [namespace, cluster, pod]
   # Critical mutes the warning of the same alert and object.
   - source_matchers: ['alertname=~"CNPG.+"', 'severity="critical"']
