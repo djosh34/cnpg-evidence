@@ -1,0 +1,4 @@
+# The live cluster's values for samples/chart, on top of desired.yaml and the
+# chart's own values.yaml: the S3 store that live/up.sh starts.
+objectStore:
+  endpointURL: http://s3.s3.svc:9000

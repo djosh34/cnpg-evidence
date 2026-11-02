@@ -10,7 +10,13 @@ permissions:
   contents: read
 
 jobs:
+  # One job per part of the scripts, so they run side by side.
   scripts:
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [evidence, host-check, prove, desired, lib]
+    name: ${{ matrix.part }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -25,9 +31,42 @@ jobs:
           python3 --version
           yq --version
       - name: Script tests
-        run: bash scripts/test.sh
+        env:
+          PART: ${{ matrix.part }}
+        run: bash scripts/test.sh "$PART"
+
+  monitoring:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Tool versions
+        run: |
+          set -euo pipefail
+          docker --version
+          python3 --version
+          yq --version
       - name: Monitoring rules
         run: bash samples/monitoring/check.sh
+
+  live-client:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: live/client/go.mod
+          cache-dependency-path: live/client/go.sum
+      - name: Vet and build the live scenarios' client
+        working-directory: live/client
+        run: |
+          set -euo pipefail
+          go version
+          go vet ./...
+          go build -o /dev/null .
 
   page:
     runs-on: ubuntu-24.04

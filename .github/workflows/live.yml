@@ -2,7 +2,8 @@ name: live
 run-name: "live: ${{ inputs.scenarios }}, writer ${{ inputs.writer && 'on' || 'off' }}"
 
 # Runs only on demand. A manual run takes the scenarios to run and whether the
-# writer runs during them.
+# writer runs during them. Each scenario runs as its own job on its own
+# runner, with its own cluster from live/up.sh. docs/live.md describes them.
 on:
   workflow_dispatch:
     inputs:
@@ -19,13 +20,72 @@ permissions:
   contents: read
 
 jobs:
-  live:
+  plan:
     runs-on: ubuntu-24.04
+    outputs:
+      scenarios: ${{ steps.plan.outputs.scenarios }}
     steps:
-      - name: Inputs
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Scenarios
+        id: plan
         env:
           SCENARIOS: ${{ inputs.scenarios }}
-          WRITER: ${{ inputs.writer }}
         run: |
           set -euo pipefail
-          echo "scenarios $SCENARIOS, writer $WRITER"
+          scenarios=$(bash live/plan.sh "$SCENARIOS")
+          echo "scenarios=$scenarios" | tee -a "$GITHUB_OUTPUT"
+
+  scenario:
+    needs: plan
+    name: ${{ matrix.scenario }}
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: ${{ fromJSON(needs.plan.outputs.scenarios) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      WRITER: ${{ inputs.writer && 'on' || 'off' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: live/client/go.mod
+          cache-dependency-path: live/client/go.sum
+      - name: Runner
+        run: |
+          set -euo pipefail
+          nproc
+          free -m
+          df -h /
+          docker version --format 'docker {{.Server.Version}}'
+          kubectl version --client
+          helm version
+      - name: Start the cluster
+        run: bash live/up.sh
+      - name: Scenario
+        env:
+          SCENARIO: ${{ matrix.scenario }}
+        run: bash "live/scenarios/$SCENARIO.sh"
+      - name: State after a failure
+        if: failure()
+        run: bash live/after-failure.sh
+
+  # Fails when a scenario failed or did not run.
+  live:
+    needs: [plan, scenario]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Every scenario passed
+        env:
+          PLAN: ${{ needs.plan.result }}
+          SCENARIOS: ${{ needs.scenario.result }}
+        run: |
+          set -euo pipefail
+          echo "plan: $PLAN, scenarios: $SCENARIOS"
+          [[ $PLAN == success && $SCENARIOS == success ]]
