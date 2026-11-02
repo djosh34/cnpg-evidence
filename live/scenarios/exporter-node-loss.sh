@@ -38,6 +38,16 @@ gaps() {
     | if length == 0 then "no gap found" else join(", ") end' <<<"$result"
 }
 
+# How the scrapes of instance $1 in the last $2 seconds went: how many,
+# how many failed, the longest, and the times without a sample of
+# cnpg_collector_up.
+scrapes_of() {
+  echo "$(prom_value "count_over_time(up{pod=\"$1\"}[$2s])") scrapes," \
+    "$(prom_value "count_over_time((up{pod=\"$1\"} == 0)[$2s:5s])") failed," \
+    "longest $(prom_value "max_over_time(scrape_duration_seconds{pod=\"$1\"}[$2s])") s," \
+    "cnpg_collector_up $(gaps "cnpg_collector_up{pod=\"$1\"}" "$2")"
+}
+
 # Instances $2... kept their query metrics from $1 (ms) to now: Prometheus
 # got them at least once in every 15 s, three scrapes. A change of the
 # Cluster gives each exporter new, empty query results, so a scrape right
@@ -51,7 +61,8 @@ kept_metrics() {
       # A 15 s window without a sample counts 0, not nothing: sum makes the
       # count one unlabelled series, which vector(0) then fills.
       n=$(prom_value "min_over_time((sum(count_over_time(${series}[15s])) or vector(0))[${window}s:5s])")
-      [[ $n =~ ^[1-9] ]] || fail "$pod went 15 s or longer without $series, $(gaps "$series" "$window")"
+      [[ $n =~ ^[1-9] ]] ||
+        fail "$pod went 15 s or longer without $series, $(gaps "$series" "$window"); its scrapes: $(scrapes_of "$pod" "$window")"
       n=$(prom_value "count_over_time(cnpg_collector_up{pod=\"$pod\"}[${window}s]) - on (pod) count_over_time(${series}[${window}s])")
       empty+=("$pod ${series%%\{*} $n")
     done
