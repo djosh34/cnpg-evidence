@@ -87,6 +87,74 @@ jobs:
           go vet ./...
           go build -o /dev/null .
 
+  # golangci-lint on the root module, with the release binary checked by its
+  # SHA-256. golangci-lint cannot turn off nolint comments, so a step fails
+  # on any.
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: golangci-lint v2.15.0
+        run: |
+          set -euo pipefail
+          v=2.15.0
+          cd "$RUNNER_TEMP"
+          curl -fsSLO "https://github.com/golangci/golangci-lint/releases/download/v$v/golangci-lint-$v-linux-amd64.tar.gz"
+          echo "9b7fe6a6bf6334b98decf8d86b11415ea7889afdabdd1959fdce23af2a9ebcea  golangci-lint-$v-linux-amd64.tar.gz" | sha256sum -c -
+          tar -xzf "golangci-lint-$v-linux-amd64.tar.gz"
+          mv "golangci-lint-$v-linux-amd64/golangci-lint" golangci-lint
+          go version
+          ./golangci-lint version
+      - name: No nolint in the root module
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=()
+          while IFS= read -r dir; do
+            files+=("$dir"/*.go)
+          done < <(go list -f '{{.Dir}}' ./...)
+          status=0
+          grep -in nolint -- "${files[@]}" || status=$?
+          if ((status == 0)); then
+            echo "lint: nolint comments are not allowed" >&2
+            exit 1
+          fi
+          if ((status != 1)); then
+            exit "$status"
+          fi
+      - name: Lint
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/golangci-lint" config verify
+          "$RUNNER_TEMP/golangci-lint" run ./...
+
+  # pgfallback against PostgreSQL 18 in docker: a primary and three standbys,
+  # behind TCP proxies the tests stop and start.
+  client:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Tool versions
+        run: |
+          set -euo pipefail
+          go version
+          docker --version
+          openssl version
+      - name: pgfallback tests
+        run: go test -race ./pgfallback/...
+
   page:
     runs-on: ubuntu-24.04
     steps:
