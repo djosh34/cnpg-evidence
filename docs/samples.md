@@ -175,16 +175,16 @@ The chart keeps enough WAL on the instances' own disks that a replica that was d
 
 Commits and reads never wait for the store. A failover, a switchover and a starting replica do: a promotion looks up the timeline history and the last WAL file in the store, a starting replica asks the store first for each WAL file it replays, and the old primary in a switchover tries to archive once more before it stops.
 
-What a broken store costs, measured on a three-node k3s cluster with these settings (the `store-refuse` and `store-hang` scenarios of [live.md](live.md)), in seconds from the event until the new primary took a write:
+What a broken store costs, in seconds from the event until the new primary took a write, measured on a three-node k3s cluster with these settings. The refusing and the never answering store are the `store-refuse` and `store-hang` scenarios of [live.md](live.md); the last row comes from a test whose store dropped every new connection.
 
 | Store | Primary node loss | Switchover |
 |---|---|---|
 | Works | about 75 | about 11 |
-| Refuses connections | STORE_REFUSE_LOSS | STORE_REFUSE_SWITCHOVER |
-| Accepts connections and never answers | STORE_HANG_LOSS | STORE_HANG_SWITCHOVER |
+| Refuses connections | about 80 | about 17 |
+| Accepts connections and never answers | about 120 | about 90 |
 | Drops connections without an answer | about 600 (10 min) | about 850 (14 min) |
 
-A replica that was down rejoins the same way: with the store refusing, a replica that was down while 1.2 GB of WAL was written caught up from the primary alone. A former primary with WAL that the store never got waits for the store before it rejoins: CNPG archives that WAL before the former primary rewinds. Until the store is back, the cluster runs on the other two instances, and every commit needs both.
+With the store refusing, a replica that was down while 1.2 GB of WAL was written caught up from the primary alone, about 40 s after its node started. A former primary with WAL that the store never got waits for the store before it rejoins: CNPG archives that WAL before the former primary rewinds. Until the store is back, the cluster runs on the other two instances, and every commit needs both.
 
 **Backup retention.** The sample sets no retention policy, so nothing is deleted from the store. With a retention policy, the retention window must be longer than the longest time an instance can be down: an instance that needs a WAL file the policy deleted cannot catch up by itself, and CNPG does not rebuild it.
 
