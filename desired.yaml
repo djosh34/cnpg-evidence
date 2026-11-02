@@ -28,10 +28,11 @@ network:
   otelNamespace: otel
 
 # CN and dnsNames of the server certificate and of the one replication
-# certificate shared by all instances. Besides CNPG's fixed CN
-# streaming_replica, only this CN maps to streaming_replica.
+# certificate shared by all instances. The CN is the host name of one node,
+# signed by the CA of the chart's issuer. pg_ident maps this CN, and besides
+# CNPG's fixed CN streaming_replica only this CN, to streaming_replica.
 replication:
-  commonName: pg-replication
+  commonName: node-1.example.test
   dnsNames: [pg-rw, pg-rw.databases.svc]
 
 # One database per entry, owned by one LOGIN role with no password. A client

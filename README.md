@@ -61,10 +61,6 @@ bash scripts/test.sh
 - `desired.sh` builds, from `desired.yaml` alone, a document of the same shape as each script's output that holds the desired values. The scripts' own checks stay the verdict.
 - `cnpg-report` draws one desired and one actual document of the same script as PNG images, a desired and an actual image for each piece of evidence. On the actual image, every value or right beyond the desired document is red, and the image says Passed or Failed. It needs no cluster, network or OS library, so the scripts can run on the cluster and the images can be drawn elsewhere from the JSON files.
 
-## Upgrade from v0.2.0
-
-v0.3.0 makes the sample chart fail over by itself when the primary's node is lost: streaming readiness is gone, and `failoverQuorum`, `synchronous_commit: remote_apply` and a startup lag check are new. Turn on `failoverQuorum` on its own first and check that every instance reloaded, then apply the rest. Give the metrics exporter its two grants before the upgrade. The scripts now have eight rules and fewer sections, checks and probes, `compare.sh` is gone, and the image list changes. `samples/monitoring/` adds alert rules and a Grafana dashboard. [upgrade.md](docs/upgrade.md) lists every step, also those from v0.1.0.
-
 ## Files
 
 | Path | What it is | Doc |

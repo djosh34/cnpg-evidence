@@ -27,7 +27,7 @@ pg_hba:
   hostssl billing billing all cert map=clients
   host    all     all     all reject
 pg_ident:
-  cnpg_streaming_replica pg-replication streaming_replica
+  cnpg_streaming_replica node-1.example.test streaming_replica
   clients orders-app.test     orders
   clients billing-app.test    billing
   clients billing-report.test billing
@@ -36,7 +36,7 @@ Database objects: pg-orders, pg-billing
 ```
 
 - Each `hostssl ... cert map=clients` line lets one role into one database with a client certificate; `clients` maps each CN to its role. The last line rejects every other TCP connection, with or without TLS.
-- `cnpg_streaming_replica` is CNPG's map for replication logins; the chart adds the replication CN to it.
+- `cnpg_streaming_replica` is CNPG's map for replication logins; the chart adds the replication CN to it. That CN is a node's host name, signed by the issuer's CA; the example uses `node-1.example.test`. pg_ident maps that CN, and besides CNPG's fixed CN `streaming_replica` only that CN, to `streaming_replica`.
 - The server and replication `Certificate`s carry the replication CN and `dnsNames` from `desired.yaml`, and the issuer from `values.yaml`.
 - The `NetworkPolicy` selects every pod of the cluster, including its bootstrap and join Job pods, and admits 5432 and 8000 from the cluster's pods, 8000 from the operator pods, 9187 from the OTel namespace, and 5432 from outside the cluster, from the other nodes and from the svclb pods of the rw LoadBalancer.
 - The `<cluster>-queries` Secret holds the queries that the metrics exporter runs on every instance: the compliance query (see [Compliance metric](#compliance-metric)), and the replica lag and the commits that wait for a standby, which the alerts of [monitoring.md](monitoring.md) read. The `Cluster` lists it in `monitoring.customQueriesSecret`. A Secret rather than a ConfigMap: with a Secret listed there, CNPG 1.30.1 does not rewrite the `Cluster` status many times a second while a lost pod is marked for deletion, which would leave every instance's exporter without its query metrics until the node returns.
@@ -66,7 +66,7 @@ Pods with `hostUsers: false` need a kernel with idmapped mounts on tmpfs.
    - `rwLoadBalancer.name`: the rw LoadBalancer Service. The policy admits its svclb pods, the per-node pods in `kube-system` through which k3s servicelb forwards the LoadBalancer port.
    - `readLoadBalancer`: the name and port of the read LoadBalancer, or leave the block out for none.
    - `network.operatorNamespace`, `network.otelNamespace`: the namespaces of the operator and the OTel collectors.
-   - `replication`: the CN and `dnsNames` of the server and replication certificates; `databases`: the databases, their roles and client CNs.
+   - `replication`: the CN, the host name of one node, and the `dnsNames` of the server and replication certificates; `databases`: the databases, their roles and client CNs.
 4. In `samples/chart/values.yaml`, set:
    - `issuer`: the cert-manager issuer from step 2, which signs the server and replication certificates.
    - `objectStore`: the bucket, endpoint and credentials Secret. Create that Secret in the cluster's namespace with the keys `ACCESS_KEY_ID` and `ACCESS_SECRET_KEY`.
@@ -107,12 +107,6 @@ k3s servicelb opens each LoadBalancer's port on every node:
 
 Both set `allocateLoadBalancerNodePorts: false`, so neither opens a NodePort. The read LoadBalancer still has a `healthCheckNodePort`: Kubernetes gives one to every LoadBalancer with traffic policy Local. It answers over HTTP how many ready instances the node has and does not lead to PostgreSQL.
 
-A NodePort that a Service had before keeps working after a chart upgrade: Kubernetes keeps a NodePort it has allocated, and CNPG does not remove it. Remove it once by hand, then check that `kubectl get svc -n databases` shows no second port for the Service:
-
-```bash
-kubectl patch service pg-rw-lb -n databases --type=json -p '[{"op":"remove","path":"/spec/ports/0/nodePort"}]'
-```
-
 ### Clients on the read port
 
 A client outside the cluster uses rw on 5432 of every node and turns to the read port only while no rw address takes a connection. For pgx and GORM, the package `pgfallback` does that; [pgfallback.md](pgfallback.md) shows how, with the connection string to use.
@@ -121,7 +115,7 @@ A client outside the cluster uses rw on 5432 of every node and turns to the read
 
 The chart's settings in the `Cluster`:
 
-- **`synchronous: {method: any, number: 1, dataDurability: required}`.** Every commit waits until one of the other instances has it. When no other instance can confirm, writes stop instead of going on with one copy.
+- **`synchronous: {method: any, number: 1, dataDurability: required}`.** Every commit waits until one of the other instances has it. When no other instance can confirm, writes stop instead of going on with one copy. A commit whose wait for the standby was cancelled may still be committed, so a client treats a cancelled COMMIT as unknown.
 - **`synchronous_commit: remote_apply`.** The commit returns only once that instance has applied it, so a read there right after the commit sees it.
 - **`failoverQuorum: true`.** CNPG promotes a replica only when it can tell that the replica holds every confirmed commit. With one confirming copy and two replicas, it needs both replicas ready to decide.
 - **`primaryUpdateMethod: switchover`.** A rollout that changes the pods, or a parameter that needs a restart, restarts the replicas one at a time, then switches over to one of them and restarts the former primary as a replica. One case still restarts the primary in place: lowering `max_connections`, `max_worker_processes`, `max_wal_senders`, `max_prepared_transactions` or `max_locks_per_transaction`, which a replica must not have lower than the primary. With this setting CNPG also refuses a change of `imageName` together with a change of PostgreSQL parameters; apply them one after the other.
@@ -199,9 +193,9 @@ The chart sets `metricsQueriesTTL: 0s` in the `Cluster`, so every scrape runs th
 
 ### Grants
 
-Reading `pg_ident_file_mappings` needs two grants for `cnpg_metrics_exporter`. On a new cluster, the chart's `postInitSQL` gives them. CNPG creates `cnpg_metrics_exporter` only after that SQL, so the chart creates the role first, as CNPG would; CNPG then keeps it and adds `pg_monitor`.
+Reading `pg_ident_file_mappings` needs two grants for `cnpg_metrics_exporter`. The chart's `postInitSQL` gives them when the chart creates the cluster. CNPG creates `cnpg_metrics_exporter` only after that SQL, so the chart creates the role first, as CNPG would; CNPG then keeps it and adds `pg_monitor`.
 
-On a cluster that already runs, give them once on the primary. Replicas get them by replication:
+A cluster that the chart did not create lacks them; give them once on its primary. Replicas get them by replication:
 
 ```bash
 kubectl exec -n databases <primary pod> -c postgres -- psql -U postgres \
@@ -209,7 +203,7 @@ kubectl exec -n databases <primary pod> -c postgres -- psql -U postgres \
   -c 'GRANT EXECUTE ON FUNCTION pg_ident_file_mappings() TO cnpg_metrics_exporter'
 ```
 
-A restore copies the grants with the rest of the catalog when the backup was taken after them. After a restore from an older backup, run the same step on the new cluster's primary. Until then the metric is missing.
+Until then the metric is missing. A restore copies the grants with the rest of the catalog.
 
 `evidence.sh` expects exactly these grants: `can_read_ident_view` and `can_run_ident_function` must each list `postgres` and `cnpg_metrics_exporter`, no other role.
 
