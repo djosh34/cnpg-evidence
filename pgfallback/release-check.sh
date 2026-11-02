@@ -22,7 +22,7 @@ version=${2:?usage: release-check.sh <tag or commit> <version>}
 module=github.com/djosh34/cnpg-evidence
 pkg=$module/pgfallback
 
-export GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org GOFLAGS=-mod=mod
+export GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org GOFLAGS=""
 export GOPRIVATE='' GONOPROXY='' GONOSUMDB='' GOINSECURE=''
 
 work=$(mktemp -d)
