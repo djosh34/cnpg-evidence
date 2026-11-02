@@ -1,0 +1,29 @@
+name: live
+run-name: "live: ${{ inputs.scenarios }}, writer ${{ inputs.writer && 'on' || 'off' }}"
+
+# Runs only on demand. A manual run takes the scenarios to run and whether the
+# writer runs during them.
+on:
+  workflow_dispatch:
+    inputs:
+      scenarios:
+        description: Scenarios to run, separated by spaces, or all
+        type: string
+        default: all
+      writer:
+        description: Write every 0.25 s during each scenario
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Inputs
+        env:
+          SCENARIOS: ${{ inputs.scenarios }}
+          WRITER: ${{ inputs.writer }}
+        run: echo "scenarios $SCENARIOS, writer $WRITER"
