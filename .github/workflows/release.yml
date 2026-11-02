@@ -8,7 +8,24 @@ permissions:
   contents: read
 
 jobs:
+  # The tag's commit must have passed every live scenario, with and without
+  # the writer.
+  live-runs:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: A successful live run of every scenario
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash live/release-check.sh "$GITHUB_SHA"
+
   ci:
+    needs: live-runs
     uses: ./.github/workflows/ci.yml
 
   image:

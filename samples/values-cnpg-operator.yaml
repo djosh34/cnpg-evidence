@@ -9,3 +9,19 @@ additionalEnv:
   # The operator watches only these namespaces.
   - name: WATCH_NAMESPACE
     value: cnpg-system,databases
+# One operator pod per node of a three-node cluster. The pods elect a leader;
+# when its node is lost, another pod takes over within about 20 s.
+replicaCount: 3
+affinity:
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - topologyKey: kubernetes.io/hostname
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: cloudnative-pg
+# With a pod on every node, an extra pod during an update has nowhere to go.
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 0
+    maxUnavailable: 1

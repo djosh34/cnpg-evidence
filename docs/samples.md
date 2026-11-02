@@ -9,8 +9,10 @@ What is in `desired.yaml` and `samples/`, how to install it, and how to keep it 
 | [`desired.yaml`](../desired.yaml) | The desired state of the cluster: name, namespace and instances, the client CA Secret, the rw LoadBalancer name, the optional read LoadBalancer's name and port, the operator and OTel namespaces, the replication certificate names, and the databases with their role and client CNs. `evidence.sh` compares against it; the chart reads it as values. |
 | [`samples/chart/`](../samples/chart) | A Helm chart that renders the `Cluster`, one `Database` per database, the server and replication `Certificate`s, the `<cluster>-bootstrap` Secret, the barman-cloud `ObjectStore`, one ingress `NetworkPolicy` and the `<cluster>-compliance` ConfigMap. |
 | [`samples/chart/values.yaml`](../samples/chart/values.yaml) | Chart-only settings: image, storage size, cert-manager issuer, object store, recovery. |
-| [`samples/values-cnpg-operator.yaml`](../samples/values-cnpg-operator.yaml) | Values for the operator chart: chart RBAC off, `WATCH_NAMESPACE=cnpg-system,databases`. |
-| [`samples/values-barman-cloud.yaml`](../samples/values-barman-cloud.yaml) | Values for the plugin chart: chart RBAC off. |
+| [`samples/values-cnpg-operator.yaml`](../samples/values-cnpg-operator.yaml) | Values for the operator chart: chart RBAC off, `WATCH_NAMESPACE=cnpg-system,databases`, one pod per node. |
+| [`samples/values-barman-cloud.yaml`](../samples/values-barman-cloud.yaml) | Values for the plugin chart: chart RBAC off, one pod per node. |
+| [`samples/values-cert-manager.yaml`](../samples/values-cert-manager.yaml) | Values for the cert-manager chart: its CRDs, one pod of the controller, the webhook and the CA injector per node. |
+| [`samples/traefik-config.yaml`](../samples/traefik-config.yaml) | A k3s `HelmChartConfig` that runs k3s's Traefik as a DaemonSet. |
 | [`samples/rbac-cnpg-operator.yaml`](../samples/rbac-cnpg-operator.yaml) | The operator's RBAC: a small ClusterRole for nodes, webhook configurations and cluster image catalogs, and the chart's namespaced rules bound only in `cnpg-system` and `databases`. |
 | [`samples/rbac-barman-cloud.yaml`](../samples/rbac-barman-cloud.yaml) | The plugin's RBAC: cluster-wide `list,watch` on object stores, roles and role bindings, and the chart's other rules bound only in `databases`, with Secrets cut to `get,list,watch`. |
 | [`samples/monitoring/`](../samples/monitoring) | Alert rules and an Alertmanager configuration for the cluster, used outside it (see [monitoring.md](monitoring.md)). |
@@ -52,7 +54,12 @@ Pods with `hostUsers: false` need a kernel with idmapped mounts on tmpfs.
    kubectl create namespace databases
    kubectl apply -f samples/rbac-cnpg-operator.yaml -f samples/rbac-barman-cloud.yaml
    ```
-2. Install cert-manager in the namespace `cert-manager` with the release name `cert-manager`: `evidence.sh` expects the ServiceAccounts `cert-manager` and `cert-manager-cainjector` there. Create the issuer named in `samples/chart/values.yaml`. Check that it accepts the `usages` in `templates/certificates.yaml`; CNPG needs `client auth` on the replication certificate.
+2. Install cert-manager in the namespace `cert-manager` with the release name `cert-manager`: `evidence.sh` expects the ServiceAccounts `cert-manager` and `cert-manager-cainjector` there.
+   ```bash
+   helm upgrade --install cert-manager cert-manager --repo https://charts.jetstack.io --version v1.21.3 \
+     -n cert-manager --create-namespace -f samples/values-cert-manager.yaml --wait
+   ```
+   Create the issuer named in `samples/chart/values.yaml`. Check that it accepts the `usages` in `templates/certificates.yaml`; CNPG needs `client auth` on the replication certificate.
 3. In `desired.yaml`, set:
    - `cluster`: the name, namespace and number of instances. The namespaces `databases` and `cnpg-system` are also fixed in `values-cnpg-operator.yaml` (`WATCH_NAMESPACE`) and in both RBAC files. Another namespace also needs `WATCH_NAMESPACE` and the RoleBindings in both RBAC files.
    - `caSecret`: a Secret in the cluster's namespace with `ca.crt` holding the CAs that may sign client certificates, including the CA of the `issuer` in `values.yaml`: the chart also uses this Secret as the server CA, and the replication certificate is checked against it. Give the full chain if there are intermediates. Create it by hand, never with `ca.key`: `kubectl create secret generic client-ca -n databases --from-file=ca.crt=client-ca.pem`. Pass the same file to `evidence.sh --ca`.
@@ -72,6 +79,7 @@ Pods with `hostUsers: false` need a kernel with idmapped mounts on tmpfs.
      -n cnpg-system -f samples/values-barman-cloud.yaml --wait
    ```
    To install from a file instead, fetch it with `helm pull cloudnative-pg --repo https://cloudnative-pg.github.io/charts --version 0.29.1`, the same for `plugin-barman-cloud`, and give the `.tgz` path in place of the chart name and `--repo`.
+   Both values files run one pod per node (see [One copy of every service per node](#one-copy-of-every-service-per-node)).
    The release names must stay `cnpg` and `barman-cloud`: the RBAC files name their ServiceAccounts `cnpg-cloudnative-pg` and `barman-cloud-plugin-barman-cloud`, and `evidence.sh` asks about those names.
 6. Install the chart: `helm upgrade --install pg samples/chart -n databases -f desired.yaml`.
 7. Restart the instances. The chart sets `hostUsers: false` through the `cnpg.io/podPatch` annotation on the `Cluster`, which applies only to new pods, so pods that already run keep host uid 26. Start a rolling restart, then check that every instance pod has `hostUsers: false` (`evidence.sh` checks it too):
@@ -131,7 +139,7 @@ The chart's settings in the `Cluster`:
 What clients see, from tests on a three-node k3s cluster with these settings, a new connection every 0.25 s and all three nodes in the host list:
 
 - **A replica's node is lost.** Reads keep working on the other nodes. Writes go on without a pause.
-- **The primary's node is lost.** Reads keep working on the replicas. Writes fail until CNPG has promoted a replica, about a minute after the loss, up to about a minute and a half when the lost node also ran the leader of the Kubernetes controller manager. Most of that time is Kubernetes noticing that the node is gone and the old primary's lease running out. The node does not need to come back. When the lost node also ran the barman-cloud plugin's pod, the failover took about 6 minutes: CNPG waits for the plugin until Kubernetes has started its pod on another node.
+- **The primary's node is lost.** Reads keep working on the replicas. Writes fail until CNPG has promoted a replica, about a minute after the loss, up to about a minute and a half when the lost node also ran the leader of the Kubernetes controller manager. Most of that time is Kubernetes noticing that the node is gone and the old primary's lease running out. The node does not need to come back. With one operator and one plugin pod on every node, a lost node's operator or plugin pod does not hold this up: another pod takes over their leader lease within about 20 s.
 - **A node comes back.** Its instance opens the read port about half a minute after the node starts, once it streams and has caught up. An old primary first rewinds itself and comes back as a replica.
 - After each of these, every replica caught up fully by itself.
 
@@ -191,15 +199,31 @@ A restore copies the grants with the rest of the catalog when the backup was tak
 
 ## Outside the chart
 
-### CoreDNS on every node
+### One copy of every service per node
 
-k3s runs one CoreDNS replica. When it runs on the primary's lost node, the failover waits on DNS: the promoted replica restores WAL from the object store by its host name, and the replicas reach the new primary through the `<cluster>-rw` Service name. Run one CoreDNS replica per node, through k3s's manifest method:
+Every service the cluster relies on runs one pod on each of the three nodes, so a lost node takes no service with it. A single copy on the lost node holds things up: CNPG reconciles a cluster, failover included, only while the barman-cloud plugin answers, and Kubernetes starts a lost node's pods elsewhere only after 5 minutes. The leader-elected services, the operator, the plugin, cert-manager's controller and CA injector, run one active pod; when its node is lost, another pod takes over the lease.
 
-1. On every server, create an empty `coredns.yaml.skip` next to `coredns.yaml` in `/var/lib/rancher/k3s/server/manifests`. k3s then no longer applies its own file.
-2. Put an own copy of `coredns.yaml` under another name in the same directory, with `replicas: 3` added to the `coredns` Deployment's `spec`. The Deployment's spread rule puts each replica on another node.
-3. On k3s upgrades, compare the copy with the new `coredns.yaml` and update it by hand.
+| Service | How |
+|---|---|
+| CNPG operator | `samples/values-cnpg-operator.yaml`: 3 replicas with required pod anti-affinity by host name, and updates with `maxSurge: 0`, since an extra pod has no node to go to |
+| barman-cloud plugin | `samples/values-barman-cloud.yaml`: 3 replicas with the same anti-affinity. The chart always updates with `Recreate`, so a plugin upgrade restarts all three pods at once, and CNPG reconciles nothing until a new one answers |
+| cert-manager | `samples/values-cert-manager.yaml`: 3 replicas each of the controller, the webhook and the CA injector, with anti-affinity and `maxSurge: 0` |
+| CoreDNS | `kubectl scale deployment coredns -n kube-system --replicas=3`. k3s's manifest spreads its pods by host name and sets no replica count, so the count holds across k3s restarts as long as a k3s version does not add one |
+| Traefik | Put `samples/traefik-config.yaml` into `/var/lib/rancher/k3s/server/manifests/` on every server; k3s then runs its Traefik as a DaemonSet |
+| metrics-server | The patch below. k3s's manifest sets neither replicas nor affinity, so the change holds across k3s restarts |
+| local-path-provisioner | One pod: it has no leader election, so more copies would compete. On a lost node, mounted volumes keep working; only new volumes wait until Kubernetes moves it, and failover needs none |
 
-k3s's own manifest sets no replica count, so `kubectl scale deployment coredns -n kube-system --replicas=3` also holds across k3s restarts, as long as a k3s version does not add one.
+```bash
+kubectl patch deployment metrics-server -n kube-system --type=merge -p '{
+  "spec": {"replicas": 3, "template": {"spec": {"affinity": {"podAntiAffinity": {
+    "requiredDuringSchedulingIgnoredDuringExecution": [{
+      "topologyKey": "kubernetes.io/hostname",
+      "labelSelector": {"matchLabels": {"k8s-app": "metrics-server"}}}]}}}}}}'
+```
+
+Until Kubernetes marks a lost node unreachable, about 50 s, its CoreDNS pod stays in the DNS Service, so about one in three DNS lookups in the cluster times out in that time. Failover waits for the same mark, so this does not delay it.
+
+`live/up.sh` installs every service this way and checks the placement (see [live.md](live.md)).
 
 ### Secrets encryption
 
