@@ -2,11 +2,12 @@
 # A replica's node is lost for 400 s, then the primary's node for 400 s: each
 # longer than the 5 min after which Kubernetes marks the lost pod for
 # deletion. The exporters of the instances that are left must keep their
-# query metrics all along: in no 15 s may one answer without
-# cnpg_compliance_violations from the chart's queries or
-# cnpg_pg_replication_in_recovery from CNPG's own. CNPGReplicaDown must fire
-# for each lost instance and nothing else. The summary gives each instance's
-# answers without them and its failed scrapes.
+# query metrics all along: in every 15 s in which one answers, at least one
+# answer has cnpg_compliance_violations from the chart's queries and
+# cnpg_pg_replication_in_recovery from CNPG's own, and none goes 60 s
+# without answering. CNPGReplicaDown must fire for each lost instance and
+# nothing else. The summary gives each instance's answers without them and
+# its failed scrapes.
 #
 # While CNPGReplicaDown fires for the lost replica, the scenario sends
 # Alertmanager CNPGMetricsMissing for that replica and for another instance:
@@ -20,6 +21,9 @@ shopt -s inherit_errexit
 . "$(dirname "${BASH_SOURCE[0]}")/../lib.sh"
 
 DOWN_SECONDS=400
+# Right after a node stops, scrapes of the other instances took up to 39 s
+# to answer again in tests; the cause is not known.
+NO_ANSWER_LIMIT=60
 
 # Answers Prometheus's query $1 with its one value, or "no data".
 prom_value() {
@@ -39,18 +43,21 @@ gaps() {
     | if length == 0 then "no gap found" else join(", ") end' <<<"$result"
 }
 
-# Instances $2... kept their query metrics from $1 (ms) to now: in no 15 s,
-# three scrapes, did an instance's exporter answer without them. A change of
-# the Cluster gives each exporter new, empty query results, so one answer
-# right after one can lack them. A scrape that fails is not an answer; the
-# alerts see those. Adds a row per instance with the answers without query
-# metrics, the failed scrapes and when cnpg_collector_up was away.
+# Instances $2... kept their query metrics from $1 (ms) to now: in every
+# 15 s in which an instance's exporter answered, at least one answer had
+# them. A change of the Cluster gives each exporter new, empty query
+# results, so one answer right after one can lack them. And no exporter went
+# NO_ANSWER_LIMIT seconds without answering: right after a node is lost,
+# scrapes can time out for a while. Adds a row per instance with the answers
+# without query metrics, the failed scrapes and when it did not answer.
 kept_metrics() {
   local from=$1 window pod series n empty
   shift
   window=$((($(now_ms) - from) / 1000))
   for pod in "$@"; do
     empty=()
+    prom_count 0 "min_over_time((sum(count_over_time(cnpg_collector_up{pod=\"$pod\"}[${NO_ANSWER_LIMIT}s])) or vector(0))[${window}s:5s]) == 0" ||
+      fail "the exporter of $pod did not answer for ${NO_ANSWER_LIMIT} s or longer: $(scrapes_of "$pod" "$window")"
     for series in "cnpg_compliance_violations{check=\"cn_mapping\", pod=\"$pod\"}" "cnpg_pg_replication_in_recovery{namespace=\"$NS\", pod=\"$pod\"}"; do
       prom_count 0 "max_over_time((sum(count_over_time(cnpg_collector_up{pod=\"$pod\"}[15s])) > 0 unless on () sum(count_over_time(${series}[15s])))[${window}s:5s])" ||
         fail "the exporter of $pod answered for 15 s or longer without $series, $(gaps "$series" "$window")"
@@ -65,7 +72,7 @@ kept_metrics() {
 # failed, the longest, and the times without cnpg_collector_up for 15 s or
 # longer.
 scrapes_of() {
-  echo "$(prom_value "count_over_time((up{pod=\"$1\"} == 0)[$2s:5s])") of $(prom_value "count_over_time(up{pod=\"$1\"}[$2s])") scrapes failed," \
+  echo "$(prom_value "count_over_time(up{pod=\"$1\"}[$2s]) - sum_over_time(up{pod=\"$1\"}[$2s])") of $(prom_value "count_over_time(up{pod=\"$1\"}[$2s])") scrapes failed," \
     "the longest took $(prom_value "max_over_time(scrape_duration_seconds{pod=\"$1\"}[$2s])") s," \
     "no answer: $(gaps "cnpg_collector_up{pod=\"$1\"}" "$2")"
 }
