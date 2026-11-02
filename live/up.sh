@@ -324,7 +324,8 @@ main() {
   wait_for 600 "three ready instances, two streaming replicas" settled
   write_client_certificate
   check_placement
-  instances
+  k get pods -n "$NS" -l "cnpg.io/cluster=$CLUSTER,cnpg.io/podRole=instance" \
+    -o custom-columns='NAME:.metadata.name,NODE:.spec.nodeName,IMAGE:.spec.containers[?(@.name=="postgres")].image'
   log "ready"
 }
 
