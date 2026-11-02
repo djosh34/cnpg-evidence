@@ -70,7 +70,7 @@ v0.3.0 makes the sample chart fail over by itself when the primary's node is los
 | Path | What it is | Doc |
 |---|---|---|
 | `desired.yaml` | The desired state of the cluster, read by the chart, `evidence.sh` and `desired.sh` | [samples.md](docs/samples.md) |
-| `samples/` | Helm chart rendered from `desired.yaml`, operator and plugin values, RBAC for both | [samples.md](docs/samples.md) |
+| `samples/` | Helm chart rendered from `desired.yaml`, operator, plugin and cert-manager values, RBAC for the operator and the plugin, the Traefik DaemonSet setting for k3s | [samples.md](docs/samples.md) |
 | `samples/monitoring/` | Alert rules, the Alertmanager route and inhibition rules, and a Grafana dashboard for the cluster | [monitoring.md](docs/monitoring.md) |
 | `scripts/evidence/evidence.sh` | Who can do what in PostgreSQL and Kubernetes, and every rule the live state breaks | [evidence.md](docs/evidence.md) |
 | `scripts/host-check/host-check.sh` | SELinux, accounts, modes, k3s credentials and low ports on one node | [host-check.md](docs/host-check.md) |
@@ -79,7 +79,9 @@ v0.3.0 makes the sample chart fail over by itself when the primary's node is los
 | `report/` | `cnpg-report`, which draws a desired and an actual image for each piece of evidence: its page, build and tests | [report.md](docs/report.md), [report/README.md](report/README.md) |
 | `scripts/lib/` | Logging and exit helpers shared by the scripts | |
 | `scripts/test.sh` | Runs the `*.test.sh` next to every part of the three scripts | |
-| `.github/workflows/ci.yml` | Runs `scripts/test.sh`, `samples/monitoring/check.sh`, the page tests and the test of the built `cnpg-report` on every pull request and push to `main`, and as part of `release.yml` | |
-| `.github/workflows/release.yml` | On a pushed tag `v*`, runs `ci.yml`, pushes the tested `cnpg-report` as the image `ghcr.io/djosh34/cnpg-report:<tag>`, then pulls it, copies the binary out and renders the clean samples | [report.md](docs/report.md#get-the-binary) |
+| `live/` | Starts the samples on a three-node k3s cluster in docker and runs failure scenarios against it: node losses and a switchover, with a writer that checks no acknowledged commit is lost | [live.md](docs/live.md) |
+| `.github/workflows/ci.yml` | Runs `scripts/test.sh` for each script in its own job, `samples/monitoring/check.sh`, a build of `live/client`, the page tests and the test of the built `cnpg-report` on every pull request and push to `main`, and as part of `release.yml` | |
+| `.github/workflows/live.yml` | Runs the chosen live scenarios on demand, each as its own job with its own cluster, with or without the writer | [live.md](docs/live.md#run-in-github-actions) |
+| `.github/workflows/release.yml` | On a pushed tag `v*`, checks that the tag's commit passed every live scenario with and without the writer, runs `ci.yml`, pushes the tested `cnpg-report` as the image `ghcr.io/djosh34/cnpg-report:<tag>`, then pulls it, copies the binary out and renders the clean samples | [report.md](docs/report.md#get-the-binary) |
 | `.shellcheckrc` | ShellCheck settings for the scripts | |
 | `LICENSE` | Apache License 2.0 | |
