@@ -717,7 +717,7 @@ check_alerts() {
 # Every query of samples/monitoring/dashboard.json, with the dashboard's
 # variables set to the database, returns data: each panel at least one value
 # that is not NaN, which the red tiles return when there is none.
-check_dashboard() {
+dashboard_has_data() {
   local panel title expr result values
   while read -r panel; do
     title=$(jq -r .title <<<"$panel")
@@ -726,12 +726,17 @@ check_dashboard() {
       expr=${expr//"\$namespace"/$NS}
       expr=${expr//"\$cluster"/$CLUSTER}
       expr=${expr//"\$__rate_interval"/1m}
-      result=$(prom_query "$expr") || fail "the query of dashboard panel $title failed: $expr"
+      result=$(prom_query "$expr") || { echo "the query of dashboard panel $title failed: $expr" >&2; return 1; }
       values=$((values + $(jq '[.data.result[] | select(.value[1] != "NaN")] | length' <<<"$result")))
     done < <(jq -r '.targets[].expr' <<<"$panel")
-    ((values > 0)) || fail "dashboard panel $title has no data"
+    ((values > 0)) || { echo "dashboard panel $title has no data" >&2; return 1; }
   done < <(jq -c '.panels[] | ., .panels[]? | select(.targets)' "$REPO/samples/monitoring/dashboard.json")
 }
+
+# Some sources report again only a while after the event: a started node's
+# kubelet, cert-manager after its leader moved, a new primary's replication
+# figures.
+check_dashboard() { wait_for 180 "data in every dashboard panel" dashboard_has_data; }
 
 # Adds a line to the summary on stdout and in the job summary.
 SUMMARY=()
