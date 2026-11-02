@@ -1,4 +1,9 @@
 evidence
+fence
+one-node-left
 primary-node-loss
+quiet-rewind
 replica-node-loss
+replica-restart-during-primary-loss
+rollout
 switchover
