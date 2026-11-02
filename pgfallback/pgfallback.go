@@ -31,6 +31,7 @@ import (
 	"net/netip"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -49,7 +50,9 @@ const attemptEvery = time.Second
 // Pool adds the read addresses, each "host:port", to cfg. It keeps every
 // hook cfg already has (BeforeConnect, AfterConnect, PrepareConn,
 // BeforeAcquire, AfterRelease, and the AfterConnect of its ConnConfig) and
-// calls it too.
+// calls it too. Call it once cfg is complete, right before
+// pgxpool.NewWithConfig: a later change to cfg reaches neither the wrapped
+// hooks nor the attempts at rw.
 func Pool(cfg *pgxpool.Config, read ...string) error {
 	reads, err := parseReads(read)
 	if err != nil {
@@ -150,7 +153,8 @@ func parseReads(read []string) ([]readAddr, error) {
 		if err != nil {
 			return nil, fmt.Errorf("pgfallback: read address %q is not host:port: %w", a, err)
 		}
-		if host == "" || n == 0 {
+		// pgx dials a host that starts with / as a unix socket.
+		if host == "" || strings.HasPrefix(host, "/") || n == 0 {
 			return nil, fmt.Errorf("pgfallback: read address %q is not host:port", a)
 		}
 		reads = append(reads, readAddr{host: host, port: uint16(n)})
@@ -238,7 +242,10 @@ func (f *fallback) addReads(cc *pgx.ConnConfig) error {
 			}
 		}
 		remote, err := netip.ParseAddrPort(pgConn.Conn().RemoteAddr().String())
-		if err == nil && pairs[unmap(remote)] {
+		if err != nil {
+			return fmt.Errorf("pgfallback: remote address of the connection: %w", err)
+		}
+		if pairs[unmap(remote)] {
 			pgConn.CustomData()[readKey] = true
 			f.landedOnRead()
 		}
@@ -275,18 +282,29 @@ func (f *fallback) landedOnRead() {
 
 // use reports whether a connection that is handed out or released may stay
 // in use. A read connection may until an attempt at rw worked; until then it
-// starts the next attempt.
+// starts the next attempt. After a quiet spell in which no attempt ran, it
+// may not either: rw may be back since, and the new connection that replaces
+// it tries rw first.
 func (f *fallback) use(pgConn *pgconn.PgConn) bool {
 	if _, read := pgConn.CustomData()[readKey]; !read {
 		return true
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.back {
+	if f.back || (!f.attempting && time.Since(f.lastStart) > attemptEvery+f.attemptTimeout()) {
 		return false
 	}
 	f.startAttempt()
 	return true
+}
+
+// attemptTimeout is how long one attempt at rw may take: connect_timeout per
+// rw host. f.mu must be held.
+func (f *fallback) attemptTimeout() time.Duration {
+	if f.rw == nil {
+		return 0
+	}
+	return f.rw.ConnectTimeout * time.Duration(1+len(f.rw.Fallbacks))
 }
 
 // startAttempt starts one attempt at rw unless one runs or the last one
@@ -297,15 +315,15 @@ func (f *fallback) startAttempt() {
 	}
 	f.attempting = true
 	f.lastStart = time.Now()
-	cc := f.rw.Copy()
-	go f.attempt(cc)
+	go f.attempt(f.rw.Copy(), f.attemptTimeout())
 }
 
 // attempt connects to rw with the application's config and closes the
-// connection at once. pgx ends each try within connect_timeout per rw
-// address. A failed connect or close only means rw is not back.
-func (f *fallback) attempt(cc *pgx.ConnConfig) {
-	ctx := context.Background()
+// connection at once, all within timeout. A failed connect or close only
+// means rw is not back.
+func (f *fallback) attempt(cc *pgx.ConnConfig, timeout time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
 	err := f.connect(ctx, cc)
 	f.mu.Lock()
 	defer f.mu.Unlock()

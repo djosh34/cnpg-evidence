@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand/v2"
 	"net"
 	"os"
 	"os/exec"
@@ -48,6 +49,7 @@ func run(m *testing.M) int {
 		return 1
 	}
 	cluster.dir = dir
+	lastPort.Store(rand.Int32N(10000))
 	code := 1
 	if err := clusterSh("up"); err != nil {
 		log.Print(err)
@@ -119,6 +121,8 @@ type proxy struct {
 
 // Proxy ports come from below Linux's ephemeral ports (32768 and up), so
 // while a proxy refuses, no other listener or client socket takes its port.
+// Each test run starts at a random port, so two runs on one host rarely
+// share ports.
 var lastPort atomic.Int32
 
 const firstPort = 20000

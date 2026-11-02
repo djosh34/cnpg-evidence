@@ -107,6 +107,60 @@ func TestBackToRWFirstSilent(t *testing.T) {
 	})
 }
 
+// rw comes back while the client is idle: its first write after that goes to
+// rw, although no attempt at rw ran in the meantime.
+func TestBackToRWWhileIdle(t *testing.T) {
+	eachKind(t, kinds, func(t *testing.T, e *env, open func(func(*pgx.ConnConfig)) client) {
+		e.refuseRW()
+		e.read[0].refuse()
+		c := open(nil)
+		fill(t, c)
+		e.rw[1].up()
+		// Longer than one second plus one attempt: connect_timeout for each
+		// of the three rw hosts.
+		time.Sleep(time.Second + 3*connectTimeout + time.Second)
+		s, err := c.write(t.Context())
+		if err != nil || !s.onRW() {
+			t.Errorf("first write after an idle spell: served by %s, %v", s.proxy, err)
+		}
+	})
+}
+
+// The application's BeforeConnect stalls during an attempt at rw until its
+// context ends: the attempt still ends within connect_timeout per rw host,
+// and the next one finds rw back.
+func TestStalledAttempt(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t)
+	e.refuseRW()
+	e.read[0].refuse()
+	cfg, err := pgxpool.ParseConfig(e.dsn())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stall atomic.Bool
+	cfg.BeforeConnect = func(ctx context.Context, _ *pgx.ConnConfig) error {
+		if stall.Load() {
+			<-ctx.Done()
+			return ctx.Err()
+		}
+		return nil
+	}
+	c := poolClient{e: e, pool: newPool(t, cfg, e)}
+	fill(t, c)
+	// The pool has its connections, so only an attempt connects now.
+	stall.Store(true)
+	time.Sleep(time.Second)
+	if _, err := c.read(t.Context(), 0); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	stall.Store(false)
+	back := time.Now()
+	e.rw[1].up()
+	checkBack(t, load(c, 10*time.Second), back, 3*connectTimeout+backBound)
+}
+
 // A transaction that runs on a read connection when rw comes back finishes
 // on that connection, which closes once it is released.
 func TestTransactionFinishesFirst(t *testing.T) {
@@ -215,8 +269,9 @@ func TestRWLoginsFail(t *testing.T) {
 		if n := e.readAccepted() - readBefore; n > 0 {
 			t.Errorf("%d new connections on read addresses, want none", n)
 		}
-		if n := e.rwAccepted() - rwBefore; n < 3 {
-			t.Errorf("%d connections to rw in 4 s, want the attempts at rw", n)
+		// One attempt reaches each of the three rw proxies once.
+		if n := e.rwAccepted() - rwBefore; n < 2*len(e.rw) {
+			t.Errorf("%d connections to rw in 4 s, want attempts at rw going on", n)
 		}
 	})
 }
@@ -370,6 +425,7 @@ func TestConfigErrors(t *testing.T) {
 		{"port not a number", good, []string{"vm1:read"}, "not host:port"},
 		{"port 0", good, []string{"vm1:0"}, "not host:port"},
 		{"port too big", good, []string{"vm1:65536"}, "not host:port"},
+		{"unix socket", good, []string{"/var/run/postgresql:5433"}, "not host:port"},
 		{"sslmode disable", strings.Replace(good, "verify-full", "disable", 1), []string{"vm1:5433"}, "TLS"},
 		{"sslmode prefer", strings.Replace(good, "verify-full", "prefer", 1), []string{"vm1:5433"}, "TLS"},
 		{"no connect_timeout", strings.Replace(good, " connect_timeout=2", "", 1), []string{"vm1:5433"}, "connect_timeout"},
