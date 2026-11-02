@@ -187,6 +187,7 @@ type fallback struct {
 	back       bool
 	attempting bool
 	lastStart  time.Time
+	lastEnd    time.Time
 }
 
 func (f *fallback) setRW(cc *pgx.ConnConfig) {
@@ -284,28 +285,21 @@ func (f *fallback) landedOnRead() {
 // in use. A read connection may until an attempt at rw worked; until then it
 // starts the next attempt. After a quiet spell in which no attempt ran, it
 // may not either: rw may be back since, and the new connection that replaces
-// it tries rw first.
+// it tries rw first. Under steady use the next attempt starts at most a
+// second after the last one ended, so that never happens there.
 func (f *fallback) use(pgConn *pgconn.PgConn) bool {
 	if _, read := pgConn.CustomData()[readKey]; !read {
 		return true
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.back || (!f.attempting && time.Since(f.lastStart) > attemptEvery+f.attemptTimeout()) {
+	if f.back || (!f.attempting && time.Since(f.lastEnd) > 2*attemptEvery) {
 		return false
 	}
 	f.startAttempt()
 	return true
 }
 
-// attemptTimeout is how long one attempt at rw may take: connect_timeout per
-// rw host. f.mu must be held.
-func (f *fallback) attemptTimeout() time.Duration {
-	if f.rw == nil {
-		return 0
-	}
-	return f.rw.ConnectTimeout * time.Duration(1+len(f.rw.Fallbacks))
-}
 
 // startAttempt starts one attempt at rw unless one runs or the last one
 // started less than a second ago. f.mu must be held.
@@ -315,33 +309,56 @@ func (f *fallback) startAttempt() {
 	}
 	f.attempting = true
 	f.lastStart = time.Now()
-	go f.attempt(f.rw.Copy(), f.attemptTimeout())
+	go f.attempt(f.rw.Copy())
 }
 
 // attempt connects to rw with the application's config and closes the
-// connection at once, all within timeout. A failed connect or close only
-// means rw is not back.
-func (f *fallback) attempt(cc *pgx.ConnConfig, timeout time.Duration) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	err := f.connect(ctx, cc)
+// connection at once. A failed connect or close only means rw is not back.
+func (f *fallback) attempt(cc *pgx.ConnConfig) {
+	err := f.connect(cc)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.attempting = false
+	f.lastEnd = time.Now()
 	if err == nil {
 		f.back = true
 	}
 }
 
-func (f *fallback) connect(ctx context.Context, cc *pgx.ConnConfig) error {
+// connect ends within connect_timeout per step: pgx gives each rw address
+// its own, and the application's BeforeConnect, each lookup, the
+// application's AfterConnect and the close get one each.
+func (f *fallback) connect(cc *pgx.ConnConfig) error {
+	timeout := cc.ConnectTimeout
 	if f.beforeConnect != nil {
-		if err := f.beforeConnect(ctx, cc); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		err := f.beforeConnect(ctx, cc)
+		cancel()
+		if err != nil {
 			return err
 		}
 	}
-	conn, err := pgx.ConnectConfig(ctx, cc)
+	lookup := cc.LookupFunc
+	if lookup == nil {
+		lookup = net.DefaultResolver.LookupHost
+	}
+	cc.LookupFunc = func(ctx context.Context, host string) ([]string, error) {
+		ctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		return lookup(ctx, host)
+	}
+	if afterConnect := cc.AfterConnect; afterConnect != nil {
+		cc.AfterConnect = func(ctx context.Context, pgConn *pgconn.PgConn) error {
+			ctx, cancel := context.WithTimeout(ctx, timeout)
+			defer cancel()
+			return afterConnect(ctx, pgConn)
+		}
+	}
+	conn, err := pgx.ConnectConfig(context.Background(), cc)
 	if err != nil {
 		return err
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
 	return conn.Close(ctx)
 }

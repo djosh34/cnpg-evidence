@@ -116,9 +116,9 @@ func TestBackToRWWhileIdle(t *testing.T) {
 		c := open(nil)
 		fill(t, c)
 		e.rw[1].up()
-		// Longer than one second plus one attempt: connect_timeout for each
-		// of the three rw hosts.
-		time.Sleep(time.Second + 3*connectTimeout + time.Second)
+		// Longer than the quiet spell after which a read connection is
+		// replaced: two seconds after the last attempt ended.
+		time.Sleep(3 * time.Second)
 		s, err := c.write(t.Context())
 		if err != nil || !s.onRW() {
 			t.Errorf("first write after an idle spell: served by %s, %v", s.proxy, err)
@@ -127,8 +127,8 @@ func TestBackToRWWhileIdle(t *testing.T) {
 }
 
 // The application's BeforeConnect stalls during an attempt at rw until its
-// context ends: the attempt still ends within connect_timeout per rw host,
-// and the next one finds rw back.
+// context ends: the hook gets connect_timeout, and the next attempt finds rw
+// back.
 func TestStalledAttempt(t *testing.T) {
 	t.Parallel()
 	e := newEnv(t)
@@ -158,7 +158,30 @@ func TestStalledAttempt(t *testing.T) {
 	stall.Store(false)
 	back := time.Now()
 	e.rw[1].up()
-	checkBack(t, load(c, 10*time.Second), back, 3*connectTimeout+backBound)
+	checkBack(t, load(c, 6*time.Second), back, connectTimeout+backBound)
+}
+
+// One rw name resolves to two addresses, and the first does not answer:
+// attempts wait connect_timeout on it and then reach the second.
+func TestRWNameFirstAddressSilent(t *testing.T) {
+	eachKind(t, kinds[:3], func(t *testing.T, e *env, open func(func(*pgx.ConnConfig)) client) {
+		e.rw[0].silence()
+		e.rw[1].refuse()
+		e.read[0].refuse()
+		c := open(func(cc *pgx.ConnConfig) {
+			cc.Fallbacks = nil
+			cc.LookupFunc = func(ctx context.Context, host string) ([]string, error) {
+				if host == "localhost" {
+					return []string{e.rw[0].addr(), e.rw[1].addr()}, nil
+				}
+				return net.DefaultResolver.LookupHost(ctx, host)
+			}
+		})
+		fill(t, c)
+		back := time.Now()
+		e.rw[1].up()
+		checkBack(t, load(c, 7*time.Second), back, backBound+connectTimeout)
+	})
 }
 
 // A transaction that runs on a read connection when rw comes back finishes
