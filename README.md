@@ -80,7 +80,9 @@ v0.3.0 makes the sample chart fail over by itself when the primary's node is los
 | `scripts/lib/` | Logging and exit helpers shared by the scripts | |
 | `scripts/test.sh` | Runs the `*.test.sh` next to every part of the three scripts | |
 | `live/` | Starts the samples on a three-node k3s cluster in docker and runs scenarios against it: node losses, a replica restart during a primary loss, a rollout, switchovers and a fence, with a writer that checks no acknowledged commit is lost, and the evidence scripts | [live.md](docs/live.md) |
-| `.github/workflows/ci.yml` | Runs `scripts/test.sh` for each script in its own job, `samples/monitoring/check.sh`, a build of `live/client`, the page tests and the test of the built `cnpg-report` on every pull request and push to `main`, and as part of `release.yml` | |
+| `go.mod` | The Go module `github.com/djosh34/cnpg-evidence`, for the `pgfallback` package; `live/client` and `report/launcher` are modules of their own | |
+| `.golangci.yml` | golangci-lint settings for the root module, which report every ignored error | |
+| `.github/workflows/ci.yml` | Runs `scripts/test.sh` for each script in its own job, `samples/monitoring/check.sh`, host-check on a k3s node in docker, a build of `live/client`, golangci-lint on the root module, the `pgfallback` tests against PostgreSQL in docker, the page tests and the test of the built `cnpg-report` on every pull request and push to `main`, and as part of `release.yml` | |
 | `.github/workflows/live.yml` | Runs the chosen live scenarios on demand, each as its own job with its own cluster, with or without the writer | [live.md](docs/live.md#run-in-github-actions) |
 | `.github/workflows/release.yml` | On a pushed tag `v*`, checks that the tag's commit passed every live scenario with and without the writer, runs `ci.yml`, pushes the tested `cnpg-report` as the image `ghcr.io/djosh34/cnpg-report:<tag>`, then pulls it, copies the binary out and renders the clean samples | [report.md](docs/report.md#get-the-binary) |
 | `.shellcheckrc` | ShellCheck settings for the scripts | |
