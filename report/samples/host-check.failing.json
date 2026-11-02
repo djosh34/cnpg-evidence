@@ -11,8 +11,8 @@
     "containerd_version": "containerd v2.1.5-k3s1",
     "selinux": "permissive",
     "containerd_enable_selinux": null,
-    "postgres_uid": 26,
-    "postgres_gid": 26,
+    "postgres_uid": 999,
+    "postgres_gid": 999,
     "listening_tcp": [],
     "missing_tools": []
   },
@@ -27,7 +27,7 @@
       "id": "postgres-account",
       "ok": true,
       "value": "none",
-      "raw": "postgres uid=26 gid=26 shell=/sbin/nologin locked=yes; group postgres gid=26 members=reader; sudoers: /etc/sudoers:12: postgres ALL=(ALL) ALL; postgresql*-server packages: postgresql16-server"
+      "raw": "postgres uid=999 gid=999 shell=/sbin/nologin locked=yes; group postgres gid=999 members=reader; sudoers: /etc/sudoers:12: postgres ALL=(ALL) ALL; postgresql*-server packages: postgresql16-server"
     },
     {
       "id": "dir-modes",

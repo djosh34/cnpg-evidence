@@ -60,6 +60,27 @@ psql_on() {
   k exec -n "$NS" "$pod" -c postgres -- psql -U postgres -XqAt -v ON_ERROR_STOP=1 "$@"
 }
 
+# The metrics page of instance $1, read from 9187 through kubectl
+# port-forward, so nothing runs in the instance image. The certificate is
+# not checked here; evidence.sh checks the port's TLS.
+metrics_of() {
+  local pod=$1 forward pid line page
+  exec {forward}< <(exec kubectl port-forward -n "$NS" "pod/$pod" :9187 2>&1)
+  pid=$!
+  if ! read -r -t 30 line <&"$forward" ||
+    [[ ! $line =~ ^Forwarding\ from\ 127\.0\.0\.1:([0-9]+)\ -\>\ 9187$ ]]; then
+    kill "$pid" 2>/dev/null || true # it may have ended with the error read here
+    fail "port-forward to $pod:9187 did not start: ${line:-no output in 30 s}"
+  fi
+  if ! page=$(curl -fsSk --max-time 10 "https://127.0.0.1:${BASH_REMATCH[1]}/metrics"); then
+    kill "$pid" 2>/dev/null || true # it may have ended too; the failed read is the error
+    fail "no metrics from $pod:9187"
+  fi
+  kill "$pid" || fail "port-forward to $pod:9187 ended early"
+  exec {forward}<&-
+  echo "$page"
+}
+
 cluster_field() { k get cluster "$CLUSTER" -n "$NS" -o jsonpath="{.status.$1}"; }
 primary() { cluster_field currentPrimary; }
 node_of() { k get pod "$1" -n "$NS" -o jsonpath='{.spec.nodeName}'; }

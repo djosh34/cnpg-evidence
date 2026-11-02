@@ -13,8 +13,8 @@ here=$(dirname "${BASH_SOURCE[0]}")
 # shellcheck source-path=SCRIPTDIR
 source "$here/lib.sh"
 
-postgres_uid=26
-postgres_gid=26
+postgres_uid=999
+postgres_gid=999
 storage_dir=/var/lib/rancher/k3s/storage
 node=
 

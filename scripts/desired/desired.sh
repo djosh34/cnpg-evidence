@@ -6,7 +6,7 @@
 # Usage, with the desired state on stdin:
 #   yq -o=json desired.yaml | scripts/desired/desired.sh --ca client-ca.pem
 #   yq -o=json desired.yaml | scripts/desired/desired.sh --source host-check
-#   yq -o=json desired.yaml | scripts/desired/desired.sh --source prove [--postgres-uid 26]
+#   yq -o=json desired.yaml | scripts/desired/desired.sh --source prove [--postgres-uid 999]
 #
 # Prints one JSON document. Exit 0, or 2 on any error, with nothing on stdout.
 set -euo pipefail
@@ -17,7 +17,7 @@ source "$here/../lib/common.sh"
 expected_dir=$here/../evidence/violations
 
 usage() {
-  echo "usage: yq -o=json desired.yaml | ${0##*/} [--source evidence|host-check|prove] [--ca client-ca.pem] [--postgres-uid 26]" >&2
+  echo "usage: yq -o=json desired.yaml | ${0##*/} [--source evidence|host-check|prove] [--ca client-ca.pem] [--postgres-uid 999]" >&2
   exit 2
 }
 
@@ -38,7 +38,7 @@ case $source in
   evidence) [[ -n $ca_file && -z $postgres_uid ]] || usage ;;
   host-check) [[ -z $ca_file && -z $postgres_uid ]] || usage ;;
   prove)
-    postgres_uid=${postgres_uid:-26}
+    postgres_uid=${postgres_uid:-999}
     [[ -z $ca_file && $postgres_uid =~ ^[0-9]+$ ]] || usage
     ;;
   *) usage ;;

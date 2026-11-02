@@ -2,7 +2,7 @@
 # Runs login and host-uid probes, then combines their JSON records.
 #
 # Usage, with the desired state on stdin:
-#   yq -o=json desired.yaml | prove.sh [--node NAME] [--node-root DIR] [--postgres-uid UID]
+#   yq -o=json desired.yaml | prove.sh [--node NAME] [--node-root DIR] [--postgres-uid UID] [--postgres-gid GID]
 #
 # Exit: 0 all probes match, 1 a probe differs, 2 usage or collection error.
 set -euo pipefail
@@ -14,10 +14,11 @@ source "$here/../lib/common.sh"
 
 node=$(hostname)
 node_root=
-postgres_uid=26
+postgres_uid=999
+postgres_gid=999
 
 usage() {
-  echo "usage: yq -o=json desired.yaml | ${0##*/} [--node NAME] [--node-root DIR] [--postgres-uid 26]" >&2
+  echo "usage: yq -o=json desired.yaml | ${0##*/} [--node NAME] [--node-root DIR] [--postgres-uid 999] [--postgres-gid 999]" >&2
   exit 2
 }
 
@@ -27,12 +28,13 @@ while (($#)); do
     --node) node=$2 ;;
     --node-root) node_root=$2 ;;
     --postgres-uid) postgres_uid=$2 ;;
+    --postgres-gid) postgres_gid=$2 ;;
     *) usage ;;
   esac
   shift 2
 done
 
-[[ $postgres_uid =~ ^[0-9]+$ ]] || usage
+[[ $postgres_uid =~ ^[0-9]+$ && $postgres_gid =~ ^[0-9]+$ ]] || usage
 for command in jq kubectl psql setpriv pgrep python3; do
   have "$command" || die "$command not found"
 done
@@ -52,7 +54,7 @@ collected_at=$(collected_at)
 log "login probes"
 login=$(bash "$here/login/login.sh" "$namespace" "$cluster" "$lb_service") || exit 2
 log "uid probes on node $node"
-uid=$(bash "$here/uid/uid.sh" "$namespace" "$cluster" "$node" "$node_root" "$postgres_uid") || exit 2
+uid=$(bash "$here/uid/uid.sh" "$namespace" "$cluster" "$node" "$node_root" "$postgres_uid" "$postgres_gid") || exit 2
 
 output=$(printf '%s\n' "$login" "$uid" |
   jq -s --arg collected_at "$collected_at" --arg node "$node" --arg namespace "$namespace" \

@@ -31,7 +31,7 @@ exits() {
 errors_file=$(mktemp)
 trap 'rm -f "$errors_file"' EXIT
 
-for arguments in --unknown '--postgres-uid nope' --node-root '--namespace databases' '--cluster pg' \
+for arguments in --unknown '--postgres-uid nope' '--postgres-gid nope' --node-root '--namespace databases' '--cluster pg' \
   '--lb-service pg-rw-lb'; do
   # shellcheck disable=SC2086
   exits "$arguments" "$values" $arguments

@@ -28,7 +28,7 @@ Turn on `failoverQuorum` on its own first. Together with another setting change,
    kubectl get failoverquorum pg -n databases
    for pod in $(kubectl get pods -n databases -l cnpg.io/cluster=pg,cnpg.io/podRole=instance -o name); do
      echo "$pod"
-     kubectl exec -n databases "$pod" -c postgres -- psql -Atc 'show cnpg.config_sha256' -c 'show synchronous_commit'
+     kubectl exec -n databases "$pod" -c postgres -- psql -U postgres -Atc 'show cnpg.config_sha256' -c 'show synchronous_commit'
    done
    ```
 

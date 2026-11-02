@@ -311,8 +311,8 @@ test('the prove images show where each attempt went', () => {
   assert.equal(login.columns[1].label, 'Tried on');
   assert.equal(rows(login).find(r => r[0] === 'password-tls')[1], '192.0.2.10: 5432 192.0.2.11: 5432 192.0.2.12: 5432');
   const uid = rows(sheet(sample('prove.clean.json'), proveDesired, 'prove-02-host-uid-actual.png'));
-  assert.equal(uid.find(r => r[0] === 'uid-26 pgdata-host-path')[1], 'pg-1');
-  assert.equal(uid.find(r => r[0] === 'uid-mapped socket-host-path')[1], 'pg-1 uid 165562');
+  assert.equal(uid.find(r => r[0] === 'uid-999 pgdata-host-path')[1], 'pg-1');
+  assert.equal(uid.find(r => r[0] === 'uid-mapped socket-host-path')[1], 'pg-1 uid 166535');
   assert.equal(rows(sheet(proveDesired, undefined, 'prove-01-login-attempts-desired.png'))[0][1], 'The rw LoadBalancer port of each node');
   // No row for the NodePorts.
   assert.ok(sheets(sample('prove.clean.json'), proveDesired).every(s => s.rows.every(r => !r.cells[0][0].text.includes('nodeport'))));

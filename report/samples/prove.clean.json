@@ -122,7 +122,7 @@
       ]
     },
     {
-      "probe": "uid-26 socket-proc-root",
+      "probe": "uid-999 socket-proc-root",
       "expected": "Permission denied",
       "value": "denied",
       "ok": true,
@@ -135,7 +135,7 @@
       ]
     },
     {
-      "probe": "uid-26 pgdata-host-path",
+      "probe": "uid-999 pgdata-host-path",
       "expected": "Permission denied",
       "value": "denied",
       "ok": true,
@@ -154,7 +154,7 @@
       "ok": true,
       "raw": [
         {
-          "target": "pg-1 uid 165562",
+          "target": "pg-1 uid 166535",
           "value": "denied",
           "actual": "Permission denied"
         }

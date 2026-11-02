@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Who can do what to one CNPG cluster, compared with desired.yaml: every
 # difference is a violation. It only reads: kubectl get, one kubectl create of
-# SubjectAccessReviews, which the API server answers and does not store, and through
-# kubectl exec psql as postgres in READ ONLY transactions and an openssl
-# handshake with the metrics port.
+# SubjectAccessReviews, which the API server answers and does not store,
+# kubectl exec psql as postgres in READ ONLY transactions, and a local openssl
+# handshake with the metrics port through kubectl port-forward.
 #
 # Usage, with the desired state on stdin:
 #   yq -o=json desired.yaml | scripts/evidence/evidence.sh --ca client-ca.pem
@@ -29,7 +29,7 @@ usage() {
 ca_file=$2
 [[ -r $ca_file ]] || die "cannot read $ca_file"
 
-for tool in kubectl jq openssl base64; do
+for tool in kubectl jq openssl timeout base64; do
   have "$tool" || die "$tool not found"
 done
 

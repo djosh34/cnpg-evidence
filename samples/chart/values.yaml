@@ -3,7 +3,14 @@
 # examples.
 
 cluster:
-  imageName: ghcr.io/cloudnative-pg/postgresql:18.6-standard-trixie
+  # Red Hat's Hummingbird PostgreSQL image, pinned by digest.
+  imageName: registry.access.redhat.com/hi/postgresql:18.6@sha256:d6cfb70eb81d7843ead5e516b40ceaff10166f9449cb57ac8bbee33688cb26d3
+  # The uid and gid the image names postgres: 999 in this image. CNPG writes
+  # the name of its uid into pg_ident, so with another uid the compliance
+  # query and evidence.sh find wrong pg_ident lines. Set them when the
+  # cluster is created.
+  postgresUID: 999
+  postgresGID: 999
   storageSize: 1Gi
 
 # Signs the server and replication certificates: an Issuer in the cluster's

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # The instance pods of the cluster: the primary, all instances, and those
-# that run in the host's user namespace, where uid 26 is postgres on the host.
+# that run in the host's user namespace, where PostgreSQL's uid is the same
+# uid on the host.
 #
 # Usage: pods.sh NAMESPACE CLUSTER
 set -euo pipefail
