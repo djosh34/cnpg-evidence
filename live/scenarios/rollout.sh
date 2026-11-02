@@ -5,7 +5,8 @@
 # (primaryUpdateMethod: switchover) and restarts the former primary. The
 # switchover is kubectl cnpg promote to a replica. After each, every instance
 # must be ready and streaming within 10 min, and the primary must have moved;
-# with the writer, each may stop writes for at most 30 s.
+# with the writer, writes may stop for at most 30 s at any time, and the
+# summary gives the longest stop in each.
 set -euo pipefail
 shopt -s inherit_errexit
 
@@ -14,6 +15,7 @@ shopt -s inherit_errexit
 
 SHARED_BUFFERS=160MB
 STOP_LIMIT=30
+WRITE_GAP_LIMIT=$STOP_LIMIT
 
 # Every instance runs with the new shared_buffers and no pending restart, and
 # the cluster has settled.
@@ -52,7 +54,6 @@ rolled=$(primary)
 log "rollout done, primary $rolled"
 if [[ $WRITER == on ]]; then
   wait_first_write "$rolled" "$STOP_LIMIT" "$ROLLED"
-  ROLLOUT_STOP=$(write_stop rollout "$T0" "$FIRST_WRITE")
 fi
 
 target=$(instances | awk -v p="$rolled" '$1 != p {print $1; exit}')
@@ -63,9 +64,12 @@ wait_for 300 "$target as primary" primary_is "$target"
 promoted=$(now_ms)
 if [[ $WRITER == on ]]; then
   wait_first_write "$target" "$STOP_LIMIT" "$promoted"
-  SWITCH_STOP=$(write_stop switchover "$SWITCH" "$FIRST_WRITE")
 fi
 wait_back
+if [[ $WRITER == on ]]; then
+  ROLLOUT_STOP=$(write_stop rollout "$T0" "$SWITCH")
+  SWITCH_STOP=$(write_stop switchover "$SWITCH" "$BACK")
+fi
 finish
 
 summary "### rollout, writer $WRITER"

@@ -24,8 +24,8 @@ spec:
   # waits on a lag check. A starting or rewound replica may open the read port
   # while it is still behind a primary; clients read pg-rw first.
 
-  # A rollout moves the primary with a switchover instead of restarting it in
-  # place, and a stopping instance ends open sessions at once instead of
+  # A rollout moves the primary with a switchover (docs/samples.md names the
+  # exception), and a stopping instance ends open sessions at once instead of
   # waiting up to 180 s for them. A rollout or a switchover stops writes for
   # about 11 s.
   primaryUpdateMethod: switchover

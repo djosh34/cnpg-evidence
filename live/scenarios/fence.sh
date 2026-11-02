@@ -29,11 +29,12 @@ ident_back() {
   [[ $got == "$WANT" ]] || { echo "pg_ident of $1: $(paste -sd ' ' <<<"$got")" >&2; return 1; }
 }
 
+# psql on instance $1 cannot connect: it exits with 2, which kubectl exec
+# passes on. Its own errors exit with 1.
 stopped() {
-  if psql_on "$1" -c 'select 1' >/dev/null 2>&1; then
-    echo "$1 still answers" >&2
-    return 1
-  fi
+  local status=0
+  psql_on "$1" -c 'select 1' >/dev/null 2>&1 || status=$?
+  [[ $status == 2 ]] || { echo "psql on $1 exited with $status, not 2 for no connection" >&2; return 1; }
 }
 
 wait_for 600 "three ready instances, two streaming replicas" settled
