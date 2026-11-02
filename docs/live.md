@@ -14,6 +14,7 @@ The scripts in `live/` start the samples on a three-node k3s cluster in docker a
 | [`live/scenarios/`](../live/scenarios) | One script per scenario |
 | [`live/plan.sh`](../live/plan.sh) | Turns the workflow's `scenarios` input into the list of jobs |
 | [`live/after-failure.sh`](../live/after-failure.sh) | Prints the cluster's state after a failed scenario |
+| [`live/host-check.sh`](../live/host-check.sh) | Runs `host-check.sh` on one k3s node in docker and checks that only the known failures of a container node fail; the `ci` workflow runs it (see [host-check.md](host-check.md#known-failures-on-container-nodes)) |
 | [`live/release-check.sh`](../live/release-check.sh) | The first job of `release.yml`: fails unless the tag's commit passed every scenario, with and without the writer |
 | [`.github/workflows/live.yml`](../.github/workflows/live.yml) | The `live` workflow |
 

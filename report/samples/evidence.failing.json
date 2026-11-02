@@ -8,19 +8,97 @@
   },
   "status": "fail",
   "violations": [
-    "rule 3: role orders can create databases",
-    "rule 2: role billing has a password",
-    "rule 4: role app exists",
-    "rule 4: database app exists",
-    "rule 1: pg_hba line 8 is \"host all all all scram-sha-256\", not \"host all all all reject\"",
-    "rule 1: pg_hba line 9 is \"host all all all reject\", not \"host all all all scram-sha-256\"",
-    "rule 1: pg_ident has an extra line: clients billing-batch.test billing",
-    "rule 1: client CA secret client-ca also trusts CN=other-ca (sha256 4F:0A:93:C2:7E:15:B8:D4:61:2C:A9:3E:F0:57:8B:12:DD:C4:39:A6:0E:72:5F:B3:94:18:CE:6D:21:8A:F5:07)",
-    "rule 1: pod pg-2: PostgreSQL accepts TLS from TLSv1.2, not only TLSv1.3",
-    "rule 7: mallory can get PostgreSQL superuser through rights in databases",
-    "rule 7: mallory can run pods",
-    "rule 6: the operator can read secrets in kube-system",
-    "rule 5: pod pg-3 shares host uids"
+    {
+      "path": [
+        "postgres",
+        "can_create_databases"
+      ],
+      "sentence": "rule 3: role orders can create databases"
+    },
+    {
+      "path": [
+        "postgres",
+        "have_password"
+      ],
+      "sentence": "rule 2: role billing has a password"
+    },
+    {
+      "path": [
+        "postgres",
+        "roles"
+      ],
+      "sentence": "rule 4: role app exists"
+    },
+    {
+      "path": [
+        "postgres",
+        "databases"
+      ],
+      "sentence": "rule 4: database app exists"
+    },
+    {
+      "path": [
+        "details",
+        "pg_hba"
+      ],
+      "sentence": "rule 1: pg_hba line 8 is \"host all all all scram-sha-256\", not \"host all all all reject\""
+    },
+    {
+      "path": [
+        "details",
+        "pg_hba"
+      ],
+      "sentence": "rule 1: pg_hba line 9 is \"host all all all reject\", not \"host all all all scram-sha-256\""
+    },
+    {
+      "path": [
+        "details",
+        "pg_ident"
+      ],
+      "sentence": "rule 1: pg_ident has an extra line: clients billing-batch.test billing"
+    },
+    {
+      "path": [
+        "client_ca",
+        "certificates"
+      ],
+      "sentence": "rule 1: client CA secret client-ca also trusts CN=other-ca (sha256 4F:0A:93:C2:7E:15:B8:D4:61:2C:A9:3E:F0:57:8B:12:DD:C4:39:A6:0E:72:5F:B3:94:18:CE:6D:21:8A:F5:07)"
+    },
+    {
+      "path": [
+        "tls",
+        "pg-2",
+        "postgresql"
+      ],
+      "sentence": "rule 1: pod pg-2: PostgreSQL accepts TLS from TLSv1.2, not only TLSv1.3"
+    },
+    {
+      "path": [
+        "kubernetes",
+        "superuser_in_cluster_namespace"
+      ],
+      "sentence": "rule 7: mallory can get PostgreSQL superuser through rights in databases"
+    },
+    {
+      "path": [
+        "kubernetes",
+        "run_pods"
+      ],
+      "sentence": "rule 7: mallory can run pods"
+    },
+    {
+      "path": [
+        "kubernetes",
+        "operator_reads_secrets_in"
+      ],
+      "sentence": "rule 6: the operator can read secrets in kube-system"
+    },
+    {
+      "path": [
+        "pods_sharing_host_uids"
+      ],
+      "sentence": "rule 5: pod pg-3 shares host uids"
+    }
   ],
   "postgres": {
     "superusers": [

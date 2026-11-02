@@ -2,7 +2,7 @@
 # lines in the expected order, and exactly the expected pg_ident lines in
 # any order.
 #
-# Input: {facts, values}. Output: a list of sentences.
+# Input: {facts, values}. Output: a list of violations, see at in common.jq.
 
 include "common";
 include "expected";
@@ -11,7 +11,7 @@ include "expected";
 | (.values | expected_pg_hba) as $expected_hba
 | (.values | expected_pg_ident) as $expected_ident
 | [
-    if $details.pg_hba | type == "object" then "rule 1: pg_hba differs between instances"
+    (if $details.pg_hba | type == "object" then "rule 1: pg_hba differs between instances"
     else
       ($details.pg_hba | map(.line)) as $actual
       | range([$actual, $expected_hba] | map(length) | max) as $i
@@ -21,11 +21,11 @@ include "expected";
         elif $expected_hba[$i] == null then "rule 1: pg_hba has an extra line \($place): \($actual[$i])"
         else "rule 1: pg_hba line \($place) is \"\($actual[$i])\", not \"\($expected_hba[$i])\""
         end
-    end,
-    if $details.pg_ident | type == "object" then "rule 1: pg_ident differs between instances"
+    end | at(["details", "pg_hba"])),
+    (if $details.pg_ident | type == "object" then "rule 1: pg_ident differs between instances"
     else
       ($details.pg_ident | map(.line)) as $actual
       | ($actual | extra($expected_ident) | "rule 1: pg_ident has an extra line: \(.)"),
         ($expected_ident | missing($actual) | "rule 1: pg_ident lacks the line: \(.)")
-    end
+    end | at(["details", "pg_ident"]))
   ]

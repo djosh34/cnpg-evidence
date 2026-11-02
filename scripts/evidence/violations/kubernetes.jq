@@ -6,7 +6,8 @@
 #
 # Input: {facts, values, granted_by, operator_account, plugin_account}, granted_by
 # from kubernetes/kubernetes.jq and optional; without it, a subject of
-# secret_readers counts as only reading Secrets. Output: a list of sentences.
+# secret_readers counts as only reading Secrets. Output: a list of violations,
+# see at in common.jq.
 
 include "common";
 include "expected";
@@ -30,16 +31,16 @@ include "expected";
     | if . == [] then "" else " (\(join("; ")))" end;
 
   def not_allowed($key; $allowed_subjects; $says):
-    $k[$key] // [] | extra($allowed_subjects) | "rule 7: \(.) can \($says)\(because($key; .))";
+    $k[$key] // [] | extra($allowed_subjects) | "rule 7: \(.) can \($says)\(because($key; .))" | at(["kubernetes", $key]);
 
   def reads_secrets($key; $who):
     $k[$key] | extra($secret_namespaces)
-    | "rule 6: \($who) can read secrets in \(.)\(because($key; .))";
+    | "rule 6: \($who) can read secrets in \(.)\(because($key; .))" | at(["kubernetes", $key]);
 
   [
     not_allowed("superuser_in_cluster_namespace"; $allowed + (secret_readers - $beyond);
                 "get PostgreSQL superuser through rights in \($namespace)"),
-    not_allowed("create_certificates"; certificate_subjects; "create Certificates or CertificateRequests"),
+    not_allowed("create_certificates"; certificate_subjects; "create Certificates or CertificateRequests, or change Issuers"),
     not_allowed("write_routes"; $allowed; "write Ingresses, IngressRoutes or IngressRouteTCPs"),
     not_allowed("run_pods"; $allowed; "run pods"),
     not_allowed("become_cluster_admin"; $allowed; "become cluster-admin"),

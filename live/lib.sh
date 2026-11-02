@@ -1,5 +1,5 @@
 # shellcheck shell=bash disable=SC2034
-# Shared by live/up.sh and the scenarios. Source it.
+# Shared by live/up.sh, live/host-check.sh and the scenarios. Source it.
 #
 # LIVE_WORK is the directory for the cluster's kubeconfigs, the client
 # certificate, the tools and the logs; default /tmp/live.
@@ -10,6 +10,8 @@ REPO=$(dirname "$LIVE_DIR")
 export PATH=$LIVE_WORK/bin:$PATH
 # Never the caller's cluster.
 export KUBECONFIG=$LIVE_WORK/kubeconfig
+
+K3S_IMAGE=rancher/k3s@sha256:ada5ff2e138120efe877f76d514dedda65b304122112b982eab532732c028c89  # v1.33.13+k3s2
 
 NS=databases
 CLUSTER=pg

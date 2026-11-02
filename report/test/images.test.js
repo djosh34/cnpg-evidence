@@ -53,25 +53,101 @@ test('prove: two pairs', () => {
   ]);
 });
 
-test('the clean samples mark nothing and pass', () => {
+// The verdict of every actual image, by file.
+const verdicts = (doc, desiredDoc) => Object.fromEntries(sheets(doc, desiredDoc).filter(s => s.side === 'actual').map(s => [s.file, s.verdict]));
+
+test('the clean samples mark nothing and pass; desired images and Versions have no verdict', () => {
   for (const source of ['evidence', 'host-check', 'prove']) {
     for (const s of sheets(sample(`${source}.clean.json`), sample(`${source}.desired.json`))) {
       assert.deepEqual(red(s), [], s.file);
-      assert.equal(s.verdict, s.side === 'actual' ? 'Passed' : null, s.file);
+      const none = s.side === 'desired' || s.file === 'evidence-09-versions-actual.png';
+      assert.equal(s.verdict, none ? null : 'Passed', s.file);
     }
   }
+  assert.equal(sheet(failing, desired, 'evidence-09-versions-actual.png').verdict, null);
 });
 
-test('an actual image fails when it shows a red mark; a desired image has no verdict', () => {
+test('the failing samples fail every image with a script failure', () => {
   for (const source of ['evidence', 'host-check', 'prove']) {
     for (const s of sheets(sample(`${source}.failing.json`), sample(`${source}.desired.json`))) {
-      if (s.side === 'desired') assert.equal(s.verdict, null, s.file);
-      else assert.equal(s.verdict, red(s).length ? 'Failed' : 'Passed', s.file);
+      if (s.side === 'desired' || s.file === 'evidence-09-versions-actual.png') assert.equal(s.verdict, null, s.file);
     }
   }
-  const verdict = file => sheet(failing, desired, `evidence-${file}-actual.png`).verdict;
-  assert.equal(verdict('01-accounts'), 'Failed');
-  assert.equal(sheet(clean, desired, 'evidence-08-platform-rights-actual.png').verdict, 'Passed');
+  const evidence = verdicts(failing, desired);
+  for (const file of FILES) assert.equal(evidence[`evidence-${file}-actual.png`], 'Failed', file);
+  const hc = sample('host-check.failing.json');
+  const hcVerdicts = verdicts(hc, sample('host-check.desired.json'));
+  for (const check of hc.checks) assert.equal(hcVerdicts[`host-check-node-a-${check.id}-actual.png`], check.ok ? 'Passed' : 'Failed', check.id);
+});
+
+// One violation about what each evidence image shows.
+const VIOLATION_OF = {
+  '01-accounts': ['postgres', 'roles'],
+  '02-certificate-logins': ['postgres', 'databases'],
+  '03-login-rules': ['details', 'pg_hba'],
+  '04-client-ca': ['client_ca', 'certificates'],
+  '05-encryption': ['tls', 'pg-2', 'postgresql'],
+  '06-container-isolation': ['pods_sharing_host_uids'],
+  '07-operator-secrets': ['kubernetes', 'operator_reads_secrets_in'],
+  '08-platform-rights': ['kubernetes', 'run_pods'],
+};
+
+const withViolations = (doc, ...paths) => ({ ...structuredClone(doc), violations: paths.map(path => ({ path, sentence: 'rule 1: a violation' })) });
+
+for (const [file, path] of Object.entries(VIOLATION_OF)) {
+  test(`evidence ${file}: fails on a violation about what it shows, and only that image fails`, () => {
+    const got = verdicts(withViolations(clean, path), desired);
+    for (const other of FILES) assert.equal(got[`evidence-${other}-actual.png`], other === file ? 'Failed' : 'Passed', other);
+    assert.equal(got['evidence-09-versions-actual.png'], null);
+  });
+}
+
+test('an image fails when evidence.sh fails, though the image draws nothing red', () => {
+  // A missing instance pod: nothing missing is drawn.
+  const actual = withViolations(clean, ['details', 'instances']);
+  actual.details.instances = actual.details.instances.slice(0, 2);
+  delete actual.tls[Object.keys(actual.tls)[2]];
+  const got = verdicts(actual, desired);
+  for (const file of ['05-encryption', '06-container-isolation']) {
+    assert.deepEqual(red(sheet(actual, desired, `evidence-${file}-actual.png`)), [], file);
+    assert.equal(got[`evidence-${file}-actual.png`], 'Failed', file);
+  }
+  // An extra pg_ident line changes the certificate names and the login rules.
+  const ident = verdicts(withViolations(clean, ['details', 'pg_ident']), desired);
+  assert.deepEqual(['01-accounts', '02-certificate-logins', '03-login-rules'].map(f => ident[`evidence-${f}-actual.png`]), ['Failed', 'Failed', 'Failed']);
+});
+
+test('an image passes when evidence.sh passes, though the image draws a value red', () => {
+  // evidence.sh needs TLS on metrics, not one version.
+  const actual = structuredClone(clean);
+  actual.tls[Object.keys(actual.tls)[0]].metrics = 'TLSv1.2';
+  const s = sheet(actual, desired, 'evidence-05-encryption-actual.png');
+  assert.deepEqual(red(s).map(v => v.text), ['TLSv1.2']);
+  assert.equal(s.verdict, 'Passed');
+});
+
+test('violations without paths are refused', () => {
+  assert.throws(() => page.plan({ ...clean, violations: ['rule 1: a sentence'] }, desired), /not a list of \{path, sentence\}/);
+});
+
+test('a host-check image takes its check\'s ok', () => {
+  const hcDesired = sample('host-check.desired.json');
+  const hc = sample('host-check.clean.json');
+  const lowPorts = doc => sheet(doc, hcDesired, 'host-check-node-a-low-ports-actual.png');
+  hc.checks.find(c => c.id === 'low-ports').ok = false;
+  assert.deepEqual(red(lowPorts(hc)), []);
+  assert.equal(lowPorts(hc).verdict, 'Failed');
+  hc.checks = hc.checks.filter(c => c.id !== 'low-ports');
+  assert.equal(lowPorts(hc).verdict, 'Failed');
+});
+
+test('a prove image passes when every attempt it shows got its result, and has attempts', () => {
+  const proveDesired = sample('prove.desired.json');
+  const pr = sample('prove.clean.json');
+  pr.probes.find(p => p.probe === 'password-tls').ok = false;
+  assert.deepEqual(verdicts(pr, proveDesired), { 'prove-01-login-attempts-actual.png': 'Failed', 'prove-02-host-uid-actual.png': 'Passed' });
+  pr.probes = pr.probes.filter(p => !p.probe.startsWith('uid-'));
+  assert.equal(verdicts(pr, proveDesired)['prove-02-host-uid-actual.png'], 'Failed');
 });
 
 test('the legend is the same on Passed and Failed images, and an image with no marks has none', () => {
@@ -130,7 +206,9 @@ test('an actual image never shows a value missing from actual', () => {
   const actual = structuredClone(clean);
   for (const key of Object.keys(actual.postgres)) actual.postgres[key] = actual.postgres[key].filter(r => r !== 'streaming_replica');
   assert.equal(show(actual, '01-accounts').find(r => r[0].includes('streaming_replica')), undefined);
-  assert.equal(sheet(actual, desired, 'evidence-01-accounts-actual.png').verdict, 'Passed');
+  // evidence.sh fails for the missing role, so the image does too.
+  const missing = withViolations(actual, ['postgres', 'roles']);
+  assert.equal(sheet(missing, desired, 'evidence-01-accounts-actual.png').verdict, 'Failed');
 });
 
 test('a row whose name is only desired is not drawn, and the population counts what is drawn', () => {
@@ -176,6 +254,12 @@ test('certificate logins come first, then the databases no certificate pg_hba li
     ['', '', 'template1'],
     ['', '', '+app'],
   ]);
+});
+
+test('the login rules image shows the files, not what PostgreSQL loaded', () => {
+  const s = sheet(clean, desired, 'evidence-03-login-rules-actual.png');
+  assert.match(s.statement, /^The lines of the pg_hba and pg_ident files of every instance\./);
+  assert.doesNotMatch(s.statement, /loaded/);
 });
 
 test('pg_hba keeps its number order, and a moved line is red at its new number', () => {
@@ -231,7 +315,7 @@ test('a pair shares its columns', () => {
 test('host-check and prove show the value read in red, without the desired value', () => {
   const hc = sheet(sample('host-check.failing.json'), sample('host-check.desired.json'), 'host-check-node-a-low-ports-actual.png');
   assert.deepEqual(rows(hc), [['low-ports', '+ip_unprivileged_port_start = 0']]);
-  assert.deepEqual(hc.context.find(c => c[0] === 'Read on the node'), ['Read on the node', 'ip_unprivileged_port_start = 0; no cap_net_bind_service under /usr or /opt']);
+  assert.deepEqual(hc.context.find(c => c[0] === 'Read on the node'), ['Read on the node', 'ip_unprivileged_port_start = 0']);
   const pr = sheet(sample('prove.failing.json'), sample('prove.desired.json'), 'prove-01-login-attempts-actual.png');
   assert.deepEqual(rows(pr).at(-1).filter((_, i) => i !== 1), ['password-no-tls', 'refused by pg_hba reject', '+allowed']);
 });
@@ -245,6 +329,7 @@ test('a host-check value of true or false is a square, red when it is not the de
   assert.deepEqual(rows(selinux(hc)), [['selinux', '[x]']]);
   assert.equal(selinux(hc).columns[1].mark, true);
   hc.checks.find(c => c.id === 'selinux').value = 'false';
+  hc.checks.find(c => c.id === 'selinux').ok = false;
   assert.deepEqual(rows(selinux(hc)), [['selinux', '+[ ]']]);
   assert.equal(selinux(hc).verdict, 'Failed');
   // A value that is neither true nor false stays text.

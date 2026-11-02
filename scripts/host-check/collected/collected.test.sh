@@ -12,13 +12,13 @@ source "$here/../../lib/test.sh"
 
 command() {
   case $* in
-    '-v ss'|'-v rpm'|'-v getent'|'-v k3s'|'-v getcap'|'-v containerd') return 1 ;;
+    '-v ss'|'-v rpm'|'-v getent'|'-v k3s'|'-v iptables-save'|'-v containerd') return 1 ;;
     *) builtin command "$@" ;;
   esac
 }
 export -f command
 actual=$(bash "$here/collected.sh" 26 27)
-same "missing tools include getcap" '["ss","rpm","getent","k3s","getcap"]' "$(jq .missing_tools <<<"$actual")"
+same "missing tools include iptables-save" '["ss","rpm","getent","k3s","iptables-save"]' "$(jq .missing_tools <<<"$actual")"
 same "optional collected values" '{"k3s_version":null,"listening_tcp":null,"postgres_gid":27}' "$(jq '{k3s_version,listening_tcp,postgres_gid}' <<<"$actual")"
 
 finish

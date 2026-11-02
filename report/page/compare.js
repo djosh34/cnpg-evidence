@@ -86,6 +86,8 @@ function walk(out, path, desired, actual) {
         out.push({ path: [...path, key], missing: desired[key] });
       }
     }
+    // "*" stands for every key of the actual map, and needs at least one.
+    if (Object.hasOwn(desired, '*') && !Object.keys(actual).length) out.push({ path: [...path, '*'], missing: desired['*'] });
   } else if (Array.isArray(desired) && Array.isArray(actual)) {
     for (const row of actual) {
       const match = desired.find(d => same(identity(d), identity(row)));

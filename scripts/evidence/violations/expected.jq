@@ -103,12 +103,12 @@ def certificate_logins($ident):
      | {common_name: $mapping.system_user, role: $mapping.role, database: .}]
   | unique;
 
-# The Kubernetes and k3s controllers, which create pods and other objects
-# from objects that other subjects write.
+# The Kubernetes and k3s controllers that hold one of the rights of the
+# kubernetes section on a k3s cluster, and that the cluster cannot run
+# without. docs/evidence.md gives the reason for each.
 def controllers:
   ["system:kube-controller-manager", "k3s-cloud-controller-manager"]
   + (["clusterrole-aggregation-controller", "cronjob-controller", "daemon-set-controller", "deployment-controller",
-      "endpoint-controller", "endpointslice-controller", "endpointslicemirroring-controller",
       "generic-garbage-collector", "job-controller", "legacy-service-account-token-cleaner",
       "local-path-provisioner-service-account", "namespace-controller", "persistent-volume-binder",
       "replicaset-controller", "replication-controller", "resourcequota-controller", "root-ca-cert-publisher",

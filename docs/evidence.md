@@ -53,7 +53,7 @@ details: {primary: pg-1, instances: [pg-1, pg-2, pg-3], pg_hba: [{number: 1, lin
 - `collected_at`: when the script started reading, in UTC, ISO 8601, from the local clock.
 - `cluster`: the `name` and `namespace` of the CNPG `Cluster`, from `desired.yaml`.
 - `status`: `pass` when `violations` is empty, else `fail`.
-- `violations`: one sentence each, starting with its rule, for example `rule 7: mallory can get PostgreSQL superuser through rights in databases (allowed by RoleBinding "mallory/databases" of Role "secrets" to User "mallory")`. A Kubernetes rights violation ends with the reason the API server gave, which names the binding. Extra and missing things both count.
+- `violations`: one `{path, sentence}` each. `sentence` starts with its rule, for example `rule 7: mallory can get PostgreSQL superuser through rights in databases (allowed by RoleBinding "mallory/databases" of Role "secrets" to User "mallory")`. A Kubernetes rights violation ends with the reason the API server gave, which names the binding. `path` names the value of this document the violation is about, as the keys down to it, such as `["kubernetes", "superuser_in_cluster_namespace"]`, `["tls", "pg-2", "postgresql"]` or `["details", "instances"]` for missing instance pods. `cnpg-report` takes each image's verdict from it. Extra and missing things both count.
 
 ### `postgres`
 
@@ -96,14 +96,14 @@ Per instance pod, rule 1:
 Per right, the subjects the API server says yes for, as `system:serviceaccount:<ns>:<name>`, `group:<name>` or a user name (rule 7), and where the operator and the plugin read Secrets (rule 6).
 
 - `superuser_in_cluster_namespace`: rights in the cluster's namespace that equal PostgreSQL superuser: get or create on `pods/exec` or `pods/attach` or patch on `pods/ephemeralcontainers` of the instance pods; update or patch them, which can swap a container's image; create, update or patch pods, ReplicationControllers, Deployments, StatefulSets, DaemonSets, ReplicaSets, Jobs or CronJobs, since a pod can mount the instances' volumes and run as their ServiceAccount; get, update or patch each Secret, or list, watch or create Secrets; update or patch each ConfigMap, or create ConfigMaps, since the instances run the custom queries of a ConfigMap as `cnpg_metrics_exporter`; tokens for the instance ServiceAccount; and create, update or patch the `Cluster` (by name), `databases`, `databaseroles` and `objectstores`.
-- `create_certificates`: create cert-manager Certificates or CertificateRequests, or update or patch Certificates, in any namespace. cert-manager signs what these objects ask for.
+- `create_certificates`: create cert-manager Certificates or CertificateRequests, update or patch Certificates, or create, update or patch Issuers, in any namespace, or ClusterIssuers. cert-manager signs what these objects ask for, with the key of the Issuer they name, and an Issuer signs the database's certificates. Updates of Certificates, Issuers and ClusterIssuers, and of the HelmCharts and HelmChartConfigs below, are asked without an object name, so a Role limited to named objects of these kinds does not show.
 - `write_routes`: create, update or patch Ingresses, and Traefik IngressRoutes or IngressRouteTCPs where the cluster serves them, in any namespace. An ingress controller serves them on the nodes' ports.
 - `run_pods`: create, update or patch pods or any of the workload kinds above, in any namespace. A pod can use `hostPort` or `hostNetwork`, and run as any ServiceAccount of its namespace.
-- `become_cluster_admin`: get on `nodes/proxy`, the kubelet API of every node; impersonate users, groups, ServiceAccounts, `system:masters` or a CNPG or cert-manager ServiceAccount; bind or escalate Roles, ClusterRoles or `cluster-admin`; or write mutating or validating webhook configurations.
+- `become_cluster_admin`: get on `nodes/proxy`, the kubelet API of every node; impersonate users, groups, ServiceAccounts, `system:masters` or a CNPG or cert-manager ServiceAccount; bind or escalate Roles, ClusterRoles or `cluster-admin`; write mutating or validating webhook configurations; or create, update or patch k3s HelmCharts or HelmChartConfigs in any namespace, which k3s's helm-controller installs as cluster-admin.
 - `operator_reads_secrets_in`, `plugin_reads_secrets_in`: namespaces where the operator or plugin ServiceAccount can get, list or watch Secrets, or get one by name. Expected only the operator's and the cluster's namespace (rule 6).
 - `not_served`: present only when the cluster does not serve `ingressroutes.traefik.io` or `ingressroutetcps.traefik.io`; those it lists are not asked.
 
-The allowed subjects, in `scripts/evidence/violations/expected.jq`:
+The allowed subjects, in `scripts/evidence/violations/expected.jq`. Each holds at least one of these rights on a k3s cluster with the samples, and the cluster cannot run without it; a controller that holds none, such as the endpoint controllers, is not allowed one:
 
 | Subject | May hold | Why |
 |---|---|---|
@@ -114,7 +114,17 @@ The allowed subjects, in `scripts/evidence/violations/expected.jq`:
 | `kube-apiserver` | every right but `create_certificates` | The API server |
 | cert-manager | every right | It signs the certificates and writes their Secrets |
 | cert-manager's cainjector | every right but `create_certificates` | It writes CA bundles into webhook configurations |
-| the Kubernetes and k3s controllers | every right | They create pods and other objects from objects that other subjects write |
+| `system:kube-controller-manager` | every right | The user of Kubernetes' controller manager, which runs the controllers below |
+| `k3s-cloud-controller-manager` | every right | k3s's cloud controller; its ServiceLB runs the pods that serve LoadBalancer Services, such as the rw LoadBalancer |
+| `clusterrole-aggregation-controller` in `kube-system` | every right | It fills aggregated ClusterRoles such as `admin` and `edit`, so it may escalate |
+| `cronjob-controller`, `daemon-set-controller`, `deployment-controller`, `job-controller`, `replicaset-controller`, `replication-controller` and `statefulset-controller` in `kube-system` | every right | Each creates the pods or objects of its workload kind |
+| `generic-garbage-collector` in `kube-system` | every right | It updates and deletes objects of every kind whose owners are gone |
+| `namespace-controller` in `kube-system` | every right | It deletes every object of a namespace that is deleted |
+| `persistent-volume-binder` in `kube-system` | every right | It binds volumes to claims and runs the pods that recycle volumes |
+| `resourcequota-controller` in `kube-system` | every right | It counts the objects of every kind, Secrets too, for resource quotas |
+| `legacy-service-account-token-cleaner` in `kube-system` | every right | It removes unused ServiceAccount token Secrets |
+| `root-ca-cert-publisher` in `kube-system` | every right | It writes the `kube-root-ca.crt` ConfigMap, which every pod mounts, in every namespace |
+| `local-path-provisioner-service-account` in `kube-system` | every right | k3s's local-path provisioner runs the pods that make the volumes on the nodes |
 | k3s's Helm install jobs `helm-traefik` and `helm-traefik-crd` in `kube-system` | every right | k3s binds them to cluster-admin to install Traefik |
 | Traefik's ServiceAccount `traefik` in `kube-system` | in `superuser_in_cluster_namespace`, only get, list and watch on Secrets | It reads Secrets in every namespace for the certificates of the routes it serves |
 

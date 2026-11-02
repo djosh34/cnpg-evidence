@@ -18,12 +18,15 @@ details=$(jq -c -L "$here" 'include "expected";
   def numbered: to_entries | map({number: (.key + 1), line: .value});
   {pg_hba: (expected_pg_hba | numbered), pg_ident: (expected_pg_ident | numbered)}' <<<"$values")
 
-# violations FILTER: the sentences for the clean details changed by a jq filter.
-violations() {
+# found FILTER: the violations for the clean details changed by a jq filter.
+found() {
   jq -c "$1" <<<"$details" |
     jq --slurpfile values <(echo "$values") '{facts: {details: .}, values: $values[0]}' |
     jq -L "$here" -f "$here/logins.jq"
 }
+# violations and paths: the sentences and the paths of what found gives.
+violations() { found "$@" | jq -c 'map(.sentence)'; }
+paths() { found "$@" | jq -c 'map(.path)'; }
 
 same "the clean cluster has none" '[]' "$(violations .)"
 
@@ -47,5 +50,8 @@ same "an extra and a missing pg_ident line" \
 same "lines that differ between instances" \
   '["rule 1: pg_hba differs between instances", "rule 1: pg_ident differs between instances"]' \
   "$(violations '.pg_hba = {"pg-1": [], "pg-2": .pg_hba} | .pg_ident = {"pg-1": [], "pg-2": .pg_ident}')"
+
+same "about pg_hba and pg_ident" '[["details","pg_hba"],["details","pg_ident"]]' \
+  "$(paths '.pg_hba = {"pg-1": [], "pg-2": .pg_hba} | .pg_ident = {"pg-1": [], "pg-2": .pg_ident}')"
 
 finish

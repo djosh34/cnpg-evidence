@@ -13,10 +13,10 @@ source "$here/../../lib/test.sh"
 actual=$(jq -n --arg hostname node --arg os Linux --arg kernel test \
   --arg k3s '' --arg containerd '' --arg selinux disabled --arg containerd_selinux '' \
   --arg postgres_uid 26 --arg postgres_gid 27 \
-  --slurpfile listening_tcp <(echo null) --slurpfile missing_tools <(echo '["getcap"]') \
+  --slurpfile listening_tcp <(echo null) --slurpfile missing_tools <(echo '["iptables-save"]') \
   -f "$here/collected.jq")
 expected=$(cat <<'JSON'
-{"hostname":"node","os":"Linux","kernel":"test","k3s_version":null,"containerd_version":null,"selinux":"disabled","containerd_enable_selinux":null,"postgres_uid":26,"postgres_gid":27,"listening_tcp":null,"missing_tools":["getcap"]}
+{"hostname":"node","os":"Linux","kernel":"test","k3s_version":null,"containerd_version":null,"selinux":"disabled","containerd_enable_selinux":null,"postgres_uid":26,"postgres_gid":27,"listening_tcp":null,"missing_tools":["iptables-save"]}
 JSON
 )
 same "collected shape and nulls" "$expected" "$actual"

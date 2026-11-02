@@ -20,7 +20,6 @@ shopt -s inherit_errexit
 # shellcheck source=live/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-K3S_IMAGE=rancher/k3s@sha256:ada5ff2e138120efe877f76d514dedda65b304122112b982eab532732c028c89  # v1.33.13+k3s2
 S3_IMAGE=versity/versitygw:v1.10.0@sha256:89cad13cc981986ee284cbafea4613f9533ce6fd5f37a2c96c4c4fb8adb3a316
 CERT_MANAGER_VERSION=v1.21.3
 CNPG_CHART_VERSION=0.29.1          # CloudNativePG 1.30.1

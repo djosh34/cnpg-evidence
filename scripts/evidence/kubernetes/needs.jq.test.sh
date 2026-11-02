@@ -75,10 +75,23 @@ same "node proxy for every node and by name" \
 same "pods and every workload kind, ReplicationControllers too, created or changed in every namespace" \
   '["cronjobs.batch","daemonsets.apps","deployments.apps","jobs.batch","pods","replicasets.apps","replicationcontrollers","statefulsets.apps"]' \
   "$(jq -c 'select(.right == "run_pods" and .subject == "alice" and .in == "otel") | .ask.resource' <<<"$needs" | jq -sc 'unique')"
-same "Certificates and CertificateRequests created, Certificates changed" \
+same "Certificates and CertificateRequests created, Certificates, Issuers and ClusterIssuers written" \
   '[["create","certificaterequests.cert-manager.io","-"],["create","certificates.cert-manager.io","-"],
-    ["patch","certificates.cert-manager.io","-"],["update","certificates.cert-manager.io","-"]]' \
+    ["create","clusterissuers.cert-manager.io","-"],["create","issuers.cert-manager.io","-"],
+    ["patch","certificates.cert-manager.io","-"],["patch","clusterissuers.cert-manager.io","-"],["patch","issuers.cert-manager.io","-"],
+    ["update","certificates.cert-manager.io","-"],["update","clusterissuers.cert-manager.io","-"],["update","issuers.cert-manager.io","-"]]' \
   "$(questions create_certificates alice)"
+same "Issuers in every namespace, ClusterIssuers cluster-wide" \
+  '[["","clusterissuers.cert-manager.io"],["cnpg-system","issuers.cert-manager.io"],["databases","issuers.cert-manager.io"],["otel","issuers.cert-manager.io"]]' \
+  "$(jq -c 'select(.subject == "alice" and (.ask.resource | test("issuers"))) | [.in, .ask.resource]' <<<"$needs" | jq -sc unique)"
+same "HelmCharts and HelmChartConfigs written in every namespace lead to cluster-admin" \
+  '[["cnpg-system","create","helmchartconfigs.helm.cattle.io"],["cnpg-system","create","helmcharts.helm.cattle.io"],
+    ["cnpg-system","patch","helmchartconfigs.helm.cattle.io"],["cnpg-system","patch","helmcharts.helm.cattle.io"],
+    ["cnpg-system","update","helmchartconfigs.helm.cattle.io"],["cnpg-system","update","helmcharts.helm.cattle.io"]]' \
+  "$(jq -c 'select(.subject == "alice" and .in == "cnpg-system" and (.ask.resource | startswith("helmchart"))) | [.in, .ask.verb, .ask.resource]' <<<"$needs" |
+     jq -sc unique)"
+same "and only for become_cluster_admin" '["become_cluster_admin"]' \
+  "$(jq -c 'select(.ask.resource | startswith("helmchart")) | .right' <<<"$needs" | jq -sc unique)"
 same "Ingresses always, IngressRoutes only where Traefik serves them" \
   '["ingresses.networking.k8s.io"]' \
   "$(jq -c 'select(.right == "write_routes") | .ask.resource' <<<"$needs" | jq -sc 'unique')"

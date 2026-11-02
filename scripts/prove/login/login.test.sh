@@ -30,8 +30,11 @@ JSON
     *) return 2 ;;
   esac
 }
-# Only the variables login.sh sets reach psql, not the caller's below.
-only_set_variables() { [[ -z ${PGHOST-}${PGSSLMODE-}${PGSERVICE-} && $PGCONNECT_TIMEOUT == 5 ]]; }
+# Only the variables login.sh sets reach psql, not the caller's below, and
+# HOME is an empty directory, not the caller's with its ~/.postgresql files.
+only_set_variables() {
+  [[ -z ${PGHOST-}${PGSSLMODE-}${PGSERVICE-} && $PGCONNECT_TIMEOUT == 5 && -d $HOME && -z $(ls -A "$HOME") ]]
+}
 psql() {
   only_set_variables || return 2
   case ${!#} in
@@ -54,6 +57,10 @@ python3() {
 }
 export -f kubectl only_set_variables psql python3
 export PGHOST=203.0.113.9 PGSSLMODE=disable PGSERVICE=other PGCONNECT_TIMEOUT=60
+HOME=$(mktemp -d)
+trap 'rm -r "$HOME"' EXIT
+mkdir "$HOME/.postgresql"
+touch "$HOME/.postgresql/postgresql.crt" "$HOME/.postgresql/postgresql.key" "$HOME/.postgresql/root.crt"
 # desired_rows RECORDS: the rows of the desired prove document, from
 # scripts/desired, for the probes in RECORDS, sorted by name.
 desired_rows() {

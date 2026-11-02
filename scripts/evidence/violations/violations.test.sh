@@ -34,8 +34,9 @@ input=$(cat <<'EOF2'
 EOF2
 )
 
-same "the sentences of every section, in order" \
-  '["rule 2: role postgres has a password", "rule 5: pod pg-1 shares host uids"]' \
+same "the violations of every section, in order" \
+  '[{"path": ["postgres", "have_password"], "sentence": "rule 2: role postgres has a password"},
+    {"path": ["pods_sharing_host_uids"], "sentence": "rule 5: pod pg-1 shares host uids"}]' \
   "$(bash "$here/violations.sh" <<<"$input")"
 
 if bash "$here/violations.sh" <<<'{"facts": {}}' >/dev/null 2>&1; then

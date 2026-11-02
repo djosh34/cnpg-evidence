@@ -4,7 +4,7 @@
 
 It is one static x86_64 Linux file of about 130 MB. It carries its own Chrome, glibc, libraries, fonts and the page that draws the images, so it runs with no network and no library or font from the OS, for example in a stock `ubi9-minimal` container. glibc still reads `/etc/nsswitch.conf` and `/etc/hosts` from the OS. Chrome runs without its sandbox, so give `cnpg-report` only documents of the three scripts.
 
-Each actual image says Passed or Failed for what it shows. The script's own verdict stays its `status` and `violations`.
+Each actual image says Passed or Failed: the script's own verdict on what the image shows.
 
 ## Get the binary
 
@@ -72,9 +72,15 @@ Each image has a legend of the marks its kind of image can show, under the title
 - **Red square.** A held right that the desired document does not allow is a red filled square. A right that is allowed but not held is a normal empty square. A protection that is off, such as an instance that shares the host's user ids, is a red empty square.
 - **Red value.** A value that goes beyond the desired document is red, such as an extra database an account reaches or a TLS version below the desired one.
 - **Red name.** A row that the desired document does not have, such as an extra account, shows only its name in red. Its other cells keep their own marks, so a right it holds that no one may hold is red as well.
-- **Less than desired.** A value or row that the desired document has and the actual document lacks is not drawn. Having less than desired is no finding.
+- **Less than desired.** A value or row that the desired document has and the actual document lacks is not drawn.
 
-Under the Actual box, every actual image says **Failed** in red when it shows at least one red mark, and **Passed** in dark blue when it shows none. Desired images have no verdict.
+Under the Actual box, every actual image says **Failed** in red or **Passed** in dark blue. The verdict is the script's, not the image's marks:
+
+- An evidence image says Failed when `evidence.sh` found a violation about a value the image shows, by the violation's `path`. A missing instance pod fails the encryption and container isolation images, and a missing role the accounts image, though neither is drawn. The metrics TLS version is red when it is not the desired version, but the rule only needs TLS on the metrics port, so only `none` fails the encryption image.
+- A host-check image says Failed when its check has `ok: false`, or the node file lacks the check.
+- A prove image says Failed when one of its attempts has `ok: false`, or it has no attempt.
+
+Desired images and the Versions image have no verdict.
 
 Every table puts its correct rows first and the rows with a red mark last, each group in alphabetical order of its first column. The values inside a cell follow the same order. pg_hba lines are the exception: they keep their line-number order, and a line counts by its number, so a line that moved is red at its new number. pg_ident lines are compared without their numbers, since PostgreSQL reads every line of a map, so only a new pg_ident line is red. Two tables come in two parts, each part ordered by these rules: the login rules list the pg_hba lines before the pg_ident lines, and the certificate logins list the databases no certificate pg_hba line names after the certificate names.
 
@@ -98,7 +104,7 @@ Each difference is `{path, extra}` or `{path, missing}`. `path` names the keys d
  {"path": ["checks", "selinux", "value"], "missing": "enforcing, enable_selinux true"}]
 ```
 
-An empty list means the actual document has every desired value and nothing else. A `"*"` map stands for the keys the actual map has, so an actual map with no keys shows no difference; `evidence.sh` checks the number of instance pods.
+An empty list means the actual document has every desired value and nothing else. A `"*"` map stands for the keys the actual map has and needs at least one: an actual map with no keys has the difference `{path: [..., "*"], missing: ...}`.
 
 ## Run
 
@@ -132,11 +138,11 @@ The images of one pair line up whether they come from one call or two, since bot
 ### Exit codes
 
 - `0`: every image is written.
-- `2`: an error. No image of this call is left in `<dir>`, and `<dir>` is removed again if the call made it.
+- `2`: an error. After a failed render or a failed write, no image of this call is left in `<dir>`, every older image keeps its content, and `<dir>` is removed again if the call made it. A failed rename is the rare exception described below.
 
 A wrong call, such as a missing `--out`, a second file or an unknown flag, prints a short reason or only the usage line on stderr; `-h` prints the usage line too. Every other error prints one line on stderr that starts with `cnpg-report:`, and a failed render adds the last lines of Chrome's output. Those errors are a file that is not readable or not JSON, a missing key, an unknown `source`, two documents that are not one desired and one actual document of the same script, a `collected_at` that is not a UTC time like `2026-01-02T03:04:05Z`, a host-check `node` or check `id` that does not fit in a file name (letters, digits, `.`, `_` and `-`, starting with a letter or digit), a host-check desired document alone, and a render that fails or takes longer than 5 minutes.
 
-`cnpg-report` prints nothing on success. Files already in `<dir>` stay, and an image with the same name is replaced. If writing an image fails, the call removes every image it wrote, so an older image it had already replaced is gone too.
+`cnpg-report` prints nothing on success. Files already in `<dir>` stay, and an image with the same name is replaced. The call first writes every image into a new hidden file in `<dir>`, and renames each over its name only when all are written. If writing one fails, it removes the new files and the older images stay as they were. A rename within one directory fails only in rare cases, such as a directory with the image's name; the images renamed before it then hold the new content.
 
 ### Space and TMPDIR
 

@@ -52,8 +52,10 @@ def superuser_in_cluster_namespace($cluster; $pods; $secrets; $configmaps):
 
 # A pod can run as any ServiceAccount of its namespace, mount its volumes and
 # use hostPort or hostNetwork. cert-manager signs what a Certificate or
-# CertificateRequest asks for. An Ingress or a Traefik IngressRoute or
-# IngressRouteTCP is served on the ingress controller's ports on the nodes.
+# CertificateRequest asks for, with the key of the Issuer it names. An
+# Ingress or a Traefik IngressRoute or IngressRouteTCP is served on the
+# ingress controller's ports on the nodes. k3s's helm-controller installs a
+# HelmChart, with the values of its HelmChartConfig, as cluster-admin.
 def rights_in_every_namespace($ingress_routes):
   [
     {right: "run_pods", verb: write,
@@ -62,8 +64,13 @@ def rights_in_every_namespace($ingress_routes):
     {right: "create_certificates", verb: "create",
      resource: ("certificates.cert-manager.io", "certificaterequests.cert-manager.io")},
     {right: "create_certificates", verb: ("update", "patch"), resource: "certificates.cert-manager.io"},
-    {right: "write_routes", verb: write, resource: ("ingresses.networking.k8s.io", $ingress_routes[])}
+    {right: "create_certificates", verb: write, resource: "issuers.cert-manager.io"},
+    {right: "write_routes", verb: write, resource: ("ingresses.networking.k8s.io", $ingress_routes[])},
+    {right: "become_cluster_admin", verb: write, resource: ("helmcharts.helm.cattle.io", "helmchartconfigs.helm.cattle.io")}
   ];
+
+# A ClusterIssuer signs for every namespace.
+def cluster_issuers: [{right: "create_certificates", verb: write, resource: "clusterissuers.cert-manager.io"}];
 
 # Rights that lead to cluster-admin: the kubelet API of every node, acting as
 # another subject, granting rights, or changing what admission webhooks see.
@@ -108,7 +115,7 @@ def need($subject; $in; $named_in):
     | (superuser_in_cluster_namespace($input.cluster; $input.instance_pods; $input.secrets[$input.namespace] // [];
                                     $input.configmaps)[]
        | need($subject; $input.namespace; $named_in)),
-      (become_cluster_admin($input.nodes)[] | need($subject; ""; $named_in)),
+      ((become_cluster_admin($input.nodes) + cluster_issuers)[] | need($subject; ""; $named_in)),
       ($input.accounts[] as $account | $account | impersonate_account | need($subject; $account.namespace; $named_in)),
       ($input.namespaces[] as $namespace
        | rights_in_every_namespace($input.ingress_routes)[] | need($subject; $namespace; $named_in))

@@ -36,6 +36,8 @@ The rw LoadBalancer Service forwards its port on every address in `status.loadBa
 
 The replication key reaches `psql` as an in-memory file and is never written to disk (`login/key.py`).
 
+No `PG*` variable of the caller reaches `psql`, and the attempts run with `HOME` set to an empty directory. libpq would otherwise load a client certificate, key and root CA from `~/.postgresql` of whoever runs the script, and the attempt without a client certificate would send one.
+
 ### 2. Access as the host postgres uid
 
 The script selects the instance pods on `--node`. It finds each pod's postgres process by the pod's object id (`metadata.uid`, not a Unix uid), which appears in the process's cgroup path. `/proc/<pid>/uid_map` and `gid_map` give the host uid and gid that the pod's `--postgres-uid` and `--postgres-gid` run as. The script also tries the socket's host path as that mapped uid and gid.

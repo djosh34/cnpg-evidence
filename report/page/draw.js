@@ -4,7 +4,8 @@
 //
 // draw(desired document): the desired image of each pair.
 // draw(actual document, desired document): both images of each pair, the
-// actual one with the values beyond desired in red and a Passed or Failed.
+// actual one with the values beyond desired in red and the script's Passed
+// or Failed.
 
 const SOURCES = {
   evidence: { by: 'evidence.sh, read only, through the Kubernetes API and PostgreSQL' },
@@ -105,8 +106,8 @@ function plan(doc, desired) {
         statement: image[which],
         context,
         collectedAt: which === 'actual' ? collectedAt(from.collected_at) : null,
-        // Failed when the image shows at least one red mark.
-        verdict: which === 'actual' ? (rows.some(r => bad(r.cells.flat())) ? 'Failed' : 'Passed') : null,
+        // The script's verdict on what the image shows, not its red marks.
+        verdict: which === 'actual' ? image.verdict(from) : null,
         legend: image.legend[which],
         columns,
         names: image.names,
