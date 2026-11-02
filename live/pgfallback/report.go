@@ -21,9 +21,10 @@ import (
 //   - The last query or write served by a read address after rw was back.
 //   - A query or write is wrong when a read address served it although it
 //     started more than 1 s plus one attempt at rw after rw was back. One
-//     attempt is what a connect to the rw hosts in order took when rw was
-//     back, from each address's last connect alone by then: the failed ones
-//     before the first that worked, and that one. Every query and write here
+//     attempt is what a connect to the rw hosts in order took if it started
+//     just before rw was back or right then, whichever is longer, with each
+//     address's last connect alone known when the attempt got to it: the
+//     failed ones before the first that worked, and that one. Every query and write here
 //     is one statement, so none ran inside a transaction that was already
 //     open.
 //   - Every failed query and write with its error, consecutive ones with the
@@ -169,15 +170,16 @@ func known(e entry) int64 {
 	return e.start
 }
 
-// attemptAt is how long a connect to the rw hosts in order took at time t,
-// from each address's last connect alone known by then. A failed connect
-// counts with its whole time, also when it ended later.
+// attemptAt is how long a connect to the rw hosts in order took when it
+// started at time t. It takes each address with its last connect alone known
+// when the attempt got to it: a failed one adds its whole time, also when it
+// ended later, and the first that worked adds its time and ends the attempt.
 func attemptAt(connects []entry, rwAddrs []string, t int64) int64 {
 	var total int64
 	for _, a := range rwAddrs {
 		var last *entry
 		for i := range connects {
-			if connects[i].addr == a && known(connects[i]) <= t && (last == nil || known(connects[i]) >= known(*last)) {
+			if connects[i].addr == a && known(connects[i]) <= t+total && (last == nil || known(connects[i]) >= known(*last)) {
 				last = &connects[i]
 			}
 		}
@@ -191,6 +193,13 @@ func attemptAt(connects []entry, rwAddrs []string, t int64) int64 {
 		}
 	}
 	return total
+}
+
+// oneAttempt is one attempt at rw once rw was back at u: the longer of one
+// that started just before, which got to each address later, and one that
+// started then.
+func oneAttempt(connects []entry, rwAddrs []string, u int64) int64 {
+	return max(attemptAt(connects, rwAddrs, u-1), attemptAt(connects, rwAddrs, u))
 }
 
 func report(w io.Writer, entries []entry, event int64, nodes []node) error {
@@ -247,7 +256,7 @@ func report(w io.Writer, entries []entry, event int64, nodes []node) error {
 		if !known || !s.up {
 			continue
 		}
-		if limit := s.at + 1000 + attemptAt(connects, rwAddrs, s.at); e.start > limit {
+		if limit := s.at + 1000 + oneAttempt(connects, rwAddrs, s.at); e.start > limit {
 			wrong = append(wrong, fmt.Sprintf("%s %s on %s at %s, %.1f s after rw was back at %s, limit %.1f s",
 				e.client, e.what, e.addr, secs(e.start), float64(e.start-s.at)/1000, secs(s.at), float64(limit-s.at)/1000))
 		}

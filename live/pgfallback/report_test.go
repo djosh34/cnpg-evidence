@@ -203,3 +203,42 @@ func TestReportRWNotBack(t *testing.T) {
 		t.Errorf("no line %q in\n%s", want, out)
 	}
 }
+
+// rw is back on k3s-1 and k3s-3 at 4000; k3s-2 times out. An attempt that
+// started just before was refused by k3s-1, waited 2 s on k3s-2 and got
+// k3s-3: it took 2.3 s, so the limit is 3.3 s.
+func TestReportAttemptStartedBeforeRWBack(t *testing.T) {
+	log := `900 950 rw connect k3s-1:5432 ok connected
+900 960 rw connect k3s-2:5432 ok connected
+900 960 rw connect k3s-3:5432 ok connected
+1000 1100 rw connect k3s-1:5432 fail refused
+1000 3000 rw connect k3s-2:5432 fail timeout
+3900 6000 rw connect k3s-2:5432 fail timeout
+1000 1100 rw connect k3s-3:5432 fail refused
+3900 4000 rw connect k3s-1:5432 ok connected
+3900 4000 rw connect k3s-3:5432 ok connected
+6000 6100 pgx query k3s-1:5433 ok in_recovery=true last=1
+9000 9100 pgx query k3s-1:5432 ok in_recovery=false last=1
+9000 9100 pgx write k3s-1:5432 ok 2
+9000 9100 gorm query k3s-1:5432 ok in_recovery=false last=1
+9000 9100 gorm write k3s-1:5432 ok 2
+`
+	nodes := append(testNodes, node{name: "k3s-3", ip: netip.MustParseAddr("10.77.0.13")})
+	run := func(log string) (string, error) {
+		entries, err := parseLog(strings.NewReader(log))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var b strings.Builder
+		err = report(&b, entries, 1000, nodes)
+		return b.String(), err
+	}
+	if out, err := run(log); err != nil {
+		t.Fatalf("report failed: %v\n%s", err, out)
+	}
+	var check checkFailed
+	log = strings.Replace(log, "6000 6100 pgx query", "7400 7500 pgx query", 1)
+	if out, err := run(log); !errors.As(err, &check) {
+		t.Fatalf("report did not fail for a read 3.4 s after rw was back: %v\n%s", err, out)
+	}
+}
