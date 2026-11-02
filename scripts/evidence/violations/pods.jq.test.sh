@@ -16,18 +16,24 @@ values=$(cat <<'EOF'
 EOF
 )
 
-# violations FILTER: the sentences for the clean facts changed by a jq filter.
-violations() {
+# found FILTER: the violations for the clean facts changed by a jq filter.
+found() {
   jq -c "$1" <<<"$facts" |
     jq --slurpfile values <(echo "$values") \
       '{facts: ., values: $values[0]}' |
     jq -L "$here" -f "$here/pods.jq"
 }
+# violations and paths: the sentences and the paths of what found gives.
+violations() { found "$@" | jq -c 'map(.sentence)'; }
+paths() { found "$@" | jq -c 'map(.path)'; }
 
 same "the clean cluster has none" '[]' "$(violations .)"
 
 same "pods" \
   '["rule 5: pod pg-2 shares host uids", "rule 5: only 2 of 3 instance pods exist"]' \
   "$(violations '.pods_sharing_host_uids = ["pg-2"] | .details.instances = ["pg-1", "pg-2"]')"
+
+same "pods: about the sharing pods and the instance list" '[["pods_sharing_host_uids"],["details","instances"]]' \
+  "$(paths '.pods_sharing_host_uids = ["pg-2"] | .details.instances = ["pg-1", "pg-2"]')"
 
 finish

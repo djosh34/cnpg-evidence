@@ -33,6 +33,13 @@ service_targets=$(kjson "$namespace" service "$lb_service" | jq -r -f "$here/tar
 [[ -n $service_targets ]] || die "service $lb_service has no load balancer address"
 mapfile -t targets <<<"$service_targets"
 
+# libpq loads a client certificate, key and root CA from ~/.postgresql of
+# whoever runs this. The probes run with HOME an empty directory, set after
+# the kubectl calls, which may read ~/.kube.
+HOME=$(mktemp -d)
+trap 'rmdir "$HOME"' EXIT
+export HOME
+
 for target in "${targets[@]}"; do
   connection="host=${target%:*} port=${target##*:}"
   deny password-tls "$target" "refused by pg_hba reject" 'pg_hba\.conf rejects connection' \

@@ -20,13 +20,16 @@ values=$(cat <<'EOF'
 EOF
 )
 
-# violations FILTER: the sentences for the clean facts changed by a jq filter.
-violations() {
+# found FILTER: the violations for the clean facts changed by a jq filter.
+found() {
   jq -c "$1" <<<"$facts" |
     jq --slurpfile values <(echo "$values") \
       '{facts: ., values: $values[0]}' |
     jq -L "$here" -f "$here/postgres.jq"
 }
+# violations and paths: the sentences and the paths of what found gives.
+violations() { found "$@" | jq -c 'map(.sentence)'; }
+paths() { found "$@" | jq -c 'map(.path)'; }
 
 same "the clean cluster has none" '[]' "$(violations .)"
 
@@ -67,5 +70,10 @@ same "another database" '["rule 1: database hidden exists and is not in the valu
   "$(violations '.postgres.databases += ["hidden"]')"
 same "a database from the values that does not exist" '["rule 1: database billing does not exist"]' \
   "$(violations '.postgres.databases -= ["billing"]')"
+
+same "each about the list it reads" \
+  '[["postgres","can_create_databases"],["postgres","have_password"],["postgres","roles"],["postgres","can_log_in"],["postgres","databases"]]' \
+  "$(paths '.postgres.have_password = ["billing"] | .postgres.can_create_databases += ["orders"] | .postgres.roles += ["app"]
+            | .postgres.can_log_in -= ["billing"] | .postgres.databases += ["app"]')"
 
 finish

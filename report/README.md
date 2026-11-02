@@ -36,7 +36,7 @@ On an x86_64 Linux host with network, docker, curl, unzip and sha256sum:
 bash report/build.sh build/cnpg-report
 ```
 
-It downloads the pinned Chrome zip and checks its SHA-256, installs the RPMs in a pinned UBI9 container and copies their libraries and licence texts, packs the payload, and builds the launcher with `CGO_ENABLED=0` in a pinned Go container. `launcher/payload.tar.gz` exists only during a build, so `go vet` and `go build` in `launcher/` work only inside it.
+It downloads the pinned Chrome zip and checks its SHA-256, installs the RPMs in a pinned UBI9 container and copies their libraries and licence texts, packs the payload, and builds the launcher with `CGO_ENABLED=0` in a pinned Go container. `launcher/payload.tar.gz` exists only during a build, so `go vet`, `go test` and `go build` in `launcher/` work only inside it; the build runs all three.
 
 A pushed tag `v*` runs `.github/workflows/release.yml`. It runs every CI job, then pushes the binary the `report` job built and tested as `ghcr.io/djosh34/cnpg-report:<tag>`, an image `FROM scratch` with only `/cnpg-report` in it. A last job pulls that image, copies the binary out with `podman create` and `podman cp`, renders the clean samples with it, and runs the container example of [report.md](../docs/report.md#in-a-container) on the image.
 

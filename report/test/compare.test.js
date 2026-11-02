@@ -58,6 +58,12 @@ test('an allowed set: a member it lacks is extra, a member the actual list lacks
   assert.deepEqual(js(desired, actual), [JSON.stringify({ path: ['kubernetes', 'run_pods'], extra: 'mallory' })]);
 });
 
+test('a "*" map needs at least one actual entry', () => {
+  const actual = structuredClone(clean);
+  actual.tls = {};
+  assert.deepEqual(js(desired, actual), [JSON.stringify({ path: ['tls', '*'], missing: desired.tls['*'] })]);
+});
+
 test('skipped keys and raw are never compared', () => {
   const actual = structuredClone(clean);
   Object.assign(actual, { status: 'fail', violations: ['x'], collected_at: '2030-01-01T00:00:00Z', software: { postgresql: '1' } });

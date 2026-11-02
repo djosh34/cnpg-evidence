@@ -17,6 +17,9 @@
 // The legend lists, per side, the marks the image can show as [specimen,
 // words]. The specimen is a square 'on', 'off', 'on extra' or 'off extra',
 // {text} for a red value or {name} for a red row name.
+//
+// verdict(actual document) is the script's own verdict on what the image
+// shows: 'Passed', 'Failed', or null for an image without one.
 
 const PLATFORM_DESIRED = 'The platform components that may hold these rights. Any other account must hold none of them.';
 const PLATFORM_ACTUAL = 'Every Kubernetes account that holds one of these rights, as the API server answers for it.';
@@ -212,6 +215,18 @@ function account(subject) {
   return [subject, ''];
 }
 
+// Failed when evidence.sh found a violation about a value at or below one of
+// the paths, else Passed.
+function violationsAt(paths) {
+  return doc => {
+    const violations = doc.violations;
+    if (!Array.isArray(violations) || !violations.every(v => isObject(v) && Array.isArray(v.path))) {
+      throw new Error('the violations of the actual document are not a list of {path, sentence}');
+    }
+    return violations.some(v => paths.some(p => isPrefix(p, v.path))) ? 'Failed' : 'Passed';
+  };
+}
+
 const PLATFORM_RIGHTS = [
   ['superuser_in_cluster_namespace', 'PostgreSQL superuser'],
   ['create_certificates', 'Create certificates'],
@@ -257,6 +272,12 @@ const EVIDENCE = [
     columns: ['Account', mark('Logs in'), 'Certificate names', 'Reaches', mark('Superuser'), mark('Create roles'), mark('Create databases'), 'Other rights', mark('Password stored')],
     names: 1,
     rows: accounts,
+    // The certificate names come from the pg_ident lines.
+    verdict: violationsAt([
+      ...['roles', 'can_log_in', 'superusers', 'can_create_roles', 'can_create_databases', 'have_password', ...RIGHTS.map(([key]) => key)]
+        .map(key => ['postgres', key]),
+      ['details', 'pg_ident'],
+    ]),
     // The words of the approved accounts image.
     legend: {
       desired: [['on', 'Holds the right'], ['off', 'Does not hold the right']],
@@ -280,6 +301,7 @@ const EVIDENCE = [
     columns: ['Certificate name', 'Account', 'Database'],
     names: 3,
     rows: certificateLogins,
+    verdict: violationsAt([['details', 'pg_ident'], ['postgres', 'databases']]),
     legend: { desired: [], actual: [[{ name: 'Red row' }, 'A certificate name, account or database the desired image does not have']] },
   },
   {
@@ -288,11 +310,12 @@ const EVIDENCE = [
     title: 'Login rules',
     control: 'PostgreSQL has only the approved login rules, in the approved order.',
     desired: 'The pg_hba and pg_ident lines of CNPG and the sample chart. The pg_hba lines are numbered in the order PostgreSQL matches them.',
-    actual: 'The pg_hba and pg_ident lines every instance has loaded. The pg_hba lines are numbered in the order PostgreSQL matches them, and the first matching line decides a login.',
+    actual: 'The lines of the pg_hba and pg_ident files of every instance. The pg_hba lines are numbered in the order PostgreSQL matches them, and the first matching line decides a login.',
     noun: ['line', 'lines'],
     columns: ['File', 'Number', 'Line'],
     names: 1,
     rows: loginRules,
+    verdict: violationsAt([['details', 'pg_hba'], ['details', 'pg_ident']]),
     legend: {
       desired: [],
       actual: [[{ text: 'Red line' }, 'A line the desired image does not have. A pg_hba line counts by its number, so a line that moved is red too.']],
@@ -309,19 +332,23 @@ const EVIDENCE = [
     columns: ['Secret', 'Certificate', 'SHA-256 fingerprint'],
     names: 0,
     rows: clientCa,
+    verdict: violationsAt([['client_ca']]),
     legend: { desired: [], actual: [RED_VALUE('A Secret or certificate the desired image does not have')] },
   },
   {
     name: '05-encryption',
     sections: ['tls'],
     title: 'Encrypted connections',
-    control: 'Every instance accepts only TLS 1.3 on PostgreSQL and answers with TLS 1.3 on metrics.',
+    control: 'Every instance accepts only TLS 1.3 on PostgreSQL and uses TLS on metrics.',
     desired: 'The lowest TLS version PostgreSQL accepts on port 5432, and the TLS version of the metrics port 9187.',
     actual: 'Per instance, the lowest TLS version PostgreSQL accepts on port 5432, and the TLS version the metrics port 9187 answered with.',
     noun: ['instance', 'instances'],
     columns: ['Instance', 'PostgreSQL 5432, lowest TLS', 'Metrics 9187, TLS'],
     names: 1,
     rows: encryption,
+    // A metrics version other than the desired one is red, but only metrics
+    // without TLS break the rule. Fewer instance pods than desired fail too.
+    verdict: violationsAt([['tls'], ['details', 'instances']]),
     legend: { desired: [], actual: [RED_VALUE('A TLS version or answer the desired image does not have')] },
   },
   {
@@ -335,6 +362,7 @@ const EVIDENCE = [
     columns: ['Instance', mark('Own user namespace')],
     names: 1,
     rows: containerIsolation,
+    verdict: violationsAt([['pods_sharing_host_uids'], ['details', 'instances']]),
     legend: {
       desired: [['on', 'Runs in its own user namespace']],
       actual: [['on', 'Runs in its own user namespace'], ['off extra', 'Shares its user ids with the host']],
@@ -350,6 +378,7 @@ const EVIDENCE = [
     columns: ['Component', 'Namespaces'],
     names: 1,
     rows: operatorSecrets,
+    verdict: violationsAt([['kubernetes', 'operator_reads_secrets_in'], ['kubernetes', 'plugin_reads_secrets_in']]),
     legend: { desired: [], actual: [RED_VALUE('A namespace the desired image does not allow')] },
   },
   {
@@ -363,6 +392,7 @@ const EVIDENCE = [
     columns: [...ACCOUNT_COLUMNS, ...PLATFORM_RIGHTS.map(([, label]) => mark(label))],
     names: 2,
     rows: platformRights,
+    verdict: violationsAt(PLATFORM_RIGHTS.map(([key]) => ['kubernetes', key])),
     legend: {
       desired: [['on', 'May hold the right'], ['off', 'Must not hold the right']],
       actual: [['on', 'Holds the right'], ['off', 'Does not hold the right'], BEYOND, RED_ACCOUNT],
@@ -373,11 +403,12 @@ const EVIDENCE = [
     sections: ['software'],
     actualOnly: true,
     title: 'Versions',
-    control: 'The software versions the evidence was read from. They have no desired value.',
+    control: 'The software versions the evidence was read from. They have no desired value and no verdict.',
     actual: 'The Kubernetes, CNPG operator, backup plugin and PostgreSQL versions.',
     columns: ['Software', 'Version'],
     names: 1,
     rows: versions,
+    verdict: () => null,
     legend: { actual: [] },
   },
 ];
@@ -420,6 +451,8 @@ function hostCheckImage(id, docs) {
         [{ name: 'Red check' }, 'A check the desired image does not have'],
       ],
     },
+    // The check's own ok; a check the node file lacks did not pass.
+    verdict: doc => (doc.checks?.find(c => c.id === id)?.ok === true ? 'Passed' : 'Failed'),
     rows: s => {
       const row = s.items(['checks']).find(r => r.value?.id === id);
       if (!row) return [];
@@ -489,6 +522,11 @@ const PROVE = [
   columns: ['Attempt', 'Tried on', 'Must be', 'Result'],
   names: 1,
   rows: probes(image.name),
+  // Passed when the image has attempts and every one got the result it must get.
+  verdict: doc => {
+    const own = (doc.probes ?? []).filter(p => probeGroup(String(p.probe)) === image.name);
+    return own.length && own.every(p => p.ok === true) ? 'Passed' : 'Failed';
+  },
   legend: {
     desired: [],
     actual: [RED_VALUE('A result other than the one the attempt must get'), [{ name: 'Red attempt' }, 'An attempt the desired image does not have']],

@@ -24,13 +24,16 @@ values=$(cat <<'EOF'
 EOF
 )
 
-# violations FILTER: the sentences for the clean facts changed by a jq filter.
-violations() {
+# found FILTER: the violations for the clean facts changed by a jq filter.
+found() {
   jq -c "$1" <<<"$facts" |
     jq --slurpfile values <(echo "$values") \
       '{facts: ., values: $values[0], operator_account: "cnpg-cloudnative-pg", plugin_account: "barman-cloud-plugin-barman-cloud"}' |
     jq -L "$here" -f "$here/kubernetes.jq"
 }
+# violations and paths: the sentences and the paths of what found gives.
+violations() { found "$@" | jq -c 'map(.sentence)'; }
+paths() { found "$@" | jq -c 'map(.path)'; }
 
 same "the clean cluster has none" '[]' "$(violations .)"
 
@@ -40,28 +43,34 @@ same "secret read in kube-system through the operator namespace group" \
 
 same "a user with every right" \
   '["rule 7: mallory can get PostgreSQL superuser through rights in databases",
-    "rule 7: mallory can create Certificates or CertificateRequests",
+    "rule 7: mallory can create Certificates or CertificateRequests, or change Issuers",
     "rule 7: mallory can write Ingresses, IngressRoutes or IngressRouteTCPs",
     "rule 7: mallory can run pods", "rule 7: mallory can become cluster-admin"]' \
   "$(violations '.kubernetes |= with_entries(if .key | endswith("_reads_secrets_in") then . else .value += ["mallory"] end)')"
+
+same "each about its right" \
+  '[["kubernetes","superuser_in_cluster_namespace"],["kubernetes","create_certificates"],["kubernetes","write_routes"],
+    ["kubernetes","run_pods"],["kubernetes","become_cluster_admin"],["kubernetes","operator_reads_secrets_in"]]' \
+  "$(paths '.kubernetes |= with_entries(if .key == "plugin_reads_secrets_in" then . else .value += ["mallory"] end)')"
 
 same "Traefik may read Secrets, but not run pods" \
   '["rule 7: system:serviceaccount:kube-system:traefik can run pods"]' \
   "$(violations '.kubernetes.run_pods += ["system:serviceaccount:kube-system:traefik"]')"
 
 same "the operator may hold superuser rights, but not create certificates" \
-  '["rule 7: system:serviceaccount:cnpg-system:cnpg-cloudnative-pg can create Certificates or CertificateRequests"]' \
+  '["rule 7: system:serviceaccount:cnpg-system:cnpg-cloudnative-pg can create Certificates or CertificateRequests, or change Issuers"]' \
   "$(violations '.kubernetes.superuser_in_cluster_namespace += ["system:serviceaccount:cnpg-system:cnpg-cloudnative-pg"]
                  | .kubernetes.create_certificates += ["system:serviceaccount:cnpg-system:cnpg-cloudnative-pg"]')"
 
-# violations_because FILTER GRANTED_BY: the same, with the reasons of the kubernetes section.
-violations_because() {
+# found_because FILTER GRANTED_BY: the same, with the reasons of the kubernetes section.
+found_because() {
   jq -c "$1" <<<"$facts" |
     jq --slurpfile values <(echo "$values") --argjson granted_by "$2" \
       '{facts: ., values: $values[0], granted_by: $granted_by,
         operator_account: "cnpg-cloudnative-pg", plugin_account: "barman-cloud-plugin-barman-cloud"}' |
     jq -L "$here" -f "$here/kubernetes.jq"
 }
+violations_because() { found_because "$@" | jq -c 'map(.sentence)'; }
 
 same "Traefik may not hold more than Secret reads in the superuser row" \
   '["rule 7: system:serviceaccount:kube-system:traefik can get PostgreSQL superuser through rights in databases (allowed by ClusterRoleBinding \"t\" of ClusterRole \"exec\" to ServiceAccount \"traefik/kube-system\")"]' \

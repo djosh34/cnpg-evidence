@@ -55,6 +55,7 @@ docker run --rm -v "$payload:/payload" -v "$launcher:/launcher:ro" -v "$work:/wo
     cp /work/payload.tar.gz /work/src/
     cd /work/src
     go vet ./...
+    go test ./...
     go build -ldflags=-s -o /work/cnpg-report .
   '
 mkdir -p "$(dirname "$out")"

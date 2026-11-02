@@ -5,7 +5,7 @@
 // It unpacks the embedded payload (Chrome, its libraries, glibc and loader,
 // fonts and the page) into a new directory under TMPDIR, draws the images with
 // Chrome, writes them into <dir> and removes the unpacked files. Exit 0 when
-// every image is written, exit 2 on any error, with no image left in <dir>.
+// every image is written, exit 2 on any error, with <dir> as it was before.
 package main
 
 import (
@@ -177,28 +177,24 @@ func writeFile(path string, r io.Reader, mode os.FileMode) error {
 	return f.Close()
 }
 
-// writeImages writes every image into dir, or none: on an error it removes
-// the images it already wrote, and dir if it made it.
-func writeImages(dir string, images []image) error {
+// writeImages writes every image into dir, or none. Each image goes into a
+// new file in dir first; only when all are written does each new file take
+// its image's name. On an error it removes the new files, and dir if it made
+// it, so the images that were there before stay as they were.
+func writeImages(dir string, images []image) (err error) {
 	_, statErr := os.Stat(dir)
 	madeDir := errors.Is(statErr, os.ErrNotExist)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	written := []string{}
-	for _, img := range images {
-		path := filepath.Join(dir, img.file)
-		err := os.WriteFile(path, img.png, 0o644)
+	temps := []string{}
+	defer func() {
 		if err == nil {
-			written = append(written, path)
-			continue
+			return
 		}
-		// The failed write may have left part of its file.
-		if rmErr := os.Remove(path); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
-			err = errors.Join(err, rmErr)
-		}
-		for _, w := range written {
-			if rmErr := os.Remove(w); rmErr != nil {
+		// A renamed file is gone from its temporary name.
+		for _, temp := range temps {
+			if rmErr := os.Remove(temp); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
 				err = errors.Join(err, rmErr)
 			}
 		}
@@ -207,9 +203,33 @@ func writeImages(dir string, images []image) error {
 				err = errors.Join(err, rmErr)
 			}
 		}
-		return err
+	}()
+	for _, img := range images {
+		temp, err := writeTemp(dir, img)
+		if temp != "" {
+			temps = append(temps, temp)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	for i, img := range images {
+		if err := os.Rename(temps[i], filepath.Join(dir, img.file)); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+// writeTemp writes the image into a new hidden file in dir and returns its
+// name, also when the write fails after the file was made.
+func writeTemp(dir string, img image) (string, error) {
+	f, err := os.CreateTemp(dir, "."+img.file+".*")
+	if err != nil {
+		return "", err
+	}
+	_, err = f.Write(img.png)
+	return f.Name(), errors.Join(err, f.Chmod(0o644), f.Close())
 }
 
 // isChromeChild tells a Chrome subprocess, which Chrome starts with a --type
