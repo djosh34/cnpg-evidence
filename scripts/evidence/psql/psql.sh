@@ -4,8 +4,8 @@
 #
 # The exec runs only psql, the one program of the instance image the scripts
 # use. The user, the database and CNPG's socket directory and port are given
-# here, so no PG* variable of the container changes what it connects to, and
-# -X skips any psqlrc.
+# here, and hostaddr is set empty, so no PG* variable of the container changes
+# what it connects to. -X skips any psqlrc.
 #
 # Usage: psql.sh NAMESPACE POD <file.sql
 set -euo pipefail
@@ -15,5 +15,5 @@ namespace=$1
 pod=$2
 
 kubectl exec -i -n "$namespace" "$pod" -c postgres -- \
-  psql -XAtq -v ON_ERROR_STOP=1 -h /controller/run -p 5432 -U postgres -d postgres |
+  psql -XAtq -v ON_ERROR_STOP=1 -U postgres -d "host=/controller/run hostaddr='' port=5432 dbname=postgres" |
   jq -c .

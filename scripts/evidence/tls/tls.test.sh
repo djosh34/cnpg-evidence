@@ -11,7 +11,7 @@ source "$here/../../lib/test.sh"
 # instance image has no openssl.
 bin=$(mktemp -d)
 trap 'rm -rf "$bin"' EXIT
-export EXEC_LOG=$bin/exec.log
+export EXEC_LOG=$bin/exec.log FORWARD_PID=$bin/forward.pid
 cat >"$bin/kubectl" <<'SH'
 #!/usr/bin/env bash
 pod=pg-2
@@ -29,12 +29,14 @@ case "$*" in
   "port-forward -n databases pod/$pod :9187")
     [[ ${FORWARD:-} != fails ]] || { echo 'error: unable to forward port because pod is not running'; exit 1; }
     [[ $pod == pg-1 ]] && echo 'Forwarding from 127.0.0.1:41001 -> 9187' || echo 'Forwarding from 127.0.0.1:41002 -> 9187'
+    echo $$ >"$FORWARD_PID"
     exec sleep 60 ;;
   *) exit 1 ;;
 esac
 SH
 cat >"$bin/openssl" <<'SH'
 #!/usr/bin/env bash
+[[ ${HANDSHAKE:-} != hangs ]] || exit 124 # what timeout returns
 case "$*" in
   "s_client -connect 127.0.0.1:41001 -brief") printf 'CONNECTION ESTABLISHED\nProtocol version: TLSv1.3\n' >&2 ;;
   "s_client -connect 127.0.0.1:41002 -brief") echo 'error:0A00010B:SSL routines::wrong version number' >&2; exit 1 ;;
@@ -72,6 +74,16 @@ same_text "a port-forward that does not start exits 2" 2 "$status"
 same_text "with kubectl's error" \
   "tls.sh: error: port-forward to pg-1:9187 did not start: error: unable to forward port because pod is not running" \
   "$(cat "$bin/err")"
+
+status=0
+output=$(HANDSHAKE=hangs bash "$here/tls.sh" databases pg-1 2>"$bin/err") || status=$?
+same_text "a handshake that hangs exits 2" 2 "$status"
+same_text "and says so" "tls.sh: error: TLS handshake with pg-1:9187 timed out" "$(cat "$bin/err")"
+if kill -0 "$(cat "$FORWARD_PID")" 2>/dev/null; then
+  fail "and stops the port-forward"
+else
+  pass "and stops the port-forward"
+fi
 
 cat >"$bin/kubectl" <<'SH'
 #!/usr/bin/env bash
