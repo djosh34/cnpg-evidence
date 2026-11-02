@@ -26,4 +26,6 @@ jobs:
         env:
           SCENARIOS: ${{ inputs.scenarios }}
           WRITER: ${{ inputs.writer }}
-        run: echo "scenarios $SCENARIOS, writer $WRITER"
+        run: |
+          set -euo pipefail
+          echo "scenarios $SCENARIOS, writer $WRITER"
