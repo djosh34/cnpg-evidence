@@ -25,7 +25,7 @@ node_restarts() {
   local n
   for n in "${NODES[@]}"; do
     docker inspect -f "$n: restarted {{.RestartCount}} times, running since {{.State.StartedAt}}" "$n"
-    docker logs "$n" 2>&1 | grep -E 'level=fatal|panic:' | tail -5
+    docker logs "$n" 2>&1 | awk '/level=fatal|panic:/' | tail -5
   done
 }
 
