@@ -1,6 +1,6 @@
 # Live scenarios
 
-The scripts in `live/` start the samples on a three-node k3s cluster in docker and run scenarios against it: a node lost, a switchover, the evidence scripts. Each failure scenario checks that the cluster recovers by itself, that writes come back in time and that no acknowledged commit is lost, and writes its times to the job summary. The `live` workflow runs them on GitHub's runners, one job and one cluster per scenario.
+The scripts in `live/` start the samples on a three-node k3s cluster in docker and run scenarios against it: nodes lost, a replica restart during a primary loss, a rollout, switchovers, a fence, the evidence scripts. Each failure scenario checks that the cluster recovers by itself, that writes come back in time and that no acknowledged commit is lost, and writes its times to the job summary. The `live` workflow runs them on GitHub's runners, one job and one cluster per scenario.
 
 ## Files
 
@@ -50,15 +50,22 @@ Each scenario first waits until all three instances are ready and the primary st
 - Every acknowledged commit, the final write included, must be in `live_writes` on the primary afterwards.
 - The job summary gives, in seconds after the event, when each node's read port was down and back, and when every instance was ready and streaming.
 
-With the writer, a scenario also fails when there was no acknowledged write for more than 180 s after the event started, and the summary gives the first write on a new primary and the longest time without a write.
+With the writer, a scenario also fails when there was no acknowledged write for more than 180 s after the event started, and the summary gives the first write on a new primary and the longest time without a write. `fence` and `one-node-left` stop writes on purpose, so they allow longer; the table says how long.
 
 Without the writer, a former primary that rewound onto an idle new primary can wait for the primary's next WAL record (see [samples.md](samples.md#writes-reads-and-failover)). When not every instance is back after 10 minutes, the scenario makes its one write then, and every instance must be back within 10 s of it. The summary says so.
+
+`quiet-rewind` always runs without the writer, also in a run with the writer on, since it tests a cluster with no writes.
 
 | Scenario | Event | Checks |
 |---|---|---|
 | `primary-node-loss` | The primary's node stops with `docker stop -t 0` and starts again 120 s later. | Another instance becomes primary within 10 min of the stop; with the writer, it takes a write within 180 s of the stop. |
 | `replica-node-loss` | A replica's node stops with `docker stop -t 0` for 6 min. | The primary stays where it is. |
 | `switchover` | `kubectl cnpg promote` to a replica. | The replica becomes primary within 5 min; with the writer, it takes a write within 180 s. |
+| `replica-restart-during-primary-loss` | The primary's node stops with `docker stop -t 0`; 10 s later, before any promotion, a replica's `postgres` container is killed on its node with `crictl stop --timeout 0`, and the kubelet starts it again. The node starts again 120 s after the stop. | The container runs again within 5 min; another instance becomes primary within 10 min of the stop; with the writer, it takes a write within 180 s of the stop. |
+| `rollout` | `shared_buffers` changes on the `Cluster`, which needs a restart of every instance; once that is done, `kubectl cnpg promote` to a replica. | The rollout ends within 10 min with every instance on the new value, ready and streaming, and the primary on another instance; the replica becomes primary within 5 min. With the writer, each of the two stops writes for at most 30 s. |
+| `fence` | `kubectl cnpg fencing on` the primary, and `fencing off` 30 s later. | PostgreSQL on the primary stops within 2 min. Within 10 min of the unfence its `pg_ident` lines equal a replica's again and every instance is ready and streaming; the primary stays where it is. With the writer, writes may stop for those 30 s plus 10 min. The summary gives when the lines came back. |
+| `quiet-rewind` | `kubectl cnpg promote` to a replica, with no writes. | The replica becomes primary within 5 min. If the former primary is not back within 10 min, the one write must bring it back within 10 s. |
+| `one-node-left` | The primary's node and a replica's node stop with `docker stop -t 0` and start again 120 s later. | The last node's read port answers every probe while the two nodes are down. With the writer, no write is acknowledged then, writes may stop for those 120 s plus 180 s, and the primary takes a write within 180 s of the start. |
 | `evidence` | `desired.sh`, `evidence.sh` with the `client-ca` Secret's certificate as `--ca`, and `prove.sh` as root on every node, through `/proc/<pid>/root` of the node's container. | `evidence.sh` finds no violation; on every node each `prove.sh` attempt has the value of the desired document; `cnpg_compliance_violations` is 0 for each of its 4 checks on every instance, read through `kubectl port-forward`. |
 
 ## Run in GitHub Actions
