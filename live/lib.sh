@@ -72,8 +72,10 @@ metrics_of() {
     kill "$pid" 2>/dev/null || true # it may have ended with the error read here
     fail "port-forward to $pod:9187 did not start: ${line:-no output in 30 s}"
   fi
-  page=$(curl -fsSk --max-time 10 "https://127.0.0.1:${BASH_REMATCH[1]}/metrics") ||
+  if ! page=$(curl -fsSk --max-time 10 "https://127.0.0.1:${BASH_REMATCH[1]}/metrics"); then
+    kill "$pid" 2>/dev/null || true # it may have ended too; the failed read is the error
     fail "no metrics from $pod:9187"
+  fi
   kill "$pid" || fail "port-forward to $pod:9187 ended early"
   exec {forward}<&-
   echo "$page"

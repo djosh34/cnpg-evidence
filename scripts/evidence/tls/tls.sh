@@ -38,7 +38,10 @@ metrics_tls() {
 
   # A failed handshake is the answer "no TLS"; only a hang is an error.
   handshake=$(timeout 10 openssl s_client -connect "127.0.0.1:$port" -brief </dev/null 2>&1) || status=$?
-  ((status != 124)) || die "TLS handshake with $pod:9187 timed out"
+  if ((status == 124)); then
+    kill "$pid" 2>/dev/null || true # it may have ended too; the hang is the error
+    die "TLS handshake with $pod:9187 timed out"
+  fi
   kill "$pid" 2>/dev/null || die "port-forward to $pod:9187 ended early"
   exec {forward}<&-
   sed -n 's/^Protocol version: //p' <<<"$handshake"
