@@ -31,7 +31,7 @@ selinux=$(bash "$here/../selinux/selinux.sh" mode)
 containerd_selinux=$(bash "$here/../containerd-selinux/containerd-selinux.sh")
 listening_tcp=$(bash "$here/../listening-tcp/listening-tcp.sh")
 missing_tools=$(
-  for tool in ss rpm getent k3s getcap; do
+  for tool in ss rpm getent k3s iptables-save; do
     have "$tool" || echo "$tool"
   done | jq -Rn '[inputs]'
 )

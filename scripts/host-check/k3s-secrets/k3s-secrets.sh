@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Checks k3s credential paths and the server's secrets-encryption setting.
-# Usage: k3s-secrets.sh [KUBECONFIG [CONFIG_YAML [SERVER_DIR [UNIT...]]]]
+# Checks k3s credential paths and, on a server, that secrets encryption is on,
+# as the running server reports it with k3s secrets-encrypt status.
+# Usage: k3s-secrets.sh [KUBECONFIG [CONFIG_YAML [SERVER_DIR]]]
 # Exit: 0 with one JSON check, nonzero on collection errors.
 set -euo pipefail
 shopt -s inherit_errexit nullglob
@@ -44,12 +45,15 @@ if [[ ! -e $kubeconfig && ! -e $server ]]; then
   details+=("agent node: server directory and secrets-encryption not required")
 else
   check_path "$server" 700
-  settings=$(bash "$here/../k3s-config/k3s-config.sh" "$config" "${@:4}")
-  lines=$(jq -r '[.[][] | select(test("secrets-encryption"))] | join("; ")' <<<"$settings")
-  enabled=$(jq -r '[.[][] | select(test("secrets-encryption"))] | last // "" |
-    test("^(secrets-encryption: true|--secrets-encryption(=true)?)$")' <<<"$settings")
-  details+=("${lines:-secrets-encryption unset}")
-  [[ $enabled == true ]] || failures+=("secrets-encryption off")
+  if have k3s; then
+    # The effective state, wherever the setting was made.
+    status=$(k3s secrets-encrypt status | sed -n 's/^Encryption Status: //p')
+    details+=("Encryption Status: ${status:-not reported}")
+    [[ $status == Enabled ]] || failures+=("secrets-encryption off")
+  else
+    details+=("k3s not found")
+    failures+=("k3s not found")
+  fi
 fi
 ok=true value=none
 if ((${#failures[@]})); then

@@ -86,4 +86,20 @@ same "each sentence names the binding that allowed it" \
        "operator_reads_secrets_in": {"kube-system": ["RBAC: allowed by ClusterRoleBinding \"a\" of ClusterRole \"view\" to Group \"system:serviceaccounts:cnpg-system\"",
                                                     "RBAC: allowed by RoleBinding \"b/kube-system\" of Role \"r\" to ServiceAccount \"cnpg-cloudnative-pg/cnpg-system\""]}}')"
 
+# The allowed controllers are those that hold a right on a k3s cluster; the
+# endpoint controllers hold none, so they are not allowed one.
+same "an endpoint controller may not run pods" \
+  '["rule 7: system:serviceaccount:kube-system:endpoint-controller can run pods"]' \
+  "$(violations '.kubernetes.run_pods += ["system:serviceaccount:kube-system:endpoint-controller"]')"
+same "the root CA publisher may write ConfigMaps in the cluster's namespace" '[]' \
+  "$(violations '.kubernetes.superuser_in_cluster_namespace += ["system:serviceaccount:kube-system:root-ca-cert-publisher"]')"
+
+# The allowed controllers are those that hold a right on a k3s cluster; the
+# endpoint controllers hold none, so they are not allowed one.
+same "an endpoint controller may not run pods" \
+  '["rule 7: system:serviceaccount:kube-system:endpoint-controller can run pods"]' \
+  "$(violations '.kubernetes.run_pods += ["system:serviceaccount:kube-system:endpoint-controller"]')"
+same "the root CA publisher may write ConfigMaps in the cluster's namespace" '[]' \
+  "$(violations '.kubernetes.superuser_in_cluster_namespace += ["system:serviceaccount:kube-system:root-ca-cert-publisher"]')"
+
 finish

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests k3s setting selection and multiline unit flags.
+# Tests SELinux setting selection and multiline unit flags.
 # Usage: bash k3s-config.test.sh
 # Exit: 0 when all assertions pass, nonzero on a failure.
 set -euo pipefail
@@ -33,13 +33,13 @@ UNIT
 export -f sed awk
 actual=$(bash "$here/k3s-config.sh" "$here/k3s-config.test.sh" "$here/k3s-config.sh")
 expected=$(cat <<JSON
-{"$here/k3s-config.test.sh":["selinux: true","disable-network-policy: false","secrets-encryption: true"],"$here/k3s-config.sh":["--selinux","--disable-network-policy=false","--secrets-encryption=true"]}
+{"$here/k3s-config.test.sh":["selinux: true"],"$here/k3s-config.sh":["--selinux"]}
 JSON
 )
 same "safe settings and multiline unit flags" "$expected" "$actual"
 actual=$(bash "$here/k3s-config.sh" /no-such-config "$here/k3s-config.sh" "$here/k3s-config.test.sh")
 expected=$(cat <<JSON
-{"$here/k3s-config.sh":["--selinux","--disable-network-policy=false","--secrets-encryption=true"],"$here/k3s-config.test.sh":["--selinux","--disable-network-policy=false","--secrets-encryption=true"]}
+{"$here/k3s-config.sh":["--selinux"],"$here/k3s-config.test.sh":["--selinux"]}
 JSON
 )
 same "server and agent units" "$expected" "$actual"

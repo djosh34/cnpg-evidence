@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Collects SELinux, network-policy and encryption settings from k3s files and units.
+# Collects the SELinux settings from k3s files and units.
 # Usage: k3s-config.sh [CONFIG_YAML [SYSTEMD_UNIT...]]
 # Exit: 0 with a JSON object (empty for missing files), nonzero on errors.
 set -euo pipefail
@@ -8,7 +8,7 @@ shopt -s inherit_errexit nullglob
 config=${1:-/etc/rancher/k3s/config.yaml}
 units=("${@:2}")
 ((${#units[@]})) || units=(/etc/systemd/system/k3s.service /etc/systemd/system/k3s-agent.service)
-keys='selinux|disable-network-policy|secrets-encryption'
+keys='selinux'
 
 {
   for file in "$config" "$config".d/*.yaml; do

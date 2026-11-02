@@ -2,7 +2,7 @@
 
 `scripts/desired/desired.sh` builds the desired document of `evidence.sh`, `host-check.sh` or `prove.sh` from [`desired.yaml`](../desired.yaml) alone. A desired document has the shape of the script's actual output, so the two can be compared. It needs no cluster, host or network access.
 
-`cnpg-report` compares a desired with an actual document, as [report.md](report.md#the-comparison) describes. A difference is not a failed check: the actual document's `status`, `ok` and `violations` stay the verdict.
+`cnpg-report` compares a desired with an actual document, as [report.md](report.md#the-comparison) describes. A difference is not a failed check: the actual document's `status`, `ok` and `violations` are the verdict, and each image takes its verdict from them.
 
 ## Run
 
@@ -47,7 +47,7 @@ details: {pg_hba: [{number: 1, line: local all cnpg_metrics_exporter peer map=cn
 Two forms appear only in desired documents:
 
 - `{"allowed": [...]}` in place of a list: an allowed set. The actual list may hold any of these members and no other; a member it lacks, or a missing list, is no difference. Used for the Kubernetes subjects of every right, the namespaces where the operator and the plugin may read Secrets, and `not_served`, which is absent on a cluster with Traefik. Every other list is exact.
-- A map with the one key `"*"`: the value every key of the actual map must have. Used where only a live cluster knows the keys: the instance pods in `tls`.
+- A map with the one key `"*"`: the value every key of the actual map must have. The actual map needs at least one key. Used where only a live cluster knows the keys: the instance pods in `tls`.
 
 The pg_hba and pg_ident lines are CNPG 1.30's fixed lines around the lines the sample chart writes, as the `pg_hba_file_rules` and `pg_ident_file_mappings` views show them, numbered in matching order.
 

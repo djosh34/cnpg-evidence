@@ -27,8 +27,15 @@ stat() {
   fi
 }
 ls() { echo '-rw------- 1 root root'; }
-export -f stat ls
-run() { bash "$here/k3s-secrets.sh" "$fixture/k3s.yaml" "$fixture/config.yaml" "$fixture/server" "$fixture/unit"; }
+# The running server's answer, whatever the config files say.
+encryption=Enabled
+k3s() {
+  [[ $* == 'secrets-encrypt status' ]] || return 2
+  printf 'Encryption Status: %s\nCurrent Rotation Stage: start\nServer Encryption Hashes: All hashes match\n' "$encryption"
+}
+export encryption
+export -f stat ls k3s
+run() { bash "$here/k3s-secrets.sh" "$fixture/k3s.yaml" "$fixture/config.yaml" "$fixture/server"; }
 actual=$(run)
 same "tight credentials and encryption pass" '{"id":"k3s-secrets","ok":true,"value":"none"}' "$(jq '{id,ok,value}' <<<"$actual")"
 same "no secret or unrelated value printed" false "$(jq 'tostring | contains("do-not-print")' <<<"$actual")"
@@ -48,15 +55,29 @@ export -f stat
 same_text "token drop-in and server modes fail" "$fixture/config.yaml.d/10-token.yaml: 644, root:root, no ACL; $fixture/server: 750, root:root, no ACL" "$(run | jq -r .value)"
 stat() { echo '600 root:root'; }
 export -f stat
-printf 'secrets-encryption: false\n' >"$fixture/config.yaml.d/30-encryption.yaml"
-same_text "later config disables encryption" 'secrets-encryption off' "$(run | jq -r .value)"
-printf "ExecStart=/usr/local/bin/k3s server '--secrets-encryption' '--token=do-not-print'\n" >"$fixture/unit"
-same_text "unit enables encryption" none "$(run | jq -r .value)"
-printf "ExecStart=/usr/local/bin/k3s server '--secrets-encryption=false'\n" >"$fixture/unit"
-same_text "unit disables encryption" 'secrets-encryption off' "$(run | jq -r .value)"
-rm "$fixture/unit" "$fixture/config.yaml.d/30-encryption.yaml"
-printf 'token: do-not-print\n' >"$fixture/config.yaml"
-same_text "unset encryption fails on server" 'secrets-encryption off' "$(run | jq -r .value)"
+same_text "the server's status is read" 'Encryption Status: Enabled' "$(run | jq -r '.raw | split("; ") | last')"
+encryption=Disabled
+same_text "a config that enables encryption does not count, the server's status does" 'secrets-encryption off' "$(run | jq -r .value)"
+printf 'token: do-not-print\nsecrets-encryption: false\n' >"$fixture/config.yaml"
+encryption=Enabled
+same_text "a config that disables encryption does not count either" none "$(run | jq -r .value)"
+k3s() { echo 'unexpected'; }
+export -f k3s
+same_text "no status line fails" 'secrets-encryption off' "$(run | jq -r .value)"
+same_text "and says so" 'Encryption Status: not reported' "$(run | jq -r '.raw | split("; ") | last')"
+k3s() { return 7; }
+export -f k3s
+status=0
+output=$(run) || status=$?
+same_text "a failed status call is a collection error" 7 "$status"
+same_text "collection error stdout" '' "$output"
+command() {
+  if [[ $* == '-v k3s' ]]; then return 1; fi
+  builtin command "$@"
+}
+export -f command
+same_text "a server without k3s fails" 'k3s not found' "$(run | jq -r .value)"
+unset -f command
 rm "$fixture/k3s.yaml"
 rmdir "$fixture/server"
 actual=$(run)

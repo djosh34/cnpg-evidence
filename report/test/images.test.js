@@ -315,7 +315,7 @@ test('a pair shares its columns', () => {
 test('host-check and prove show the value read in red, without the desired value', () => {
   const hc = sheet(sample('host-check.failing.json'), sample('host-check.desired.json'), 'host-check-node-a-low-ports-actual.png');
   assert.deepEqual(rows(hc), [['low-ports', '+ip_unprivileged_port_start = 0']]);
-  assert.deepEqual(hc.context.find(c => c[0] === 'Read on the node'), ['Read on the node', 'ip_unprivileged_port_start = 0; no cap_net_bind_service under /usr or /opt']);
+  assert.deepEqual(hc.context.find(c => c[0] === 'Read on the node'), ['Read on the node', 'ip_unprivileged_port_start = 0']);
   const pr = sheet(sample('prove.failing.json'), sample('prove.desired.json'), 'prove-01-login-attempts-actual.png');
   assert.deepEqual(rows(pr).at(-1).filter((_, i) => i !== 1), ['password-no-tls', 'refused by pg_hba reject', '+allowed']);
 });

@@ -23,7 +23,7 @@
 
 const PLATFORM_DESIRED = 'The platform components that may hold these rights. Any other account must hold none of them.';
 const PLATFORM_ACTUAL = 'Every Kubernetes account that holds one of these rights, as the API server answers for it.';
-const RIGHTS_NOTE = 'PostgreSQL superuser is entering or changing the instance pods, starting pods, reading or writing Secrets, writing ConfigMaps, or changing the CNPG objects in the cluster\'s namespace. Routes are Ingresses and, where the cluster serves them, Traefik IngressRoutes and IngressRouteTCPs.';
+const RIGHTS_NOTE = 'PostgreSQL superuser is entering or changing the instance pods, starting pods, reading or writing Secrets, writing ConfigMaps, or changing the CNPG objects in the cluster\'s namespace. Routes are Ingresses and, where the cluster serves them, Traefik IngressRoutes and IngressRouteTCPs. Creating certificates includes changing Issuers, and becoming cluster-admin includes writing k3s HelmCharts.';
 
 // Filled when the member is there, empty when it is not or only desired.
 const square = state => [{ mark: state !== null && state !== 'missing', state: state === 'missing' ? '' : state ?? '' }];
@@ -419,9 +419,9 @@ const CHECKS = {
   'selinux': ['SELinux mode and container labels', 'The kernel enforces SELinux and the generated containerd config enables SELinux labels.'],
   'postgres-account': ['Accounts with the PostgreSQL uid or gid', 'Every host account with PostgreSQL\'s uid or primary gid is locked and has a nologin shell.'],
   'dir-modes': ['Data and pod directories', 'The storage directory is 0700 or tighter and the kubelet pod directory is 0750 or tighter, both root:root without an ACL.'],
-  'k3s-secrets': ['k3s credentials and encryption', 'Existing k3s credential files are 0600 or tighter and the server directory is 0700 or tighter, all root:root without an ACL, with secrets encryption enabled on servers.'],
-  'low-ports': ['Low ports', 'The unprivileged port threshold is at least 1024 and no file under /usr or /opt carries cap_net_bind_service.'],
-  'k3s-network-policy': ['Network policy controller', 'No k3s setting turns off the network policy controller.'],
+  'k3s-secrets': ['k3s credentials and encryption', 'Existing k3s credential files are 0600 or tighter and the server directory is 0700 or tighter, all root:root without an ACL, and a server reports secrets encryption enabled.'],
+  'low-ports': ['Low ports', 'The unprivileged port threshold is at least 1024.'],
+  'k3s-network-policy': ['Network policy controller', 'The network policy controller of k3s runs on the node: the iptables filter table jumps to its chains.'],
 };
 
 const YES_NO = ['true', 'false', true, false];

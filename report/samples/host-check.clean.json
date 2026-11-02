@@ -39,19 +39,19 @@
       "id": "k3s-secrets",
       "ok": true,
       "value": "none",
-      "raw": "/etc/rancher/k3s/k3s.yaml 600 root:root; /etc/rancher/k3s/config.yaml 600 root:root; /var/lib/rancher/k3s/server 700 root:root; secrets-encryption: true"
+      "raw": "/etc/rancher/k3s/k3s.yaml 600 root:root; /etc/rancher/k3s/config.yaml 600 root:root; /var/lib/rancher/k3s/server 700 root:root; Encryption Status: Enabled"
     },
     {
       "id": "low-ports",
       "ok": true,
       "value": "none",
-      "raw": "ip_unprivileged_port_start = 1024; no cap_net_bind_service under /usr or /opt"
+      "raw": "ip_unprivileged_port_start = 1024"
     },
     {
       "id": "k3s-network-policy",
       "ok": true,
       "value": "none",
-      "raw": "no disable-network-policy flag"
+      "raw": "jumps to: KUBE-ROUTER-INPUT; KUBE-ROUTER-FORWARD; KUBE-ROUTER-OUTPUT"
     }
   ]
 }
