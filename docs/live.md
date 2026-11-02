@@ -105,7 +105,7 @@ The program logs in as `orders` with the client certificate and `sslmode=verify-
 
 It logs every query, write and connect with its start and end, the address that served it and any error. Once every instance is ready and streaming and every read port answers, it runs 30 s more. The summary gives, in seconds after the event:
 
-- when rw took no connection, and when each rw address alone was down and back;
+- when rw took no connection, and when each rw address alone took none: from the start of a connect that failed to the end of the next one that worked;
 - for pgx and GORM, when queries and when writes failed and worked again;
 - the last query or write a read address served once rw was back;
 - every failed query and write with its error.

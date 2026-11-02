@@ -92,22 +92,64 @@ type rwState struct {
 	up bool
 }
 
-// rwTimeline follows the connects alone in the order they ended: rw is up
-// while the last connect of at least one address worked.
+// rwTimeline follows the connects alone: rw is up while the last connect of
+// at least one address worked. A connect that worked counts from its end. One
+// that failed counts from its start, since the address did not take a
+// connection tried then; a connect that waits for its timeout is known to
+// fail only at its end.
 func rwTimeline(connects []entry) []rwState {
+	type probe struct {
+		at   int64
+		addr string
+		ok   bool
+	}
+	probes := make([]probe, len(connects))
+	for i, e := range connects {
+		probes[i] = probe{at: e.end, addr: e.addr, ok: e.ok}
+		if !e.ok {
+			probes[i].at = e.start
+		}
+	}
+	slices.SortStableFunc(probes, func(a, b probe) int { return cmp.Compare(a.at, b.at) })
 	last := map[string]bool{}
 	var states []rwState
-	for _, e := range connects {
-		last[e.addr] = e.ok
+	for _, p := range probes {
+		last[p.addr] = p.ok
 		up := false
 		for _, ok := range last {
 			up = up || ok
 		}
 		if len(states) == 0 || states[len(states)-1].up != up {
-			states = append(states, rwState{at: e.end, up: up})
+			states = append(states, rwState{at: p.at, up: up})
 		}
 	}
 	return states
+}
+
+// spells lists each spell of states without rw that was not over before the
+// event, "never" when there was none, and returns when rw was last back, or
+// -1.
+func spells(states []rwState, event int64, secs func(int64) string) (string, int64) {
+	var downs []string
+	back := int64(-1)
+	for i, s := range states {
+		if s.up {
+			continue
+		}
+		if i+1 == len(states) {
+			downs = append(downs, "from "+secs(s.at)+", not back")
+			break
+		}
+		end := states[i+1].at
+		if end >= event {
+			downs = append(downs, "from "+secs(s.at)+" to "+secs(end))
+			back = end
+		}
+	}
+	if len(downs) == 0 {
+		return "never", back
+	}
+	return strings.Join(downs, ", "), back
 }
 
 // stateAt is the state at time t, and false when no connect ended by then.
@@ -160,31 +202,19 @@ func report(w io.Writer, entries []entry, event int64, nodes []node) error {
 	var rows, problems []string
 	row := func(what, value string) { rows = append(rows, fmt.Sprintf("| %s | %s |", what, value)) }
 
-	// rw, as a whole and per address: each spell without rw that was not
-	// over before the event, and when rw was last back.
+	// rw, as a whole and per address.
 	states := rwTimeline(connects)
-	var downs []string
-	back := int64(-1)
-	for i, s := range states {
-		if s.up {
-			continue
-		}
-		if i+1 == len(states) {
-			downs = append(downs, "from "+secs(s.at)+", not back")
-			break
-		}
-		end := states[i+1].at
-		if end >= event {
-			downs = append(downs, "from "+secs(s.at)+" to "+secs(end))
-			back = end
-		}
-	}
-	if len(downs) == 0 {
-		downs = []string{"never"}
-	}
-	row("rw took no connection", strings.Join(downs, ", "))
+	down, back := spells(states, event, secs)
+	row("rw took no connection", down)
 	for _, a := range rwAddrs {
-		row("rw on "+a+" alone", downAndBack(connects, a, event, secs))
+		var alone []entry
+		for _, e := range connects {
+			if e.addr == a {
+				alone = append(alone, e)
+			}
+		}
+		down, _ := spells(rwTimeline(alone), event, secs)
+		row("rw on "+a+" alone took no connection", down)
 	}
 
 	// Reads and writes of each client.
@@ -269,35 +299,6 @@ func report(w io.Writer, entries []entry, event int64, nodes []node) error {
 	return nil
 }
 
-// downAndBack says when the connects alone to address a failed after the
-// event: "never down", or the first failure and the first success after the
-// last failure.
-func downAndBack(connects []entry, a string, event int64, secs func(int64) string) string {
-	var down, back int64 = -1, -1
-	for _, e := range connects {
-		if e.addr != a || e.start < event {
-			continue
-		}
-		switch {
-		case !e.ok:
-			if down < 0 {
-				down = e.start
-			}
-			back = -1
-		case down >= 0 && back < 0:
-			back = e.end
-		}
-	}
-	switch {
-	case down < 0:
-		return "never down"
-	case back < 0:
-		return "down from " + secs(down) + ", not back"
-	default:
-		return "down from " + secs(down) + ", back at " + secs(back)
-	}
-}
-
 // worksAgain says when the queries or writes of client worked again after
 // the event: "never failed", or the first failure and the end of the first
 // success after the last failure.
@@ -361,9 +362,9 @@ func failureLines(ops []entry, secs func(int64) string) []string {
 	}
 	lines := make([]string, 0, len(groups))
 	for _, g := range groups {
-		when := "at " + secs(g.first.start)
+		when := "started at " + secs(g.first.start)
 		if g.n > 1 {
-			when = fmt.Sprintf("%d times from %s to %s", g.n, secs(g.first.start), secs(g.last.start))
+			when = fmt.Sprintf("%d times, started from %s to %s", g.n, secs(g.first.start), secs(g.last.start))
 		}
 		lines = append(lines, fmt.Sprintf("- %s %s on %s, %s: `` %s ``", g.first.client, g.first.what, g.first.addr, when, g.first.detail))
 	}

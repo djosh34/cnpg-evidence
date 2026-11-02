@@ -50,16 +50,16 @@ func TestReportLostPrimary(t *testing.T) {
 		t.Fatalf("report failed: %v\n%s", err, out)
 	}
 	for _, want := range []string{
-		"| rw took no connection | from 0.1 to 4.0 |",
-		"| rw on k3s-1:5432 alone | down from 0.0, not back |",
-		"| rw on k3s-2:5432 alone | down from 0.0, back at 4.0 |",
+		"| rw took no connection | from 0.0 to 4.0 |",
+		"| rw on k3s-1:5432 alone took no connection | from 0.0, not back |",
+		"| rw on k3s-2:5432 alone took no connection | from 0.0 to 4.0 |",
 		"| pgx write works again | failed from 0.1, works again at 6.2 |",
 		"| pgx query works again | never failed |",
 		"| last query or write on a read address once rw was back | 4.6, 0.6 s after rw was back: pgx query on k3s-2:5433 |",
 		"| queries and writes on a read address that rw should have taken | 0 |",
 		"| failed queries and writes | 4 |",
-		"- pgx write on -, 2 times from 0.1 to 0.3: `` write error ``",
-		"- pgx write on k3s-2:5433, at 0.5: `` ERROR: cannot execute INSERT in a read-only transaction (SQLSTATE 25006) ``",
+		"- pgx write on -, 2 times, started from 0.1 to 0.3: `` write error ``",
+		"- pgx write on k3s-2:5433, started at 0.5: `` ERROR: cannot execute INSERT in a read-only transaction (SQLSTATE 25006) ``",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("no line %q in\n%s", want, out)
@@ -98,5 +98,29 @@ func TestReportNotBackOnRW(t *testing.T) {
 func TestParseLogRejectsBadLines(t *testing.T) {
 	if _, err := parseLog(strings.NewReader("900 950 rw connect k3s-1:5432 maybe\n")); err == nil {
 		t.Fatal("parseLog took a line without ok or fail")
+	}
+}
+
+// A connect that waits for its timeout fails only at its end, but rw took
+// no connection from its start: a read address may serve a query that
+// started in between.
+func TestReportConnectTimeout(t *testing.T) {
+	log := `900 950 rw connect k3s-1:5432 ok connected
+900 960 rw connect k3s-2:5432 ok connected
+1000 3000 rw connect k3s-1:5432 fail timeout
+1000 3000 rw connect k3s-2:5432 fail timeout
+1500 7500 pgx query k3s-1:5433 ok in_recovery=true last=1
+3000 3100 rw connect k3s-2:5432 ok connected
+9000 9100 pgx query k3s-2:5432 ok in_recovery=false last=1
+9000 9100 pgx write k3s-2:5432 ok 2
+9000 9100 gorm query k3s-2:5432 ok in_recovery=false last=1
+9000 9100 gorm write k3s-2:5432 ok 2
+`
+	out, err := runReport(t, log)
+	if err != nil {
+		t.Fatalf("report failed: %v\n%s", err, out)
+	}
+	if want := "| rw took no connection | from 0.0 to 2.1 |"; !strings.Contains(out, want) {
+		t.Errorf("no line %q in\n%s", want, out)
 	}
 }
