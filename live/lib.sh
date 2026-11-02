@@ -181,9 +181,10 @@ first_write_on() {
 has_write_on() { [[ -n $(first_write_on "$1") ]]; }
 
 # Waits until instance $1 has taken a write, at most until $2 seconds after
-# T0, and sets FIRST_WRITE (ms).
+# T0, and sets FIRST_WRITE (ms). The wait runs 5 s longer, as a write is seen
+# only at the next check of the log; the write's own time decides.
 wait_first_write() {
-  local left=$(($2 - ($(now_ms) - T0) / 1000))
+  local left=$(($2 + 5 - ($(now_ms) - T0) / 1000))
   ((left > 0)) || left=1
   wait_for "$left" "a write on $1 within $2 s" has_write_on "$1"
   FIRST_WRITE=$(first_write_on "$1")
