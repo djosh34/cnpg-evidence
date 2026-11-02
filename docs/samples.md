@@ -40,7 +40,7 @@ Database objects: pg-orders, pg-billing
 - The server and replication `Certificate`s carry the replication CN and `dnsNames` from `desired.yaml`, and the issuer from `values.yaml`.
 - The `NetworkPolicy` selects every pod of the cluster, including its bootstrap and join Job pods, and admits 5432 and 8000 from the cluster's pods, 8000 from the operator pods, 9187 from the OTel namespace, and 5432 from outside the cluster, from the other nodes and from the svclb pods of the rw LoadBalancer.
 - The `<cluster>-compliance` ConfigMap holds a query that the metrics exporter runs on every instance (see [Compliance metric](#compliance-metric)).
-- The `Cluster` has the rw LoadBalancer and, when `readLoadBalancer` is set, the read LoadBalancer, both without NodePorts (see [LoadBalancers](#loadbalancers)). Every commit waits for one other instance, and a starting replica opens the read port only once it has caught up (see [Writes, reads and failover](#writes-reads-and-failover)).
+- The `Cluster` has the rw LoadBalancer and, when `readLoadBalancer` is set, the read LoadBalancer, both without NodePorts (see [LoadBalancers](#loadbalancers)). Every commit waits for one other instance, and a rollout moves the primary with a switchover (see [Writes, reads and failover](#writes-reads-and-failover)).
 
 To see the full output: `helm template pg samples/chart -n databases -f desired.yaml --dry-run=server`. The NetworkPolicy reads every node's `spec.podCIDR` from the cluster with `lookup`, so rendering without a cluster fails. A NetworkPolicy written by hand needs the same pod ranges, from `kubectl get nodes -o jsonpath='{.items[*].spec.podCIDR}'`: each range goes into the `except` list of the `0.0.0.0/0` source, and its network address as `/32` becomes a source of its own. Under flannel, connections from another node itself arrive from that address, the node's `flannel.1` interface. No address range is fixed in the samples or the scripts.
 
@@ -135,17 +135,21 @@ The chart's settings in the `Cluster`:
 - **`synchronous: {method: any, number: 1, dataDurability: required}`.** Every commit waits until one of the other instances has it. When no other instance can confirm, writes stop instead of going on with one copy.
 - **`synchronous_commit: remote_apply`.** The commit returns only once that instance has applied it, so a read there right after the commit sees it.
 - **`failoverQuorum: true`.** CNPG promotes a replica only when it can tell that the replica holds every confirmed commit. With one confirming copy and two replicas, it needs both replicas ready to decide.
-- **`probes.startup: {type: streaming, maximumLag: 128Ki}`.** A replica that starts, after a node restart, an update or a crash, is not ready until it streams from the primary and its replay is within 128Ki of the WAL end the primary last reported. Until then its node refuses the read port. This bound is checked once, while the container starts; it is not a promise of zero lag.
-- **Readiness and liveness are CNPG's defaults.** A started replica stays ready while PostgreSQL accepts connections, so a replica that falls behind later stays on the read port; watch its replication lag. The liveness isolation check stays on.
+- **`primaryUpdateMethod: switchover`.** A rollout that changes the pods, or a parameter that needs a restart, restarts the replicas one at a time, then switches over to one of them and restarts the former primary as a replica. One case still restarts the primary in place: lowering `max_connections`, `max_worker_processes`, `max_wal_senders`, `max_prepared_transactions` or `max_locks_per_transaction`, which a replica must not have lower than the primary. With this setting CNPG also refuses a change of `imageName` together with a change of PostgreSQL parameters; apply them one after the other.
+- **`smartShutdownTimeout: 0`.** A stopping instance ends open sessions at once instead of waiting up to 180 s for them to close, which a connection pool does not do by itself. A commit that is still waiting for its standby then ends with the warning that it committed locally but might not have been replicated. It stays committed.
+- **Startup, readiness and liveness checks are CNPG's defaults.** An instance is ready, and its node opens the read port, once PostgreSQL accepts connections, so a failover never waits on a lag check. A starting or rewound replica can therefore open the read port while it is still behind the primary, and a replica that falls behind later stays on the read port; watch its replication lag. A client reads through `pg-rw` first and turns to the read port only when no primary answers, so while a primary exists these reads do not reach it. The liveness isolation check stays on.
 
 What clients see, from tests on a three-node k3s cluster with these settings, a new connection every 0.25 s and all three nodes in the host list:
 
 - **A replica's node is lost.** Reads keep working on the other nodes. Writes go on without a pause.
 - **The primary's node is lost.** Reads keep working on the replicas. Writes fail until CNPG has promoted a replica, about a minute after the loss, up to about a minute and a half when the lost node also ran the leader of the Kubernetes controller manager. Most of that time is Kubernetes noticing that the node is gone and the old primary's lease running out. The node does not need to come back. With one operator and one plugin pod on every node, a lost node's operator or plugin pod does not hold this up: another pod takes over their leader lease within about 20 s.
-- **A node comes back.** Its instance opens the read port about half a minute after the node starts, once it streams and has caught up. An old primary first rewinds itself and comes back as a replica.
+- **A node comes back.** Its instance opens the read port about half a minute after the node starts. An old primary first rewinds itself and comes back as a replica. After a large backlog the instance can open the read port before it has caught up: after a node was down while 1.2 GB of WAL was written, its read port served reads that missed recent commits for 16 s, and a former primary that rewound under steady writes did so for 14 to 42 s.
+- **A rollout or a switchover.** Writes stop for about 11 s while the primary moves, also with a pooled session open. Reads keep working on every node whose instance is not restarting.
 - After each of these, every replica caught up fully by itself.
 
-An open connection ends when the node it entered through stops, and when its instance is promoted.
+An open connection ends when the node it entered through stops, when its instance is promoted, and when its instance stops in a rollout or a switchover.
+
+A former primary that rewinds onto a new primary that writes nothing can wait for the new primary's next WAL record before it accepts connections. Until then it stays not ready, so its node refuses the read port, and CNPG does not fail over again automatically, since the quorum needs both replicas ready. The next write ends the wait within seconds, so a cluster that takes writes does not stay in it.
 
 ### One node left
 
@@ -153,17 +157,11 @@ With embedded etcd, two of three servers lost means no Kubernetes API, so nothin
 
 - **The last node runs a replica.** It keeps serving reads on its read port, with the data as it was when the other nodes were lost.
 - **The last node runs the primary.** Writes hang. After about 30 s the isolation check finds neither the API nor the other instances, and the liveness probe restarts PostgreSQL, which cannot start again without the API. Reads stop too. If k3s itself exits on that node first, which it can when it held one of the k3s leader leases, nothing restarts PostgreSQL: under systemd the running containers keep going and keep serving reads.
-- **Recovery depends on which node returns.** When the primary's node returns, everything recovers without a manual step. When only the other replica's node returns while the primary's node stays down, nothing is promoted: the returning replica cannot pass its startup check without a primary to stream from, and the quorum needs both replicas.
+- **When both nodes return,** everything recovers without a manual step.
 
 ### A replica restart while the primary's node is down
 
-A replica whose container restarts while the primary's node is down cannot pass its startup check, since there is no primary to stream from. CNPG then waits for it, and the quorum needs both replicas, so it promotes nothing until the primary's node returns. This needs two events at once. The way out is to promote the replica that still runs by hand:
-
-```bash
-kubectl cnpg promote <cluster> <instance>
-```
-
-This skips the quorum check. First compare `select pg_last_wal_replay_lsn()` on both replicas, and promote only a replica that is not behind the other; otherwise wait for the primary's node, since a commit that only the other replica confirmed would be lost.
+A replica whose container restarts while the primary's node is down, after a crash or an OOM kill of PostgreSQL, is ready again once it has replayed its own WAL and accepts connections. It needs no primary for that. The quorum then sees both replicas and CNPG promotes the one that holds every confirmed commit, as after any primary loss, only some seconds later.
 
 ## Compliance metric
 

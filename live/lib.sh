@@ -194,24 +194,32 @@ final_write() {
   FINAL_WRITE=$(now_ms)
 }
 
-# The first acknowledged write after T0 on instance $1, as ms.
+# The first acknowledged write on instance $1 at or after $2 (ms, default
+# T0), as ms.
 first_write_on() {
   local ip
   ip=$(pod_ip "$1")
-  awk -v t0="$T0" -v ip="$ip" '$1 >= t0 && $3 == "ok" && $5 == ip {print $1; exit}' "$WRITE_LOG"
+  awk -v t0="${2:-$T0}" -v ip="$ip" '$1 >= t0 && $3 == "ok" && $5 == ip {print $1; exit}' "$WRITE_LOG"
 }
 
-has_write_on() { [[ -n $(first_write_on "$1") ]]; }
+has_write_on() { [[ -n $(first_write_on "$@") ]]; }
 
 # Waits until instance $1 has taken a write, at most until $2 seconds after
-# T0, and sets FIRST_WRITE (ms). The wait runs 5 s longer, as a write is seen
-# only at the next check of the log; the write's own time decides.
+# $3 (ms, default T0), and sets FIRST_WRITE (ms). The wait runs 5 s longer,
+# as a write is seen only at the next check of the log; the write's own time
+# decides.
 wait_first_write() {
-  local left=$(($2 + 5 - ($(now_ms) - T0) / 1000))
+  local since=${3:-$T0}
+  local left=$(($2 + 5 - ($(now_ms) - since) / 1000))
   ((left > 0)) || left=1
-  wait_for "$left" "a write on $1 within $2 s" has_write_on "$1"
-  FIRST_WRITE=$(first_write_on "$1")
-  ((FIRST_WRITE - T0 <= $2 * 1000)) || fail "the first write on $1 came $(secs "$FIRST_WRITE") s after the event, more than $2 s"
+  wait_for "$left" "a write on $1 within $2 s" has_write_on "$1" "$since"
+  FIRST_WRITE=$(first_write_on "$1" "$since")
+  ((FIRST_WRITE - since <= $2 * 1000)) || fail "the first write on $1 came $(((FIRST_WRITE - since) / 1000)) s after the event, more than $2 s"
+}
+
+# The number of acknowledged writes from $1 to $2 (ms).
+writes_between() {
+  awk -v from="$1" -v to="$2" '$3 == "ok" && $1 >= from && $1 <= to {n++} END {print n + 0}' "$WRITE_LOG"
 }
 
 # Sleeps until $1 seconds after T0.
@@ -251,9 +259,9 @@ reads_back() {
   done
 }
 
-# The longest time without an acknowledged write between T0 and T_END, as ms.
+# The longest time without an acknowledged write from $1 to $2 (ms), as ms.
 longest_write_gap() {
-  awk -v t0="$T0" -v end="$T_END" '
+  awk -v t0="$1" -v end="$2" '
     $3 == "ok" && $1 >= t0 && $1 <= end {if ($1 - last > gap) gap = $1 - last; last = $1}
     BEGIN {last = t0}
     END {if (end - last > gap) gap = end - last; print gap}' "$WRITE_LOG"
@@ -290,10 +298,21 @@ read_port() {
     }' "$READ_LOG"
 }
 
+# The read probes of node $1 from $2 to $3 (ms) as "<ok> <failed>".
+reads_between() {
+  local ip
+  ip=$(node_ip "$1")
+  awk -v ip="$ip" -v from="$2" -v to="$3" '
+    $2 == ip && $1 >= from && $1 <= to {if ($3 == "ok") ok++; else failed++}
+    END {print ok + 0, failed + 0}' "$READ_LOG"
+}
+
 # Ends a scenario: waits until every node's read port answers, stops the
-# client and, without the writer, makes the final write. Checks that every acknowledged commit is on the primary and, with the
-# writer, that no time without an acknowledged write since T0 was longer than
-# 180 s. Sets COMMITS and GAP (ms).
+# client and, without the writer, makes the final write. Checks that every
+# acknowledged commit is on the primary and, with the writer, that no time
+# without an acknowledged write since T0 was longer than WRITE_GAP_LIMIT
+# seconds, 180 unless the scenario sets it. Sets COMMITS and GAP (ms).
+WRITE_GAP_LIMIT=180
 finish() {
   wait_for 60 "the read port of every node" reads_back
   stop_client
@@ -303,8 +322,8 @@ finish() {
   COMMITS=$(check_commits)
   GAP=''
   if [[ $WRITER == on ]]; then
-    GAP=$(longest_write_gap)
-    ((GAP <= 180000)) || fail "no acknowledged write for $((GAP / 1000)) s, more than 180 s"
+    GAP=$(longest_write_gap "$T0" "$T_END")
+    ((GAP <= WRITE_GAP_LIMIT * 1000)) || fail "no acknowledged write for $((GAP / 1000)) s, more than $WRITE_GAP_LIMIT s"
   fi
 }
 

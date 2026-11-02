@@ -19,6 +19,17 @@ operator_errors() {
     grep -iE "error|failover|switchover|leader" | tail -100
 }
 
+# How often docker restarted each node's container, and k3s's last fatal
+# lines, from before the start below.
+node_restarts() {
+  local n
+  for n in "${NODES[@]}"; do
+    docker inspect -f "$n: restarted {{.RestartCount}} times, running since {{.State.StartedAt}}" "$n"
+    docker logs "$n" 2>&1 | awk '/level=fatal|panic:/' | tail -5
+  done
+}
+
+show node_restarts
 for n in "${NODES[@]}"; do
   show docker start "$n"
 done

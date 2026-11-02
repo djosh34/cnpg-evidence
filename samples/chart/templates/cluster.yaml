@@ -20,6 +20,17 @@ spec:
   affinity:
     podAntiAffinityType: required
 
+  # The startup and readiness checks are CNPG's defaults, so a failover never
+  # waits on a lag check. A starting or rewound replica may open the read port
+  # while it is still behind a primary; clients read pg-rw first.
+
+  # A rollout moves the primary with a switchover (docs/samples.md names the
+  # exception), and a stopping instance ends open sessions at once instead of
+  # waiting up to 180 s for them. A rollout or a switchover stops writes for
+  # about 11 s.
+  primaryUpdateMethod: switchover
+  smartShutdownTimeout: 0
+
   # No postgres password and no <cluster>-superuser Secret.
   enableSuperuserAccess: false
 
@@ -119,14 +130,6 @@ spec:
                   port: {{ required "readLoadBalancer.port is required" .port }}
                   targetPort: 5432
         {{- end }}
-
-  # A starting replica opens the read port only once it streams and replays
-  # within 128Ki of the WAL end the primary last reported. Checked once at start;
-  # readiness stays CNPG's default, so a failover never waits on a lag check.
-  probes:
-    startup:
-      type: streaming
-      maximumLag: 128Ki
 
   monitoring:
     tls:

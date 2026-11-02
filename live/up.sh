@@ -52,7 +52,8 @@ install_tools() {
 
 # /tmp is a tmpfs because containerd tests idmapped mounts under /tmp at
 # start, and they fail on docker's overlayfs. The HelmChartConfig turns k3s's
-# Traefik into a DaemonSet.
+# Traefik into a DaemonSet. live/node-init.sh runs k3s and starts it again
+# when it exits, so pods outlive k3s as under systemd.
 start_node() {
   local i=$1
   local name=${NODES[$i]} ip=${NODE_IPS[$i]}
@@ -67,7 +68,8 @@ start_node() {
     -e K3S_TOKEN="$K3S_TOKEN" \
     -v "$name:/var/lib/rancher/k3s" \
     -v "$SAMPLES/traefik-config.yaml:/var/lib/rancher/k3s/server/manifests/traefik-config.yaml:ro" \
-    "$K3S_IMAGE" server "${join[@]}" \
+    -v "$LIVE_DIR/node-init.sh:/node-init.sh:ro" --entrypoint /bin/sh \
+    "$K3S_IMAGE" /node-init.sh "${join[@]}" \
     --node-ip "$ip" --tls-san "$ip" \
     --kube-proxy-arg conntrack-max-per-core=0 >/dev/null
 }
