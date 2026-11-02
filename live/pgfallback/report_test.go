@@ -124,3 +124,28 @@ func TestReportConnectTimeout(t *testing.T) {
 		t.Errorf("no line %q in\n%s", want, out)
 	}
 }
+
+// rw is back on k3s-2 while k3s-1 still waits for its timeout: one attempt
+// at rw then takes those 2 s too.
+func TestReportAttemptWhenRWBack(t *testing.T) {
+	log := `900 950 rw connect k3s-1:5432 ok connected
+900 960 rw connect k3s-2:5432 ok connected
+1000 3000 rw connect k3s-1:5432 fail timeout
+1000 1100 rw connect k3s-2:5432 fail refused
+1500 1600 pgx query k3s-1:5433 ok in_recovery=true last=1
+3000 3100 rw connect k3s-2:5432 ok connected
+5500 5600 pgx query k3s-1:5433 ok in_recovery=true last=1
+9000 9100 pgx query k3s-2:5432 ok in_recovery=false last=1
+9000 9100 pgx write k3s-2:5432 ok 2
+9000 9100 gorm query k3s-2:5432 ok in_recovery=false last=1
+9000 9100 gorm write k3s-2:5432 ok 2
+`
+	if out, err := runReport(t, log); err != nil {
+		t.Fatalf("report failed: %v\n%s", err, out)
+	}
+	log = strings.Replace(log, "5500 5600 pgx query", "6300 6400 pgx query", 1)
+	var check checkFailed
+	if out, err := runReport(t, log); !errors.As(err, &check) {
+		t.Fatalf("report did not fail for a read 3.2 s after rw was back: %v\n%s", err, out)
+	}
+}

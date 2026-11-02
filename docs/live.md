@@ -110,7 +110,7 @@ It logs every query, write and connect with its start and end, the address that 
 - the last query or write a read address served once rw was back;
 - every failed query and write with its error.
 
-The scenario fails when a read address served a query or write that started more than 1 s plus one attempt at rw after rw was back, when the last query or write of pgx or GORM did not work on rw, or when a write the program got acknowledged is not on the primary. One attempt is what a connect to the rw hosts in order took then, from each address's last connect alone. Every query and write is one statement, so none runs in a transaction that was already open.
+The scenario fails when a read address served a query or write that started more than 1 s plus one attempt at rw after rw was back, when the last query or write of pgx or GORM did not work on rw, or when a write the program got acknowledged is not on the primary. One attempt is what a connect to the rw hosts in order took when rw was back, from each address's last connect alone by then. Every query and write is one statement, so none runs in a transaction that was already open.
 
 ## Run in GitHub Actions
 

@@ -20,10 +20,11 @@ import (
 //   - The last query or write served by a read address after rw was back.
 //   - A query or write is wrong when a read address served it although it
 //     started more than 1 s plus one attempt at rw after rw was back. One
-//     attempt is what a connect to the rw hosts in order took then, from
-//     each address's last connect alone: the failed ones before the first
-//     that worked, and that one. Every query and write here is one statement,
-//     so none ran inside a transaction that was already open.
+//     attempt is what a connect to the rw hosts in order took when rw was
+//     back, from each address's last connect alone by then: the failed ones
+//     before the first that worked, and that one. Every query and write here
+//     is one statement, so none ran inside a transaction that was already
+//     open.
 //   - Every failed query and write with its error, consecutive ones with the
 //     same address and error as one line.
 //   - At the end, the last query and write of each client worked on rw.
@@ -238,7 +239,7 @@ func report(w io.Writer, entries []entry, event int64, nodes []node) error {
 		if !known || !s.up {
 			continue
 		}
-		if limit := s.at + 1000 + attemptAt(connects, rwAddrs, e.start); e.start > limit {
+		if limit := s.at + 1000 + attemptAt(connects, rwAddrs, s.at); e.start > limit {
 			wrong = append(wrong, fmt.Sprintf("%s %s on %s at %s, %.1f s after rw was back at %s, limit %.1f s",
 				e.client, e.what, e.addr, secs(e.start), float64(e.start-s.at)/1000, secs(s.at), float64(limit-s.at)/1000))
 		}
