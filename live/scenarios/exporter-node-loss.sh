@@ -2,10 +2,10 @@
 # A replica's node is lost for 400 s, then the primary's node for 400 s: each
 # longer than the 5 min after which Kubernetes marks the lost pod for
 # deletion. The exporters of the instances that are left must keep their
-# query metrics all along: in every scrape of each of them, Prometheus gets
-# cnpg_compliance_violations from the chart's queries and
-# cnpg_pg_replication_in_recovery from CNPG's own. CNPGReplicaDown must fire
-# for each lost instance and nothing else.
+# query metrics all along: Prometheus must get cnpg_compliance_violations
+# from the chart's queries and cnpg_pg_replication_in_recovery from CNPG's
+# own from each of them at least once in every 15 s. CNPGReplicaDown must
+# fire for each lost instance and nothing else.
 #
 # While CNPGReplicaDown fires for the lost replica, the scenario sends
 # Alertmanager CNPGMetricsMissing for that replica and for another instance:
@@ -20,28 +20,31 @@ shopt -s inherit_errexit
 
 DOWN_SECONDS=400
 
-# The scrapes of instance $1 from $2 (ms) to now that lack the series $3,
-# a selector without its closing brace, to which the pod is added.
-scrapes_without() {
-  local window result
-  window=$((($(now_ms) - $2) / 1000))
-  result=$(prom_query "count_over_time(cnpg_collector_up{pod=\"$1\"}[${window}s]) - on (pod) count_over_time($3, pod=\"$1\"}[${window}s])") ||
-    fail "Prometheus did not answer"
+# Answers Prometheus's query $1 with its one value, or "no data".
+prom_value() {
+  local result
+  result=$(prom_query "$1") || fail "Prometheus did not answer: $1"
   jq -r '.data.result[0].value[1] // "no data"' <<<"$result"
 }
 
-# Instances $2... kept their query metrics in every scrape from $1 (ms) to
-# now. Adds a row.
+# Instances $2... kept their query metrics from $1 (ms) to now: Prometheus
+# got them at least once in every 15 s, three scrapes. A change of the
+# Cluster gives each exporter new, empty query results, so a scrape right
+# after one can lack them. Adds a row with how many scrapes lacked them.
 kept_metrics() {
-  local from=$1 pod series n
+  local from=$1 window pod series n empty=()
   shift
+  window=$((($(now_ms) - from) / 1000))
   for pod in "$@"; do
-    for series in 'cnpg_compliance_violations{check="cn_mapping"' 'cnpg_pg_replication_in_recovery{namespace="'"$NS"'"'; do
-      n=$(scrapes_without "$pod" "$from" "$series")
-      [[ $n == 0 ]] || fail "$n scrapes of $pod from $(secs "$from") s on had no $series}"
+    for series in "cnpg_compliance_violations{check=\"cn_mapping\", pod=\"$pod\"}" "cnpg_pg_replication_in_recovery{namespace=\"$NS\", pod=\"$pod\"}"; do
+      # A 15 s window without a sample counts 0, not nothing.
+      n=$(prom_value "min_over_time((count_over_time(${series}[15s]) or vector(0))[${window}s:5s])")
+      [[ $n =~ ^[1-9] ]] || fail "$pod went 15 s or longer without $series from $(secs "$from") s on"
+      n=$(prom_value "count_over_time(cnpg_collector_up{pod=\"$pod\"}[${window}s]) - on (pod) count_over_time(${series}[${window}s])")
+      empty+=("$pod ${series%%\{*} $n")
     done
   done
-  row "every scrape of $* has the query metrics, from $(secs "$from") to $(secs "$(now_ms)")" "yes"
+  row "query metrics never 15 s away from $*, from $(secs "$from") to $(secs "$(now_ms)"); scrapes without them" "$(printf '%s, ' "${empty[@]}" | sed 's/, $//')"
 }
 
 wait_for 600 "three ready instances, two streaming replicas" settled

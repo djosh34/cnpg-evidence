@@ -81,6 +81,9 @@ wait_for 600 "a primary other than $old" primary_not "$old"
 promoted=$(now_ms)
 new=$(primary)
 log "new primary $new"
+# Its commits, ours and the writer's, wait until the other replica streams
+# from it; CNPGWritesBlocked fires when that takes longer than 10 s.
+allow_alert CNPGWritesBlocked "$new"
 if [[ $WRITER == on ]]; then
   wait_first_write "$new" 180
 fi
