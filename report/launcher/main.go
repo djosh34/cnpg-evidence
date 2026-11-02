@@ -5,7 +5,8 @@
 // It unpacks the embedded payload (Chrome, its libraries, glibc and loader,
 // fonts and the page) into a new directory under TMPDIR, draws the images with
 // Chrome, writes them into <dir> and removes the unpacked files. Exit 0 when
-// every image is written, exit 2 on any error, with <dir> as it was before.
+// every image is written, exit 2 on any error, with no image of the call
+// left in <dir> (see writeImages).
 package main
 
 import (
@@ -180,7 +181,9 @@ func writeFile(path string, r io.Reader, mode os.FileMode) error {
 // writeImages writes every image into dir, or none. Each image goes into a
 // new file in dir first; only when all are written does each new file take
 // its image's name. On an error it removes the new files, and dir if it made
-// it, so the images that were there before stay as they were.
+// it. A failed write leaves the images that were there before as they were;
+// a failed rename, which within one directory is rare, leaves those renamed
+// before it with their new content.
 func writeImages(dir string, images []image) (err error) {
 	_, statErr := os.Stat(dir)
 	madeDir := errors.Is(statErr, os.ErrNotExist)

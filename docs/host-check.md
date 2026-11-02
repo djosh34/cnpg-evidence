@@ -88,7 +88,7 @@ The sudoers search also runs on its own: `bash scripts/host-check/postgres-sudoe
 
 - `getent` may not list every account a directory service serves; direct uid and gid lookups add to it but cannot make it complete.
 - The SELinux check reads the k3s SELinux flags from `/etc/rancher/k3s/config.yaml`, `config.yaml.d/*.yaml` and the unit's `ExecStart`, not from environment files; they are only shown, the kernel and containerd settings decide.
-- The network policy check reads IPv4 rules only.
+- The network policy check reads IPv4 rules only, with the host's `iptables-save`. A node that runs k3s with `prefer-bundled-bin` uses k3s's own iptables; when that writes another backend (nft or legacy) than the host's `iptables-save` reads, the check fails although the controller runs.
 - No check looks for programs with `cap_net_bind_service`, which can open ports below 1024 whatever the threshold.
 - Listeners are facts, not checks. File modes do not prove that a login fails; `prove.sh` tries the access.
 - Locked accounts, modes and SELinux settings do not show which identities processes that already run use.

@@ -14,7 +14,10 @@ here=$(dirname "${BASH_SOURCE[0]}")
 # shellcheck source-path=SCRIPTDIR
 source "$here/../lib.sh"
 
-# k3s uses the host's iptables, or its own when the host has none.
+# k3s uses the host's iptables, or its own when the host has none. With
+# k3s's prefer-bundled-bin it uses its own, and when that writes another
+# backend (nft or legacy) than the host's iptables-save reads, the jumps do
+# not show here.
 bundled=/var/lib/rancher/k3s/data/current/bin/aux/iptables-save
 if have iptables-save; then
   rules=$(iptables-save -t filter)
