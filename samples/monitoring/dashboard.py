@@ -52,8 +52,9 @@ def firing(alerts, severity="critical"):
     return f'ALERTS{{alertstate="firing", alertname=~"{alerts}", severity="{severity}", {S}}}'
 
 
-# Pod to node: the node of each instance's exporter now, else the last one
-# seen in the day, so an instance on a lost node keeps its node's name.
+# Pod to node: the node of each instance's exporter now, else a node it was
+# seen on in the day, so an instance on a lost node keeps its node's name.
+# With local-path volumes an instance stays on one node.
 POD_NODE = (
     f"(max by (namespace, pod, node) (cnpg_collector_up{{{S}}}) * 0 + 1"
     " or on (namespace, pod) topk by (namespace, pod) (1, max by (namespace, pod, node)"
@@ -206,7 +207,7 @@ def gp(x, y, w, h):
     return {"x": x, "y": y, "w": w, "h": h}
 
 
-def alert_stat(title, desc, value, alerts, gp, missing, legend="", **kwargs):
+def alert_stat(title, desc, value, alerts, pos, missing, legend="", **kwargs):
     """A stat tile that shows value, red exactly while one of the critical alerts fires.
 
     Query A returns the value while one fires and is drawn red, query B while
@@ -216,7 +217,7 @@ def alert_stat(title, desc, value, alerts, gp, missing, legend="", **kwargs):
     value = f"({value}) or on () vector(NaN)"
     targets = [tgt(f"({value}) and on () (count({firing(alerts)}) > 0)", legend, instant=True, ref="A"),
                tgt(f"({value}) unless on () count({firing(alerts)})", legend, instant=True, ref="B")]
-    panel = stat(title, desc, targets, gp, mappings=[nan(missing, WARN)] + kwargs.pop("mappings", []), **kwargs)
+    panel = stat(title, desc, targets, pos, mappings=[nan(missing, WARN)] + kwargs.pop("mappings", []), **kwargs)
     panel["fieldConfig"]["overrides"].append(
         {"matcher": {"id": "byFrameRefID", "options": "A"},
          "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": BAD}}, {"id": "mappings", "value": [nan(missing)]}]})
@@ -247,8 +248,8 @@ def dashboard(rules):
     panels.append(stat(
         "Healthy",
         "The number of critical alerts of rules.yaml that fire for this database: " + ", ".join(alert_names) + ". "
-        "An alert fires once its condition has held for its waiting time; each pod, volume, certificate or check counts once.",
-        [tgt(HEALTHY, instant=True)], gp(0, y, 4, H5),
+        "An alert fires once its condition has held for its waiting time; each pod, certificate or check counts once.",
+        [tgt(HEALTHY, instant=True)], gp(0, y, 3, H5),
         thr=thresholds((None, OK_FILL), (1, BAD)),
         mappings=[{"type": "value", "options": {"0": {"text": "Yes", "index": 0}, "1": {"text": "1 problem", "index": 1},
                    **{str(n): {"text": f"{n} problems", "index": n} for n in range(2, 30)}}}],
@@ -259,10 +260,16 @@ def dashboard(rules):
         "Each instance by the node it runs on. Primary: PostgreSQL accepts writes. Not streaming: a replica that does not "
         "stream from the primary. Down, in red: CNPGReplicaDown fires for it, also when its node is lost. Writes blocked, in red: "
         "CNPGWritesBlocked fires, commits on the primary wait for a synchronous standby; reads still work.",
-        [tgt(f"sort_desc({by_node(STATE)})", "{{node}}", instant=True)], gp(4, y, 8, H5),
+        [tgt(f"sort_desc({by_node(STATE)})", "{{node}}", instant=True)], gp(3, y, 7, H5),
         thr=thresholds((None, WARN)), text_mode="value_and_name", orientation="vertical", mappings=state_mappings(OK_FILL),
         text_size={"titleSize": 14, "valueSize": 24}))
     RED.append(("Instances", STATE_RED, "CNPGReplicaDown|CNPGWritesBlocked"))
+    panels.append(alert_stat(
+        "Writes blocked", "Sessions waiting right now for a synchronous standby to confirm their commit. Orange while any wait; "
+        "red while CNPGWritesBlocked fires, after 10 s of waiting.",
+        f"sum(cnpg_sync_replication_waiting{{{S}}})", "CNPGWritesBlocked", gp(10, y, 2, H5), missing="Missing",
+        thr=thresholds((None, OK_FILL), (1, WARN)), mappings=[{"type": "value", "options": {"0": {"text": "None", "index": 1}}}],
+        text_size={"valueSize": 24}))
     panels.append(alert_stat(
         "Replica lag", "Largest delay of any replica's reads, in seconds: 0 when it has replayed all the WAL its primary reported. "
         "Orange over 1 s; red while CNPGReplicaLag fires, after 2 min over 15 s. Missing: no replica reports it.",

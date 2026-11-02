@@ -37,8 +37,9 @@ kept_metrics() {
   window=$((($(now_ms) - from) / 1000))
   for pod in "$@"; do
     for series in "cnpg_compliance_violations{check=\"cn_mapping\", pod=\"$pod\"}" "cnpg_pg_replication_in_recovery{namespace=\"$NS\", pod=\"$pod\"}"; do
-      # A 15 s window without a sample counts 0, not nothing.
-      n=$(prom_value "min_over_time((count_over_time(${series}[15s]) or vector(0))[${window}s:5s])")
+      # A 15 s window without a sample counts 0, not nothing: sum makes the
+      # count one unlabelled series, which vector(0) then fills.
+      n=$(prom_value "min_over_time((sum(count_over_time(${series}[15s])) or vector(0))[${window}s:5s])")
       [[ $n =~ ^[1-9] ]] || fail "$pod went 15 s or longer without $series from $(secs "$from") s on"
       n=$(prom_value "count_over_time(cnpg_collector_up{pod=\"$pod\"}[${window}s]) - on (pod) count_over_time(${series}[${window}s])")
       empty+=("$pod ${series%%\{*} $n")

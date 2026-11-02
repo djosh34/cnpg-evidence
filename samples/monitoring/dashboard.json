@@ -69,7 +69,7 @@
    "id": 1,
    "type": "stat",
    "title": "Healthy",
-   "description": "The number of critical alerts of rules.yaml that fire for this database: CNPGBackupFailing, CNPGCertificateExpiring, CNPGComplianceViolation, CNPGConnectionsHigh, CNPGDataDiskFull, CNPGDatabaseDown, CNPGMetricsMissing, CNPGReplicaDown, CNPGReplicaLag, CNPGTransactionIDWraparound, CNPGWritesBlocked. An alert fires once its condition has held for its waiting time; each pod, volume, certificate or check counts once.",
+   "description": "The number of critical alerts of rules.yaml that fire for this database: CNPGBackupFailing, CNPGCertificateExpiring, CNPGComplianceViolation, CNPGConnectionsHigh, CNPGDataDiskFull, CNPGDatabaseDown, CNPGMetricsMissing, CNPGReplicaDown, CNPGReplicaLag, CNPGTransactionIDWraparound, CNPGWritesBlocked. An alert fires once its condition has held for its waiting time; each pod, certificate or check counts once.",
    "datasource": {
     "type": "prometheus",
     "uid": "${datasource}"
@@ -77,7 +77,7 @@
    "gridPos": {
     "x": 0,
     "y": 0,
-    "w": 4,
+    "w": 3,
     "h": 5
    },
    "transparent": false,
@@ -274,9 +274,9 @@
     "uid": "${datasource}"
    },
    "gridPos": {
-    "x": 4,
+    "x": 3,
     "y": 0,
-    "w": 8,
+    "w": 7,
     "h": 5
    },
    "transparent": false,
@@ -377,6 +377,143 @@
   },
   {
    "id": 3,
+   "type": "stat",
+   "title": "Writes blocked",
+   "description": "Sessions waiting right now for a synchronous standby to confirm their commit. Orange while any wait; red while CNPGWritesBlocked fires, after 10 s of waiting.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "gridPos": {
+    "x": 10,
+    "y": 0,
+    "w": 2,
+    "h": 5
+   },
+   "transparent": false,
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "((sum(cnpg_sync_replication_waiting{namespace=\"$namespace\", cluster=\"$cluster\"})) or on () vector(NaN)) and on () (count(ALERTS{alertstate=\"firing\", alertname=~\"CNPGWritesBlocked\", severity=\"critical\", namespace=\"$namespace\", cluster=\"$cluster\"}) > 0)",
+     "legendFormat": "",
+     "refId": "A",
+     "range": false,
+     "instant": true,
+     "format": "time_series"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "((sum(cnpg_sync_replication_waiting{namespace=\"$namespace\", cluster=\"$cluster\"})) or on () vector(NaN)) unless on () count(ALERTS{alertstate=\"firing\", alertname=~\"CNPGWritesBlocked\", severity=\"critical\", namespace=\"$namespace\", cluster=\"$cluster\"})",
+     "legendFormat": "",
+     "refId": "B",
+     "range": false,
+     "instant": true,
+     "format": "time_series"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "dark-green",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 1
+       }
+      ]
+     },
+     "mappings": [
+      {
+       "type": "special",
+       "options": {
+        "match": "nan",
+        "result": {
+         "text": "Missing",
+         "index": 0,
+         "color": "orange"
+        }
+       }
+      },
+      {
+       "type": "value",
+       "options": {
+        "0": {
+         "text": "None",
+         "index": 1
+        }
+       }
+      }
+     ],
+     "color": {
+      "mode": "thresholds"
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byFrameRefID",
+       "options": "A"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "red"
+        }
+       },
+       {
+        "id": "mappings",
+        "value": [
+         {
+          "type": "special",
+          "options": {
+           "match": "nan",
+           "result": {
+            "text": "Missing",
+            "index": 0
+           }
+          }
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background_solid",
+    "graphMode": "none",
+    "textMode": "auto",
+    "justifyMode": "center",
+    "orientation": "auto",
+    "wideLayout": true,
+    "showPercentChange": false,
+    "text": {
+     "valueSize": 24
+    }
+   }
+  },
+  {
+   "id": 4,
    "type": "stat",
    "title": "Replica lag",
    "description": "Largest delay of any replica's reads, in seconds: 0 when it has replayed all the WAL its primary reported. Orange over 1 s; red while CNPGReplicaLag fires, after 2 min over 15 s. Missing: no replica reports it.",
@@ -505,7 +642,7 @@
    }
   },
   {
-   "id": 4,
+   "id": 5,
    "type": "stat",
    "title": "Rule checks",
    "description": "Role and mapping violations the compliance query finds. Red while CNPGComplianceViolation or CNPGMetricsMissing fires; missing means the checks stopped reporting.",
@@ -642,7 +779,7 @@
    }
   },
   {
-   "id": 5,
+   "id": 6,
    "type": "stat",
    "title": "Certificates",
    "description": "Days until the first of the chart's server and replication certificates expires. Orange under 14 days; red while CNPGCertificateExpiring is critical, under 3 days.",
@@ -771,7 +908,7 @@
    }
   },
   {
-   "id": 6,
+   "id": 7,
    "type": "stat",
    "title": "Data disks",
    "description": "The fullest disk that holds an instance's data, by node. Orange over 70 %; red while CNPGDataDiskFull is critical, over 80 %, before Kubernetes evicts pods at about 85 %.",
@@ -901,7 +1038,7 @@
    }
   },
   {
-   "id": 7,
+   "id": 8,
    "type": "state-timeline",
    "title": "Leader and replicas",
    "description": "State of each instance over time. Purple is the leader (primary); a purple band moving to another node is a failover or switchover.",
@@ -999,7 +1136,7 @@
    }
   },
   {
-   "id": 8,
+   "id": 9,
    "type": "row",
    "title": "Workload",
    "collapsed": false,
@@ -1012,7 +1149,7 @@
    "panels": []
   },
   {
-   "id": 9,
+   "id": 10,
    "type": "timeseries",
    "title": "Transactions per second",
    "description": "Commits and rollbacks per second, per instance.",
@@ -1127,7 +1264,7 @@
    }
   },
   {
-   "id": 10,
+   "id": 11,
    "type": "timeseries",
    "title": "Connections",
    "description": "Open backends per instance; the dashed line is max_connections.",
@@ -1279,7 +1416,7 @@
    }
   },
   {
-   "id": 11,
+   "id": 12,
    "type": "timeseries",
    "title": "Longest open transaction",
    "description": "Age of the oldest running transaction per instance. Long ones block vacuum.",
@@ -1398,7 +1535,7 @@
    }
   },
   {
-   "id": 12,
+   "id": 13,
    "type": "row",
    "title": "Replication",
    "collapsed": false,
@@ -1411,7 +1548,7 @@
    "panels": []
   },
   {
-   "id": 13,
+   "id": 14,
    "type": "timeseries",
    "title": "Replica lag",
    "description": "How far behind each replica's reads are, in seconds: 0 when it has replayed all the WAL its primary reported, else the age of the last transaction it replayed. The dashed lines are 1 s and the alert's 15 s.",
@@ -1496,7 +1633,7 @@
    }
   },
   {
-   "id": 14,
+   "id": 15,
    "type": "timeseries",
    "title": "Bytes not yet replayed",
    "description": "WAL the primary has sent that each replica has not replayed yet.",
@@ -1573,7 +1710,7 @@
    }
   },
   {
-   "id": 15,
+   "id": 16,
    "type": "row",
    "title": "Rule checks",
    "collapsed": false,
@@ -1586,7 +1723,7 @@
    "panels": []
   },
   {
-   "id": 16,
+   "id": 17,
    "type": "table",
    "title": "Rule checks",
    "description": "Each role and mapping check from the compliance query and how many violations it finds.",
@@ -1690,7 +1827,7 @@
    }
   },
   {
-   "id": 17,
+   "id": 18,
    "type": "row",
    "title": "Nodes",
    "collapsed": false,
@@ -1703,7 +1840,7 @@
    "panels": []
   },
   {
-   "id": 18,
+   "id": 19,
    "type": "timeseries",
    "title": "CPU",
    "description": "Share of each node's CPU in use.",
@@ -1784,7 +1921,7 @@
    }
   },
   {
-   "id": 19,
+   "id": 20,
    "type": "timeseries",
    "title": "Memory",
    "description": "Share of each node's memory in use (working set).",
@@ -1865,7 +2002,7 @@
    }
   },
   {
-   "id": 20,
+   "id": 21,
    "type": "bargauge",
    "title": "Data disks",
    "description": "The disk each instance keeps its data on, by node: the kubelet's stats of its data volume. Orange over 70 %; CNPGDataDiskFull is critical over 80 %.",
@@ -1942,7 +2079,7 @@
    }
   },
   {
-   "id": 25,
+   "id": 26,
    "type": "row",
    "title": "Backups, WAL and vacuum",
    "collapsed": true,
@@ -1954,7 +2091,7 @@
    },
    "panels": [
     {
-     "id": 21,
+     "id": 22,
      "type": "timeseries",
      "title": "Time since last WAL archived",
      "description": "On the primary. Grows when archiving to the object store fails.",
@@ -2031,7 +2168,7 @@
      }
     },
     {
-     "id": 22,
+     "id": 23,
      "type": "timeseries",
      "title": "Transaction ID age",
      "description": "Oldest unfrozen transaction ID per database. Wraparound trouble starts near 2 billion.",
@@ -2107,7 +2244,7 @@
      }
     },
     {
-     "id": 23,
+     "id": 24,
      "type": "stat",
      "title": "Last backup",
      "description": "Age of the newest completed base backup (Barman Cloud plugin). Orange after 26 h, the daily schedule plus 2 h; red while CNPGBackupFailing fires.",
@@ -2236,7 +2373,7 @@
      }
     },
     {
-     "id": 24,
+     "id": 25,
      "type": "timeseries",
      "title": "WAL archive failures",
      "description": "Failed WAL archive attempts per minute on the primary.",
