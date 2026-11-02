@@ -18,3 +18,10 @@ spec:
         key: ACCESS_SECRET_KEY
     wal:
       compression: gzip
+      archiveAdditionalCommandArgs: ["--read-timeout={{ .Values.objectStore.readTimeout }}"]
+      restoreAdditionalCommandArgs: ["--read-timeout={{ .Values.objectStore.readTimeout }}"]
+  # The environment of barman-cloud in each instance's sidecar.
+  instanceSidecarConfiguration:
+    env:
+      - name: AWS_MAX_ATTEMPTS
+        value: {{ .Values.objectStore.maxAttempts | quote }}

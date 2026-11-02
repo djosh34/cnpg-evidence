@@ -94,6 +94,15 @@ instances() {
     -o custom-columns=NAME:.metadata.name,NODE:.spec.nodeName
 }
 
+# The instance pod names, one per line. Fails when the listing fails or
+# finds none, so a loop over them cannot pass by checking nothing.
+instance_pods() {
+  local list
+  list=$(instances) || return 1
+  [[ -n $list ]] || { echo "no instance pods of $CLUSTER" >&2; return 1; }
+  awk '{print $1}' <<<"$list"
+}
+
 node_ip() {
   local i
   for i in "${!NODES[@]}"; do
@@ -325,6 +334,206 @@ finish() {
     GAP=$(longest_write_gap "$T0" "$T_END")
     ((GAP <= WRITE_GAP_LIMIT * 1000)) || fail "no acknowledged write for $((GAP / 1000)) s, more than $WRITE_GAP_LIMIT s"
   fi
+}
+
+# The object store, the container s3 at S3_IP, breaks in one of two ways.
+# refuse: the store stops and a container with nothing listening takes its
+# address, so every connection is refused. hang: the store is paused, so
+# connections open and no request is answered.
+STORE_GONE=s3-refuse
+store_break() {
+  case $1 in
+    refuse)
+      docker stop -t 0 s3 >/dev/null
+      docker run -d --name "$STORE_GONE" --network "$NETWORK" --ip "$S3_IP" \
+        --entrypoint /bin/sleep "$K3S_IMAGE" 86400 >/dev/null
+      ;;
+    hang) docker pause s3 >/dev/null ;;
+    *) fail "store_break: no mode $1" ;;
+  esac
+  log "object store: $1"
+}
+
+store_restore() {
+  case $1 in
+    refuse)
+      docker rm -f "$STORE_GONE" >/dev/null
+      docker start s3 >/dev/null
+      ;;
+    hang) docker unpause s3 >/dev/null ;;
+    *) fail "store_restore: no mode $1" ;;
+  esac
+  log "object store back"
+}
+
+# Writes at least $2 MB of WAL on the primary $1, in transactions of about
+# 45 MB into the table live_load of the database postgres, and prints the MB
+# written.
+write_wal() {
+  local pod=$1 mb=$2 start written=0
+  psql_on "$pod" -c 'create table if not exists live_load (n int, pad text)'
+  start=$(psql_on "$pod" -c 'select pg_current_wal_lsn()')
+  while ((written < mb)); do
+    psql_on "$pod" -c "insert into live_load select g, repeat(md5(g::text), 30) from generate_series(1, 40000) g"
+    psql_on "$pod" -c 'truncate live_load'
+    written=$(psql_on "$pod" -c "select floor((pg_current_wal_lsn() - '$start'::pg_lsn) / 1048576)::bigint")
+  done
+  echo "$written"
+}
+
+# The WAL file name of LSN $2 on instance $1, which must be the primary.
+wal_file() { psql_on "$1" -c "select pg_walfile_name('$2')"; }
+
+# The WAL file $2 is no longer in the pg_wal of instance $1. Makes a checkpoint
+# first, which removes the files older than wal_keep_size.
+wal_file_gone() {
+  psql_on "$1" -c checkpoint
+  local n
+  n=$(psql_on "$1" -c "select count(*) from pg_ls_waldir() where name = '$2'")
+  [[ $n == 0 ]] || { echo "$2 is still in the pg_wal of $1" >&2; return 1; }
+}
+
+# cnpg_compliance_violations of instance $1, read through kubectl
+# port-forward, has its 4 checks, each 0.
+compliance_zero() {
+  local page series
+  page=$(metrics_of "$1")
+  series=$(awk '/^cnpg_compliance_violations\{/' <<<"$page")
+  [[ -n $series && $(wc -l <<<"$series") == 4 ]] || { echo "$1 does not export the 4 compliance checks: ${series:-none}" >&2; return 1; }
+  [[ -z $(awk '$2 != 0' <<<"$series") ]] || { echo "$1 has compliance violations: $(awk '$2 != 0' <<<"$series" | paste -sd ' ')" >&2; return 1; }
+}
+
+# Prometheus with the sample rules, in the namespace the chart's
+# NetworkPolicy admits to the metrics port, scraping every instance as
+# docs/monitoring.md says, every 10 s.
+PROMETHEUS_IMAGE=prom/prometheus:v3.7.3@sha256:49214755b6153f90a597adcbff0252cc61069f8ab69ce8411285cd4a560e8038
+PROM_NS=otel
+
+start_prometheus() {
+  local ca
+  ca=$(k get secret client-ca -n "$NS" -o jsonpath='{.data.ca\.crt}' | base64 -d)
+  k create namespace "$PROM_NS" --dry-run=client -o yaml | k apply -f - >/dev/null
+  k create configmap prometheus -n "$PROM_NS" --dry-run=client -o yaml \
+    --from-file=rules.yaml="$REPO/samples/monitoring/rules.yaml" \
+    --from-literal=ca.crt="$ca" \
+    --from-literal=prometheus.yml="$(prometheus_config)" | k apply -f - >/dev/null
+  k apply -f - >/dev/null <<YAML
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: $PROM_NS
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: prometheus
+  namespace: $NS
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: prometheus
+  namespace: $NS
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: prometheus
+subjects:
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: $PROM_NS
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: $PROM_NS
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: prometheus}
+  template:
+    metadata:
+      labels: {app: prometheus}
+    spec:
+      serviceAccountName: prometheus
+      containers:
+        - name: prometheus
+          image: $PROMETHEUS_IMAGE
+          args: [--config.file=/etc/prometheus/prometheus.yml, --storage.tsdb.path=/prometheus]
+          ports: [{containerPort: 9090}]
+          readinessProbe:
+            httpGet: {path: /-/ready, port: 9090}
+          volumeMounts:
+            - {name: config, mountPath: /etc/prometheus}
+            - {name: data, mountPath: /prometheus}
+      volumes:
+        - {name: config, configMap: {name: prometheus}}
+        - {name: data, emptyDir: {}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: $PROM_NS
+spec:
+  selector: {app: prometheus}
+  ports: [{port: 9090}]
+YAML
+  timeout 330 kubectl rollout status deployment/prometheus -n "$PROM_NS" --timeout=300s >/dev/null ||
+    fail "Prometheus not ready after 300s"
+}
+
+# server_name is one of the server certificate's dnsNames in desired.yaml.
+prometheus_config() {
+  cat <<'YAML'
+global: {scrape_interval: 10s, evaluation_interval: 10s}
+rule_files: [/etc/prometheus/rules.yaml]
+scrape_configs:
+  - job_name: cnpg
+    scheme: https
+    tls_config: {ca_file: /etc/prometheus/ca.crt, server_name: pg-rw}
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces: {names: [databases]}
+    relabel_configs:
+      - {source_labels: [__meta_kubernetes_pod_label_cnpg_io_podRole], regex: instance, action: keep}
+      - {source_labels: [__meta_kubernetes_pod_container_port_number], regex: "9187", action: keep}
+      - {source_labels: [__meta_kubernetes_namespace], target_label: namespace}
+      - {source_labels: [__meta_kubernetes_pod_name], target_label: pod}
+      - {source_labels: [__meta_kubernetes_pod_label_cnpg_io_cluster], target_label: cluster}
+      - {source_labels: [__meta_kubernetes_pod_node_name], target_label: node}
+YAML
+}
+
+# The result of the PromQL query $1 as Prometheus's JSON, through the API
+# server's service proxy.
+prom_query() {
+  local q out
+  q=$(jq -rn --arg q "$1" '$q | @uri')
+  out=$(k get --raw "/api/v1/namespaces/$PROM_NS/services/prometheus:9090/proxy/api/v1/query?query=$q") || return 1
+  jq -e '.status == "success"' <<<"$out" >/dev/null || { echo "Prometheus answered: $out" >&2; return 1; }
+  echo "$out"
+}
+
+# The firing alerts, as "<alertname> <pod>" lines, "-" for an alert without a
+# pod.
+firing_alerts() {
+  local result
+  result=$(prom_query 'ALERTS{alertstate="firing"}') || return 1
+  jq -r '.data.result[].metric | "\(.alertname) \(.pod // "-")"' <<<"$result" | sort
+}
+
+# Alert $1 fires for pod $2.
+alert_firing() {
+  local alerts
+  alerts=$(firing_alerts) || return 1
+  grep -qxF "$1 $2" <<<"$alerts" || { echo "firing: $(paste -sd ';' <<<"$alerts")" >&2; return 1; }
 }
 
 # Adds a line to the summary on stdout and in the job summary.

@@ -20,8 +20,9 @@ WRITE_GAP_LIMIT=$STOP_LIMIT
 # Every instance runs with the new shared_buffers and no pending restart, and
 # the cluster has settled.
 rolled_out() {
-  local pod value pending
-  for pod in $(instances | awk '{print $1}'); do
+  local pods pod value pending
+  pods=$(instance_pods) || return 1
+  for pod in $pods; do
     value=$(psql_on "$pod" -c 'show shared_buffers')
     [[ $value == "$SHARED_BUFFERS" ]] || { echo "shared_buffers on $pod: $value" >&2; return 1; }
     pending=$(psql_on "$pod" -c 'select count(*) from pg_settings where pending_restart')

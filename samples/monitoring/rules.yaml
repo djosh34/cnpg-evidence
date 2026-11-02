@@ -17,18 +17,15 @@ groups:
           namespace: databases
           cluster: pg
 
-      # One series per replica that the primary keeps a replication slot for,
-      # named by the replica's pod: 1 while it streams, 0 while not. The slot
-      # is _cnpg_<cluster>_<serial> and the pod <cluster>-<serial>.
+      # One series per instance in the primary's pg_stat_replication, named by
+      # its pod: CNPG sets each replica's application_name to its pod name.
       - record: cnpg_sample:replica_streaming
         expr: |
-          max by (namespace, cluster, pod) (
-            label_join(
-              label_replace(
-                cnpg_pg_replication_slots_active{slot_type="physical", slot_name=~"_cnpg_.+"}
-                  and on (namespace, pod) cnpg_pg_replication_in_recovery == 0,
-                "serial", "$1", "slot_name", "_cnpg_.+_([0-9]+)"),
-              "pod", "-", "cluster", "serial"))
+          count by (namespace, cluster, pod) (
+            label_replace(
+              cnpg_pg_stat_replication_backend_start
+                and on (namespace, pod) cnpg_pg_replication_in_recovery == 0,
+              "pod", "$1", "application_name", "(.+)"))
 
       # An instance answers when cnpg_collector_up is 1 and it is not fenced:
       # the exporter keeps cnpg_collector_up at its last value while fenced.
@@ -54,14 +51,20 @@ groups:
           summary: No instance of {{ $labels.namespace }}/{{ $labels.cluster }} reports a running primary.
           description: PostgreSQL is down or fenced on every instance, no replica was promoted, or the metrics of the primary do not arrive.
 
-      # A replica the primary keeps an inactive slot for, or an instance seen in
-      # the last day whose metrics stopped: its pod or node is gone, or its
-      # scrape fails. The second part also holds while the exporters report
-      # no query metrics, and so no slots.
+      # An instance seen in the last day, other than the primary, that is not
+      # in the primary's pg_stat_replication while a primary reports its
+      # metrics; or an instance seen in the last day whose metrics stopped:
+      # its pod or node is gone, or its scrape fails. The second part also
+      # holds while the exporters report no query metrics, and so no primary.
       - alert: CNPGReplicaDown
         expr: |
           (
-            cnpg_sample:replica_streaming == 0
+            (
+              max by (namespace, cluster, pod) (max_over_time(cnpg_collector_up[1d]))
+                unless on (namespace, pod) cnpg_pg_replication_in_recovery == 0
+                unless on (namespace, pod) cnpg_sample:replica_streaming
+                and on (namespace, cluster) cnpg_pg_replication_in_recovery == 0
+            )
             or
             (
               max by (namespace, cluster, pod) (max_over_time(cnpg_collector_up[1d]))

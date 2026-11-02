@@ -57,13 +57,9 @@ for n in "${NODES[@]}"; do
 done
 PROVE=$(now_ms)
 
-# cnpg_compliance_violations has one series per check; each must be 0.
-pods=$(instances | awk '{print $1}')
+pods=$(instance_pods)
 for pod in $pods; do
-  page=$(metrics_of "$pod")
-  series=$(awk '/^cnpg_compliance_violations\{/' <<<"$page")
-  [[ -n $series && $(wc -l <<<"$series") == 4 ]] || fail "$pod does not export the 4 compliance checks: ${series:-none}"
-  [[ -z $(awk '$2 != 0' <<<"$series") ]] || fail "$pod has compliance violations: $(awk '$2 != 0' <<<"$series" | paste -sd ' ')"
+  compliance_zero "$pod" || fail "the compliance metric of $pod is not 0 for its 4 checks"
 done
 METRICS=$(now_ms)
 

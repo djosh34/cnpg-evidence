@@ -11,7 +11,21 @@ cluster:
   # cluster is created.
   postgresUID: 999
   postgresGID: 999
-  storageSize: 1Gi
+  # The data volume of each instance. pg_wal is on it and keeps up to
+  # walKeepSize, plus the data.
+  storageSize: 50Gi
+  # The size of each WAL file in MB, set only when the cluster is created.
+  # PostgreSQL switches to a new file at least every 5 minutes (CNPG's
+  # archive_timeout), and a switched file keeps its full size. With 1 MB files
+  # a quiet cluster writes about 288 MiB of WAL a day instead of 4.5 GiB, so
+  # walKeepSize covers months.
+  walSegmentSize: 1
+  # wal_keep_size: the WAL every instance keeps for replicas that are behind
+  # or down, about three months for a quiet cluster; writes add their own
+  # WAL. There are no replication slots, so a replica that was down catches
+  # up from the primary's pg_wal without the object store while the WAL it
+  # needs is still in it, and from the object store beyond that.
+  walKeepSize: 30GB
 
 # Signs the server and replication certificates: an Issuer in the cluster's
 # namespace, or a ClusterIssuer.
@@ -27,6 +41,14 @@ objectStore:
   destinationPath: s3://example-bucket/
   endpointURL: https://s3.example.com
   credentialsSecret: backup-creds  # keys ACCESS_KEY_ID and ACCESS_SECRET_KEY
+  # Failover, a switchover and a starting instance wait for calls to the
+  # store. barman-cloud's defaults give a store that accepts connections and
+  # never answers about 5 minutes per call: a 60 s read timeout and 5
+  # attempts. These end such a call after 5 s, with one attempt. An upload to
+  # such a store, and any call to a store that drops connections without an
+  # answer, still costs about 60 s.
+  readTimeout: 5  # --read-timeout of every WAL archive and restore call
+  maxAttempts: 1  # AWS_MAX_ATTEMPTS in the plugin's sidecar
 
 # true: bootstrap by restoring the backups of sourceCluster instead of initdb.
 recovery:

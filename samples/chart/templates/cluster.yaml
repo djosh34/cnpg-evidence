@@ -31,6 +31,13 @@ spec:
   primaryUpdateMethod: switchover
   smartShutdownTimeout: 0
 
+  # No replication slots: a slot keeps WAL for an instance that is gone until
+  # the disk is full. A replica that falls behind reads the WAL its primary
+  # no longer keeps from the object store.
+  replicationSlots:
+    highAvailability:
+      enabled: false
+
   # No postgres password and no <cluster>-superuser Secret.
   enableSuperuserAccess: false
 
@@ -47,6 +54,7 @@ spec:
         - CREATE ROLE cnpg_metrics_exporter WITH LOGIN PASSWORD NULL
         - GRANT SELECT ON pg_ident_file_mappings TO cnpg_metrics_exporter
         - GRANT EXECUTE ON FUNCTION pg_ident_file_mappings() TO cnpg_metrics_exporter
+      walSegmentSize: {{ $c.walSegmentSize }}  # MB; a restore takes the backup's size
     {{- end }}
       database: postgres  # no app database
       owner: postgres     # no app role
@@ -69,6 +77,7 @@ spec:
       # A commit returns once one other instance has applied it, so a read
       # there right after sees it.
       synchronous_commit: remote_apply
+      wal_keep_size: {{ $c.walKeepSize | quote }}
     pg_hba:
       # One line per database: only its own role, only with a certificate.
       {{- range .Values.databases }}

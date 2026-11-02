@@ -8,7 +8,7 @@ What is in `desired.yaml` and `samples/`, how to install it, and how to keep it 
 |---|---|
 | [`desired.yaml`](../desired.yaml) | The desired state of the cluster: name, namespace and instances, the client CA Secret, the rw LoadBalancer name, the optional read LoadBalancer's name and port, the operator and OTel namespaces, the replication certificate names, and the databases with their role and client CNs. `evidence.sh` compares against it; the chart reads it as values. |
 | [`samples/chart/`](../samples/chart) | A Helm chart that renders the `Cluster`, one `Database` per database, the server and replication `Certificate`s, the `<cluster>-bootstrap` Secret, the barman-cloud `ObjectStore`, one ingress `NetworkPolicy` and the `<cluster>-compliance` ConfigMap. |
-| [`samples/chart/values.yaml`](../samples/chart/values.yaml) | Chart-only settings: image, PostgreSQL's uid and gid, storage size, cert-manager issuer, object store, recovery. |
+| [`samples/chart/values.yaml`](../samples/chart/values.yaml) | Chart-only settings: image, PostgreSQL's uid and gid, storage size, WAL file size and how much WAL to keep, cert-manager issuer, object store and its timeouts, recovery. |
 | [`samples/values-cnpg-operator.yaml`](../samples/values-cnpg-operator.yaml) | Values for the operator chart: chart RBAC off, `WATCH_NAMESPACE=cnpg-system,databases`, one pod per node. |
 | [`samples/values-barman-cloud.yaml`](../samples/values-barman-cloud.yaml) | Values for the plugin chart: chart RBAC off, one pod per node. |
 | [`samples/values-cert-manager.yaml`](../samples/values-cert-manager.yaml) | Values for the cert-manager chart: its CRDs, one pod of the controller, the webhook and the CA injector per node. |
@@ -72,7 +72,7 @@ Pods with `hostUsers: false` need a kernel with idmapped mounts on tmpfs.
    - `objectStore`: the bucket, endpoint and credentials Secret. Create that Secret in the cluster's namespace with the keys `ACCESS_KEY_ID` and `ACCESS_SECRET_KEY`.
    - `cluster.imageName`: the PostgreSQL image. The default is Red Hat's Hummingbird image `registry.access.redhat.com/hi/postgresql:18.6`, pinned by digest, which pulls without a login. It has bash, coreutils and `psql`, but no `openssl`. The scripts in `scripts/` run only `psql` in it, always with `-U postgres`.
    - `cluster.postgresUID` and `cluster.postgresGID`: the uid and gid PostgreSQL runs as, which the chart passes to the `Cluster`'s `postgresUID` and `postgresGID`. Each must be the uid and gid the image names `postgres`: 999 in the Hummingbird image, the default. CNPG writes the name of the uid into pg_ident; with CNPG's own default 26, which this image names `postgres_fedora`, the compliance metric and `evidence.sh` find wrong pg_ident lines. Give `host-check.sh` and `prove.sh` the same values with `--postgres-uid` and `--postgres-gid`. Set them when the cluster is created.
-   - `cluster.storageSize`.
+   - `cluster.storageSize`, `cluster.walSegmentSize` and `cluster.walKeepSize`: the data volume of each instance, the size of each WAL file, and how much WAL every instance keeps (see [WAL and the object store](#wal-and-the-object-store)). The volume must hold `walKeepSize` plus the data. Set `walSegmentSize` before the cluster is created.
 5. Install the operator and the plugin with their values files:
    ```bash
    helm upgrade --install cnpg cloudnative-pg --repo https://cloudnative-pg.github.io/charts --version 0.29.1 \
@@ -136,6 +136,7 @@ The chart's settings in the `Cluster`:
 - **`synchronous_commit: remote_apply`.** The commit returns only once that instance has applied it, so a read there right after the commit sees it.
 - **`failoverQuorum: true`.** CNPG promotes a replica only when it can tell that the replica holds every confirmed commit. With one confirming copy and two replicas, it needs both replicas ready to decide.
 - **`primaryUpdateMethod: switchover`.** A rollout that changes the pods, or a parameter that needs a restart, restarts the replicas one at a time, then switches over to one of them and restarts the former primary as a replica. One case still restarts the primary in place: lowering `max_connections`, `max_worker_processes`, `max_wal_senders`, `max_prepared_transactions` or `max_locks_per_transaction`, which a replica must not have lower than the primary. With this setting CNPG also refuses a change of `imageName` together with a change of PostgreSQL parameters; apply them one after the other.
+- **No replication slots, and WAL kept on every instance.** See [WAL and the object store](#wal-and-the-object-store).
 - **`smartShutdownTimeout: 0`.** A stopping instance ends open sessions at once instead of waiting up to 180 s for them to close, which a connection pool does not do by itself. A commit that is still waiting for its standby then ends with the warning that it committed locally but might not have been replicated. It stays committed.
 - **Startup, readiness and liveness checks are CNPG's defaults.** An instance is ready, and its node opens the read port, once PostgreSQL accepts connections, so a failover never waits on a lag check. A starting or rewound replica can therefore open the read port while it is still behind the primary, and a replica that falls behind later stays on the read port; watch its replication lag. A client reads through `pg-rw` first and turns to the read port only when no primary answers, so while a primary exists these reads do not reach it. The liveness isolation check stays on.
 
@@ -162,6 +163,32 @@ With embedded etcd, two of three servers lost means no Kubernetes API, so nothin
 ### A replica restart while the primary's node is down
 
 A replica whose container restarts while the primary's node is down, after a crash or an OOM kill of PostgreSQL, is ready again once it has replayed its own WAL and accepts connections. It needs no primary for that. The quorum then sees both replicas and CNPG promotes the one that holds every confirmed commit, as after any primary loss, only some seconds later.
+
+## WAL and the object store
+
+The chart keeps enough WAL on the instances' own disks that a replica that was down rarely needs the object store, and it limits how long a broken store can hold up a failover or a switchover.
+
+- **No replication slots** (`replicationSlots.highAvailability.enabled: false` in the `Cluster`). A slot keeps WAL on the primary for its replica until the replica returns, without a limit, so an instance that stays away fills the primary's disk. Without slots the primary keeps `wal_keep_size` of WAL, and an instance that is further behind reads the rest from the object store by itself.
+- **`cluster.walKeepSize`: 30GB** (`wal_keep_size`). Every instance keeps up to that much recent WAL in `pg_wal`, on its data volume, so `cluster.storageSize` (50Gi by default) must hold it plus the data. A replica that was down catches up from the primary without the store as long as the primary still has the WAL it needs. A quiet cluster writes about 288 MiB of WAL a day, so 30GB is about three months; writes add their own WAL.
+- **`cluster.walSegmentSize`: 1**, WAL files of 1 MB instead of PostgreSQL's 16 MB. PostgreSQL switches to a new WAL file at least every 5 minutes (CNPG's `archive_timeout`), and a switched file keeps its full size. A quiet cluster then writes 288 MiB of WAL a day instead of 4.5 GiB. The size is set only when a cluster is created: a new value does not change a running cluster, and a restore keeps the size of its backup. Each file is one call to the store, so the archive keeps up only while the primary writes less than about 2.5 MB/s; above that, WAL waits in `pg_wal` until the archive catches up. WAL that is not archived yet is never removed, so a primary that writes faster for hours grows `pg_wal` past `walKeepSize` until the volume is full and PostgreSQL stops; `CNPGVolumeFull` warns at 80 %. With 1 MB files, initdb also sets `max_wal_size` to 64 MB, so a primary under load makes a checkpoint every 64 MB of WAL.
+- **`objectStore.readTimeout`: 5 and `objectStore.maxAttempts`: 1.** The ObjectStore passes `--read-timeout=5` to every WAL archive and restore call and sets `AWS_MAX_ATTEMPTS=1` for barman-cloud in the plugin's sidecar. With barman-cloud's defaults, a store that accepts connections and never answers holds each call for about 5 minutes: a 60 s read timeout and 5 attempts. With these settings it ends after about 5 s. Two cases stay at about 60 s per call, because barman-cloud sets no connect timeout and has no option for one: a 1 MB upload to a store that never answers, and any call to a store that drops connections without an answer. Against a working store 1 s away, 5 s never failed; 2 s did.
+
+Commits and reads never wait for the store. A failover, a switchover and a starting replica do: a promotion looks up the timeline history and the last WAL file in the store, a starting replica asks the store first for each WAL file it replays, and the old primary in a switchover tries to archive once more before it stops.
+
+What a broken store costs, in seconds from the event until the new primary took a write, measured on a three-node k3s cluster with these settings. The refusing and the never answering store are the `store-refuse` and `store-hang` scenarios of [live.md](live.md); the last row comes from a test whose store dropped every new connection.
+
+| Store | Primary node loss | Switchover |
+|---|---|---|
+| Works | about 75 | about 11 |
+| Refuses connections | about 80 | about 17 |
+| Accepts connections and never answers | about 120 | about 90 |
+| Drops connections without an answer | about 600 (10 min) | about 850 (14 min) |
+
+With the store refusing, a replica that was down while 1.2 GB of WAL was written caught up from the primary alone, about 40 s after its node started. A former primary with WAL that the store never got waits for the store before it rejoins: CNPG archives that WAL before the former primary rewinds. Until the store is back, the cluster runs on the other two instances, and every commit needs both.
+
+**Backup retention.** The sample sets no retention policy, so nothing is deleted from the store. With a retention policy, the retention window must be longer than the longest time an instance can be down: an instance that needs a WAL file the policy deleted cannot catch up by itself, and CNPG does not rebuild it.
+
+**The node grace period.** k3s marks a lost node unreachable after 50 s, the Kubernetes default, and failover starts only then, so that wait is most of the minute a primary node loss costs. The sample keeps it: in tests a 20 s grace period saved about 28 s, and at 10 s a network delay of 2 s made a node look lost and the primary fail over. The grace period is k3s configuration, outside the chart.
 
 ## Compliance metric
 
