@@ -149,3 +149,57 @@ func TestReportAttemptWhenRWBack(t *testing.T) {
 		t.Fatalf("report did not fail for a read 3.2 s after rw was back: %v\n%s", err, out)
 	}
 }
+
+// rw is back on k3s-2 while the connect to k3s-1 that started before still
+// waits for its timeout: the attempt counts that connect, not k3s-1's last
+// one that worked.
+func TestReportConnectSpanningRWBack(t *testing.T) {
+	log := `900 950 rw connect k3s-1:5432 ok connected
+900 960 rw connect k3s-2:5432 ok connected
+1000 3000 rw connect k3s-1:5432 fail timeout
+1000 1100 rw connect k3s-2:5432 fail refused
+1400 1500 rw connect k3s-2:5432 ok connected
+2600 2700 pgx query k3s-1:5433 ok in_recovery=true last=1
+9000 9100 pgx query k3s-2:5432 ok in_recovery=false last=1
+9000 9100 pgx write k3s-2:5432 ok 2
+9000 9100 gorm query k3s-2:5432 ok in_recovery=false last=1
+9000 9100 gorm write k3s-2:5432 ok 2
+`
+	if out, err := runReport(t, log); err != nil {
+		t.Fatalf("report failed: %v\n%s", err, out)
+	}
+}
+
+// A query that was running at the event and failed counts as a failure.
+func TestReportFailureSpanningEvent(t *testing.T) {
+	log := `900 950 rw connect k3s-1:5432 ok connected
+990 1100 pgx query k3s-1:5432 fail unexpected EOF
+1200 1300 pgx query k3s-1:5432 ok in_recovery=false last=1
+9000 9100 pgx query k3s-1:5432 ok in_recovery=false last=1
+9000 9100 pgx write k3s-1:5432 ok 2
+9000 9100 gorm query k3s-1:5432 ok in_recovery=false last=1
+9000 9100 gorm write k3s-1:5432 ok 2
+`
+	out, err := runReport(t, log)
+	if err != nil {
+		t.Fatalf("report failed: %v\n%s", err, out)
+	}
+	if want := "| pgx query works again | failed from 0.0, works again at 0.3 |"; !strings.Contains(out, want) {
+		t.Errorf("no line %q in\n%s", want, out)
+	}
+}
+
+func TestReportRWNotBack(t *testing.T) {
+	log := `900 950 rw connect k3s-1:5432 ok connected
+1000 1100 rw connect k3s-1:5432 fail refused
+1200 1300 pgx query k3s-1:5433 ok in_recovery=true last=1
+`
+	out, err := runReport(t, log)
+	var check checkFailed
+	if !errors.As(err, &check) {
+		t.Fatalf("report did not fail: %v\n%s", err, out)
+	}
+	if want := "| last query or write on a read address once rw was back | rw not back |"; !strings.Contains(out, want) {
+		t.Errorf("no line %q in\n%s", want, out)
+	}
+}

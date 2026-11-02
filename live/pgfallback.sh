@@ -56,8 +56,11 @@ build_pgfallback() {
     timeout 300 go get "$PGF_MODULE/pgfallback@$sha"
     go build -o "$LIVE_WORK/bin/pgfallback-live" .
   ) || fail "building live/pgfallback with $PGF_MODULE/pgfallback@$sha failed"
+  local hash
   PGF_VERSION=$(cd "$PGF_DIR" && go list -m -f '{{.Version}}' "$PGF_MODULE")
-  [[ $PGF_VERSION == *-"${sha:0:12}" ]] || fail "go get gave $PGF_MODULE $PGF_VERSION, not commit $sha"
+  # A pseudo-version, or the tag when the commit has one.
+  hash=$(cd "$PGF_DIR" && go mod download -json "$PGF_MODULE@$PGF_VERSION" | jq -r '.Origin.Hash // empty')
+  [[ $hash == "$sha" ]] || fail "go get gave $PGF_MODULE $PGF_VERSION, of commit ${hash:-unknown}, not $sha"
   log "pgfallback from $PGF_MODULE $PGF_VERSION"
 }
 

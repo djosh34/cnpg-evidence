@@ -96,12 +96,14 @@ Without the writer, a former primary that rewound onto an idle new primary can w
 
 ## pgfallback from outside the cluster
 
-The `pgfallback-*` scenarios use the [`pgfallback`](pgfallback.md) package as an application outside the cluster does, from the runner against the node addresses. `live/pgfallback.sh` copies the program in `live/pgfallback/` out of the checkout and builds it there with `go get github.com/djosh34/cnpg-evidence/pgfallback@<commit>`, the checked out commit, through the Go module proxy. The summary names the version it got. In the repository the module points at the checkout instead, so the `live-client` job of `ci.yml` can vet, test and build it.
+The `pgfallback-*` scenarios use the [`pgfallback`](pgfallback.md) package as an application outside the cluster does, from the runner against the node addresses. `live/pgfallback.sh` copies the program in `live/pgfallback/` out of the checkout and builds it there with `go get github.com/djosh34/cnpg-evidence/pgfallback@<commit>`, the checked out commit, through the Go module proxy, and checks that the version it got is of that commit. The summary names the version. In the repository the module points at the checkout instead, so the `live-client` job of `ci.yml` can vet, test and build it.
 
 The program logs in as `orders` with the client certificate and `sslmode=verify-full`. Its connection string lists the three nodes by name on the rw port 5432, and `pgfallback` adds them on the read port 5433. pgx's `LookupFunc` maps the names to the node addresses; `live/values.yaml` adds the names to the server certificate. At the same time it runs:
 
 - a `pgxpool.Pool` from `pgfallback.Pool`, and GORM on a `*sql.DB` with the options of `pgfallback.Stdlib`, each with a new query every 0.25 s and a write into `pgfallback_writes` every second;
 - a connect to each rw address alone every 0.25 s, so the summary knows when rw took connections again.
+
+Each query, write and connect starts on time, also while earlier ones still wait.
 
 It logs every query, write and connect with its start and end, the address that served it and any error. Once every instance is ready and streaming and every read port answers, it runs 30 s more. The summary gives, in seconds after the event:
 

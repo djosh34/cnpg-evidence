@@ -16,7 +16,8 @@ import (
 //   - rw took no connection while no rw address's last connect alone worked.
 //     rw is back at the end of the first connect that worked after that.
 //   - For pgx and GORM, reads and writes work again at the end of the first
-//     query or write that worked after the last one that failed.
+//     query or write that worked after the last one that failed, counting
+//     the failures that were still running at the event.
 //   - The last query or write served by a read address after rw was back.
 //   - A query or write is wrong when a read address served it although it
 //     started more than 1 s plus one attempt at rw after rw was back. One
@@ -106,10 +107,7 @@ func rwTimeline(connects []entry) []rwState {
 	}
 	probes := make([]probe, len(connects))
 	for i, e := range connects {
-		probes[i] = probe{at: e.end, addr: e.addr, ok: e.ok}
-		if !e.ok {
-			probes[i].at = e.start
-		}
+		probes[i] = probe{at: known(e), addr: e.addr, ok: e.ok}
 	}
 	slices.SortStableFunc(probes, func(a, b probe) int { return cmp.Compare(a.at, b.at) })
 	last := map[string]bool{}
@@ -128,8 +126,8 @@ func rwTimeline(connects []entry) []rwState {
 }
 
 // spells lists each spell of states without rw that was not over before the
-// event, "never" when there was none, and returns when rw was last back, or
-// -1.
+// event, "never" when there was none, and returns when rw was last back: -1
+// when it was not down, -2 when it is not back.
 func spells(states []rwState, event int64, secs func(int64) string) (string, int64) {
 	var downs []string
 	back := int64(-1)
@@ -139,6 +137,7 @@ func spells(states []rwState, event int64, secs func(int64) string) (string, int
 		}
 		if i+1 == len(states) {
 			downs = append(downs, "from "+secs(s.at)+", not back")
+			back = -2
 			break
 		}
 		end := states[i+1].at
@@ -162,14 +161,23 @@ func stateAt(states []rwState, t int64) (rwState, bool) {
 	return states[i-1], true
 }
 
+// known is when a connect alone tells its result, as rwTimeline counts it.
+func known(e entry) int64 {
+	if e.ok {
+		return e.end
+	}
+	return e.start
+}
+
 // attemptAt is how long a connect to the rw hosts in order took at time t,
-// from each address's last connect alone that ended by then.
+// from each address's last connect alone known by then. A failed connect
+// counts with its whole time, also when it ended later.
 func attemptAt(connects []entry, rwAddrs []string, t int64) int64 {
 	var total int64
 	for _, a := range rwAddrs {
 		var last *entry
 		for i := range connects {
-			if connects[i].addr == a && connects[i].end <= t {
+			if connects[i].addr == a && known(connects[i]) <= t && (last == nil || known(connects[i]) >= known(*last)) {
 				last = &connects[i]
 			}
 		}
@@ -245,6 +253,8 @@ func report(w io.Writer, entries []entry, event int64, nodes []node) error {
 		}
 	}
 	switch {
+	case back == -2:
+		row("last query or write on a read address once rw was back", "rw not back")
 	case back < 0:
 		row("last query or write on a read address once rw was back", "rw was not down")
 	case lastRead == nil:
@@ -301,12 +311,13 @@ func report(w io.Writer, entries []entry, event int64, nodes []node) error {
 }
 
 // worksAgain says when the queries or writes of client worked again after
-// the event: "never failed", or the first failure and the end of the first
-// success after the last failure.
+// the event: "never failed", or the first failure that was still running at
+// the event or started later, and the end of the first success after the
+// last failure.
 func worksAgain(ops []entry, client, what string, event int64, secs func(int64) string) string {
 	var firstFail, lastFail int64 = -1, -1
 	for _, e := range ops {
-		if e.client == client && e.what == what && e.start >= event && !e.ok {
+		if e.client == client && e.what == what && e.end >= event && !e.ok {
 			if firstFail < 0 || e.start < firstFail {
 				firstFail = e.start
 			}
@@ -318,10 +329,10 @@ func worksAgain(ops []entry, client, what string, event int64, secs func(int64) 
 	}
 	for _, e := range ops {
 		if e.client == client && e.what == what && e.ok && e.start >= lastFail {
-			return fmt.Sprintf("failed from %s, works again at %s", secs(firstFail), secs(e.end))
+			return fmt.Sprintf("failed from %s, works again at %s", secs(max(firstFail, event)), secs(e.end))
 		}
 	}
-	return fmt.Sprintf("failed from %s, not again", secs(firstFail))
+	return fmt.Sprintf("failed from %s, not again", secs(max(firstFail, event)))
 }
 
 func countFailed(ops []entry) int {

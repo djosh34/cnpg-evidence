@@ -14,7 +14,8 @@
 // the server certificate is checked against the node names. It runs a
 // pgxpool.Pool and a GORM DB at the same time, each with a query every
 // 0.25 s and a write every second, and connects to each rw address alone
-// every 0.25 s, until it gets SIGTERM or SIGINT. It prints one line per
+// every 0.25 s, until it gets SIGTERM or SIGINT. Each starts on time, also
+// while earlier ones still wait. It prints one line per
 // attempt on stdout:
 //
 //	<start unix ms> <end unix ms> <client> <what> <address> ok|fail <detail>
@@ -254,27 +255,33 @@ func (c *clients) ensureTable(ctx context.Context) error {
 	return err
 }
 
-// every runs do every d until ctx ends, and logs each attempt. do returns
-// the address that served the attempt, "" when none did, and the detail.
+// every starts do every d until ctx ends, each in its own goroutine, so a
+// slow attempt does not delay the next, and logs each attempt. It returns
+// once the attempts it started are over. do returns the address that served
+// the attempt, "" when none did, and the detail.
 func every(ctx context.Context, d time.Duration, client, what string, do func(context.Context) (string, string, error)) {
+	var wg sync.WaitGroup
+	defer wg.Wait()
 	tick := time.NewTicker(d)
 	defer tick.Stop()
 	for {
-		start := time.Now()
-		attemptCtx, cancel := context.WithTimeout(ctx, attemptTimeout)
-		addr, detail, err := do(attemptCtx)
-		cancel()
-		if ctx.Err() != nil {
-			return // stopped: this attempt says nothing about the cluster
-		}
-		result := "ok"
-		if err != nil {
-			result, detail = "fail", oneLine(err)
-		}
-		if addr == "" {
-			addr = "-"
-		}
-		logLine(start, time.Now(), client, what, addr, result, detail)
+		wg.Go(func() {
+			start := time.Now()
+			attemptCtx, cancel := context.WithTimeout(ctx, attemptTimeout)
+			defer cancel()
+			addr, detail, err := do(attemptCtx)
+			if ctx.Err() != nil {
+				return // stopped: this attempt says nothing about the cluster
+			}
+			result := "ok"
+			if err != nil {
+				result, detail = "fail", oneLine(err)
+			}
+			if addr == "" {
+				addr = "-"
+			}
+			logLine(start, time.Now(), client, what, addr, result, detail)
+		})
 		select {
 		case <-ctx.Done():
 			return
