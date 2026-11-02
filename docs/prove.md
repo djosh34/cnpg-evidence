@@ -10,14 +10,16 @@ As root on the node given by `--node`, with a cluster-admin kubeconfig (on a k3s
 
 ```bash
 yq -o=json desired.yaml | bash scripts/prove/prove.sh
-yq -o=json desired.yaml | bash scripts/prove/prove.sh --node node-a --node-root '' --postgres-uid 26
+yq -o=json desired.yaml | bash scripts/prove/prove.sh --node node-a --node-root '' --postgres-uid 999 --postgres-gid 999
 ```
 
 From [`desired.yaml`](../desired.yaml) it takes `cluster.namespace`, `cluster.name` and the rw LoadBalancer `rwLoadBalancer.name`.
 
+It runs nothing in the instance pods: `psql` is the node's own, the logins go through the rw LoadBalancer, and the uid attempts use the node's view of the pods' processes and volumes.
+
 - `--node`: this node's Kubernetes node name, as in `kubectl get nodes`. Default the output of `hostname`. The uid attempts read this node's processes, so run the script on that node, and pick a node that runs an instance.
 - `--node-root`: a prefix for the kubelet and storage paths, for a node whose filesystem is seen under another path, such as a node in a container seen through `/proc/<pid>/root`. Default none; leave it empty when the script runs on the node itself.
-- `--postgres-uid`: PostgreSQL's uid in the CNPG image. Default 26.
+- `--postgres-uid`, `--postgres-gid`: PostgreSQL's uid and gid, the chart's `cluster.postgresUID` and `cluster.postgresGID`: the ids the image names `postgres`. Default 999, as in the Hummingbird image.
 
 ## What happens
 
@@ -36,7 +38,7 @@ The replication key reaches `psql` as an in-memory file and is never written to 
 
 ### 2. Access as the host postgres uid
 
-The script selects the instance pods on `--node`. It finds each pod's postgres process by the pod's object id (`metadata.uid`, not a Unix uid), which appears in the process's cgroup path. `/proc/<pid>/uid_map` gives the host uid that the pod's uid 26 runs as. The script also tries the socket's host path as that mapped uid.
+The script selects the instance pods on `--node`. It finds each pod's postgres process by the pod's object id (`metadata.uid`, not a Unix uid), which appears in the process's cgroup path. `/proc/<pid>/uid_map` and `gid_map` give the host uid and gid that the pod's `--postgres-uid` and `--postgres-gid` run as. The script also tries the socket's host path as that mapped uid and gid.
 
 Each pod is tried through two views:
 
@@ -45,7 +47,7 @@ Each pod is tried through two views:
 
 The targets are the socket under `/proc/<pid>/root`, the data directory on the host path, and the socket on the host path as the pod's mapped uid.
 
-As root the script first checks that each target exists; a missing path cannot show a denial. It then switches to uid and gid `--postgres-uid`, drops supplementary groups and capabilities, and turns off privilege escalation. As that uid it tries a socket login as `postgres` and reads one byte of `PG_VERSION` to `/dev/null`. It tries the socket login on the host path as the pod's mapped uid. A socket login first changes into the socket directory as the trying uid, so the directory modes apply. Socket logins use PostgreSQL's `local` pg_hba lines, not the TCP certificate lines, so this is a separate path.
+As root the script first checks that each target exists; a missing path cannot show a denial. It then switches to uid `--postgres-uid` and gid `--postgres-gid`, drops supplementary groups and capabilities, and turns off privilege escalation. As that uid it tries a socket login as `postgres` and reads one byte of `PG_VERSION` to `/dev/null`. It tries the socket login on the host path as the pod's mapped uid and gid. A socket login first changes into the socket directory as the trying uid, so the directory modes apply. Socket logins use PostgreSQL's `local` pg_hba lines, not the TCP certificate lines, so this is a separate path.
 
 ### 3. Combine the results
 
@@ -54,7 +56,7 @@ Each of the two groups writes one JSON record per attempt; `prove.sh` combines t
 The groups also run on their own and print their records, one per line:
 
 - `bash scripts/prove/login/login.sh NAMESPACE CLUSTER LB_SERVICE`: logins from the node.
-- `bash scripts/prove/uid/uid.sh NAMESPACE CLUSTER NODE NODE_ROOT POSTGRES_UID`: host-uid attempts.
+- `bash scripts/prove/uid/uid.sh NAMESPACE CLUSTER NODE NODE_ROOT POSTGRES_UID POSTGRES_GID`: host-uid attempts.
 
 ## Output
 

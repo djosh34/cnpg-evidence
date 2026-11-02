@@ -8,7 +8,7 @@ What is in `desired.yaml` and `samples/`, how to install it, and how to keep it 
 |---|---|
 | [`desired.yaml`](../desired.yaml) | The desired state of the cluster: name, namespace and instances, the client CA Secret, the rw LoadBalancer name, the optional read LoadBalancer's name and port, the operator and OTel namespaces, the replication certificate names, and the databases with their role and client CNs. `evidence.sh` compares against it; the chart reads it as values. |
 | [`samples/chart/`](../samples/chart) | A Helm chart that renders the `Cluster`, one `Database` per database, the server and replication `Certificate`s, the `<cluster>-bootstrap` Secret, the barman-cloud `ObjectStore`, one ingress `NetworkPolicy` and the `<cluster>-compliance` ConfigMap. |
-| [`samples/chart/values.yaml`](../samples/chart/values.yaml) | Chart-only settings: image, storage size, cert-manager issuer, object store, recovery. |
+| [`samples/chart/values.yaml`](../samples/chart/values.yaml) | Chart-only settings: image, PostgreSQL's uid and gid, storage size, cert-manager issuer, object store, recovery. |
 | [`samples/values-cnpg-operator.yaml`](../samples/values-cnpg-operator.yaml) | Values for the operator chart: chart RBAC off, `WATCH_NAMESPACE=cnpg-system,databases`, one pod per node. |
 | [`samples/values-barman-cloud.yaml`](../samples/values-barman-cloud.yaml) | Values for the plugin chart: chart RBAC off, one pod per node. |
 | [`samples/values-cert-manager.yaml`](../samples/values-cert-manager.yaml) | Values for the cert-manager chart: its CRDs, one pod of the controller, the webhook and the CA injector per node. |
@@ -70,7 +70,9 @@ Pods with `hostUsers: false` need a kernel with idmapped mounts on tmpfs.
 4. In `samples/chart/values.yaml`, set:
    - `issuer`: the cert-manager issuer from step 2, which signs the server and replication certificates.
    - `objectStore`: the bucket, endpoint and credentials Secret. Create that Secret in the cluster's namespace with the keys `ACCESS_KEY_ID` and `ACCESS_SECRET_KEY`.
-   - `cluster.imageName` and `cluster.storageSize`.
+   - `cluster.imageName`: the PostgreSQL image. The default is Red Hat's Hummingbird image `registry.access.redhat.com/hi/postgresql:18.6`, pinned by digest, which pulls without a login. It has bash, coreutils and `psql`, but no `openssl`. The scripts in `scripts/` run only `psql` in it, always with `-U postgres`.
+   - `cluster.postgresUID` and `cluster.postgresGID`: the uid and gid PostgreSQL runs as, which the chart passes to the `Cluster`'s `postgresUID` and `postgresGID`. Each must be the uid and gid the image names `postgres`: 999 in the Hummingbird image, the default. CNPG writes the name of the uid into pg_ident; with CNPG's own default 26, which this image names `postgres_fedora`, the compliance metric and `evidence.sh` find wrong pg_ident lines. Give `host-check.sh` and `prove.sh` the same values with `--postgres-uid` and `--postgres-gid`. Set them when the cluster is created.
+   - `cluster.storageSize`.
 5. Install the operator and the plugin with their values files:
    ```bash
    helm upgrade --install cnpg cloudnative-pg --repo https://cloudnative-pg.github.io/charts --version 0.29.1 \
@@ -82,7 +84,7 @@ Pods with `hostUsers: false` need a kernel with idmapped mounts on tmpfs.
    Both values files run one pod per node (see [One copy of every service per node](#one-copy-of-every-service-per-node)).
    The release names must stay `cnpg` and `barman-cloud`: the RBAC files name their ServiceAccounts `cnpg-cloudnative-pg` and `barman-cloud-plugin-barman-cloud`, and `evidence.sh` asks about those names.
 6. Install the chart: `helm upgrade --install pg samples/chart -n databases -f desired.yaml`.
-7. Restart the instances. The chart sets `hostUsers: false` through the `cnpg.io/podPatch` annotation on the `Cluster`, which applies only to new pods, so pods that already run keep host uid 26. Start a rolling restart, then check that every instance pod has `hostUsers: false` (`evidence.sh` checks it too):
+7. Restart the instances. The chart sets `hostUsers: false` through the `cnpg.io/podPatch` annotation on the `Cluster`, which applies only to new pods, so pods that already run keep sharing the host's uids. Start a rolling restart, then check that every instance pod has `hostUsers: false` (`evidence.sh` checks it too):
    ```bash
    kubectl annotate cluster <cluster> -n databases kubectl.kubernetes.io/restartedAt="$(date -u +%FT%TZ)" --overwrite
    kubectl get pods -n databases -l cnpg.io/cluster=<cluster>,cnpg.io/podRole=instance \
@@ -188,7 +190,7 @@ Reading `pg_ident_file_mappings` needs two grants for `cnpg_metrics_exporter`. O
 On a cluster that already runs, give them once on the primary. Replicas get them by replication:
 
 ```bash
-kubectl exec -n databases <primary pod> -c postgres -- psql \
+kubectl exec -n databases <primary pod> -c postgres -- psql -U postgres \
   -c 'GRANT SELECT ON pg_ident_file_mappings TO cnpg_metrics_exporter' \
   -c 'GRANT EXECUTE ON FUNCTION pg_ident_file_mappings() TO cnpg_metrics_exporter'
 ```
@@ -292,7 +294,7 @@ A cluster bootstrapped with CNPG's defaults has an `app` database, an `app` role
    ```
 3. Drop the database and the role as `postgres` over `kubectl exec`:
    ```bash
-   kubectl exec -n <namespace> <primary pod> -c postgres -- psql -c 'DROP DATABASE app' -c 'DROP ROLE app'
+   kubectl exec -n <namespace> <primary pod> -c postgres -- psql -U postgres -c 'DROP DATABASE app' -c 'DROP ROLE app'
    ```
    If `DROP ROLE` reports objects or privileges in other databases, first run `REASSIGN OWNED BY app TO postgres; DROP OWNED BY app;` in each of them.
 4. Check: `kubectl get secret <cluster>-app -n <namespace>` reports NotFound, and `select rolname from pg_roles where rolname = 'app'` and `select datname from pg_database where datname = 'app'` return no rows.

@@ -328,7 +328,7 @@ const EVIDENCE = [
     name: '06-container-isolation',
     sections: ['pods_sharing_host_uids'],
     title: 'Container isolation',
-    control: 'Each instance runs in its own user namespace, so its uid 26 is no user on the host.',
+    control: 'Each instance runs in its own user namespace, so its PostgreSQL uid is no user on the host.',
     desired: 'Every instance pod sets hostUsers: false.',
     actual: 'Every instance pod, and whether it sets hostUsers: false.',
     noun: ['instance', 'instances'],

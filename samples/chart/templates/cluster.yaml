@@ -6,11 +6,13 @@ metadata:
   name: {{ $c.name }}
   namespace: {{ $c.namespace }}
   annotations:
-    # Runs postgres in a pod user namespace: uid 26 in the pod is another uid on the host.
+    # Runs postgres in a pod user namespace: uid {{ $c.postgresUID }} in the pod is another uid on the host.
     cnpg.io/podPatch: '[{"op":"add","path":"/spec/hostUsers","value":false}]'
 spec:
   instances: {{ $c.instances }}
   imageName: {{ $c.imageName }}
+  postgresUID: {{ $c.postgresUID }}
+  postgresGID: {{ $c.postgresGID }}
   storage:
     size: {{ $c.storageSize }}
 

@@ -27,7 +27,8 @@ show poll 120 k get nodes
 show k get nodes -o wide
 show k get pods -A -o wide
 show k get cluster "$CLUSTER" -n "$NS" -o jsonpath='{.status.phase}{"\n"}{.status.phaseReason}{"\n"}'
-show timeout 60 kubectl cnpg status "$CLUSTER" -n "$NS"
+# JSON, since the text output runs du in an instance.
+show timeout 60 kubectl cnpg status "$CLUSTER" -n "$NS" -o json
 show operator_errors
 for f in write.log write.err read.log read.err; do
   show tail -20 "$LIVE_WORK/$f"

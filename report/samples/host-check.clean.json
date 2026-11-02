@@ -11,8 +11,8 @@
     "containerd_version": "containerd v2.1.5-k3s1",
     "selinux": "enforcing",
     "containerd_enable_selinux": "true",
-    "postgres_uid": 26,
-    "postgres_gid": 26,
+    "postgres_uid": 999,
+    "postgres_gid": 999,
     "listening_tcp": [],
     "missing_tools": []
   },
@@ -27,7 +27,7 @@
       "id": "postgres-account",
       "ok": true,
       "value": "none",
-      "raw": "no account with uid 26 or primary gid 26; no group with gid 26; sudoers: no matching line in /etc/sudoers; no postgresql*-server package installed"
+      "raw": "no account with uid 999 or primary gid 999; no group with gid 999; sudoers: no matching line in /etc/sudoers; no postgresql*-server package installed"
     },
     {
       "id": "dir-modes",

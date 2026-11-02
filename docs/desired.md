@@ -17,7 +17,7 @@ yq -o=json desired.yaml | bash scripts/desired/desired.sh --source prove > prove
 - stdin: the desired values from `desired.yaml` as JSON, as for `evidence.sh`. They must have every key `evidence.sh` needs, for every source.
 - `--source`: `evidence` (default), `host-check` or `prove`.
 - `--ca`: for `evidence` only, and needed there: the same CA certificates as `evidence.sh --ca`.
-- `--postgres-uid`: for `prove` only, PostgreSQL's uid in the CNPG image, as `prove.sh --postgres-uid`. Default 26.
+- `--postgres-uid`: for `prove` only, PostgreSQL's uid, as `prove.sh --postgres-uid`. Default 999.
 
 `desired.sh` prints one JSON document; exit 0, or 2 on any error, with nothing on stdout.
 

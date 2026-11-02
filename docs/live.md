@@ -1,6 +1,6 @@
 # Live scenarios
 
-The scripts in `live/` start the samples on a three-node k3s cluster in docker and run failure scenarios against it: a node lost, a switchover. Each scenario checks that the cluster recovers by itself, that writes come back in time and that no acknowledged commit is lost, and writes its times to the job summary. The `live` workflow runs them on GitHub's runners, one job and one cluster per scenario.
+The scripts in `live/` start the samples on a three-node k3s cluster in docker and run scenarios against it: a node lost, a switchover, the evidence scripts. Each failure scenario checks that the cluster recovers by itself, that writes come back in time and that no acknowledged commit is lost, and writes its times to the job summary. The `live` workflow runs them on GitHub's runners, one job and one cluster per scenario.
 
 ## Files
 
@@ -25,7 +25,7 @@ The scripts in `live/` start the samples on a three-node k3s cluster in docker a
 - An S3 store, versitygw in the container `s3` at `10.77.0.20`, with the bucket `example-bucket`. Inside the cluster it is `s3.s3.svc:9000`.
 - cert-manager from `samples/values-cert-manager.yaml`, and in `databases` a self-signed CA behind the Issuer `example-ca`, the issuer that `samples/chart/values.yaml` names. Its certificate is also the client CA in the Secret `client-ca`.
 - The CNPG operator and the barman-cloud plugin from `samples/values-cnpg-operator.yaml`, `samples/values-barman-cloud.yaml` and both RBAC files.
-- `samples/chart` as release `pg` in `databases`, with `desired.yaml` and `live/values.yaml`.
+- `samples/chart` as release `pg` in `databases`, with `desired.yaml` and `live/values.yaml`. The instances run the chart's default image, the Hummingbird PostgreSQL image pinned by digest, as uid and gid 999.
 - One pod of every service on every node, as [samples.md](samples.md#one-copy-of-every-service-per-node) says. `up.sh` checks that CoreDNS, Traefik, metrics-server, the cert-manager controller, webhook and CA injector, the operator and the plugin each run one ready pod on each of the three nodes, and that local-path-provisioner runs one.
 
 It also builds `live/client`, installs `kubectl cnpg` 1.30.1 (pinned by checksum) into `$LIVE_WORK/bin`, and writes a client certificate for `orders-app.test`, which logs in as `orders`, into `$LIVE_WORK/certs`. `$LIVE_WORK` is `/tmp/live` by default and also holds a kubeconfig for each node's API server and the client's logs. The scripts use only those kubeconfigs, never the caller's `KUBECONFIG`.
@@ -58,6 +58,7 @@ Without the writer, a former primary that rewound onto an idle new primary can w
 | `primary-node-loss` | The primary's node stops with `docker stop -t 0` and starts again 120 s later. | Another instance becomes primary within 10 min of the stop; with the writer, it takes a write within 180 s of the stop. |
 | `replica-node-loss` | A replica's node stops with `docker stop -t 0` for 6 min. | The primary stays where it is. |
 | `switchover` | `kubectl cnpg promote` to a replica. | The replica becomes primary within 5 min; with the writer, it takes a write within 180 s. |
+| `evidence` | `desired.sh`, `evidence.sh` with the `client-ca` Secret's certificate as `--ca`, and `prove.sh` as root on every node, through `/proc/<pid>/root` of the node's container. | `evidence.sh` finds no violation; on every node each `prove.sh` attempt has the value of the desired document; `cnpg_compliance_violations` is 0 for each of its 4 checks on every instance, read through `kubectl port-forward`. |
 
 ## Run in GitHub Actions
 
@@ -74,7 +75,7 @@ A run has one job per scenario, each on its own `ubuntu-24.04` runner with its o
 
 ## Run one locally
 
-On a Linux host with docker, go, helm, kubectl and curl, and room for the cluster: about 4 GB of memory and 10 GB of disk. The docker network `live`, its subnet and the container names must be free.
+On a Linux host with docker, go, helm, kubectl and curl, and room for the cluster (the `evidence` scenario also needs yq, jq, openssl, psql, python3, setpriv and sudo): about 4 GB of memory and 10 GB of disk. The docker network `live`, its subnet and the container names must be free.
 
 ```bash
 bash live/up.sh

@@ -8,12 +8,12 @@ On every node, as root:
 
 ```bash
 bash scripts/host-check/host-check.sh
-bash scripts/host-check/host-check.sh --node node-a --postgres-uid 26 --postgres-gid 26 \
+bash scripts/host-check/host-check.sh --node node-a --postgres-uid 999 --postgres-gid 999 \
   --storage-dir /var/lib/rancher/k3s/storage
 ```
 
 - `--node`: this node's Kubernetes node name, as in `kubectl get nodes`. Default the hostname, which k3s uses unless its `node-name` setting gives another.
-- `--postgres-uid`, `--postgres-gid`: PostgreSQL's uid and gid in the CNPG image. Default 26.
+- `--postgres-uid`, `--postgres-gid`: PostgreSQL's uid and gid, the chart's `cluster.postgresUID` and `cluster.postgresGID`: the ids the image names `postgres`. Default 999, as in the Hummingbird image.
 - `--storage-dir`: the parent of the host directories that back the PostgreSQL data volumes. Default `/var/lib/rancher/k3s/storage`, where the k3s local-path provisioner creates them. For any PersistentVolume, `spec.local.path` or `spec.hostPath.path` gives its directory on the node.
 - Needs bash, coreutils, sed, awk and jq, and the `scripts/host-check/` and `scripts/lib/` directories. `ss`, `rpm`, `getent`, `k3s` and `getcap` are optional: a missing one is listed in `missing_tools`. A missing `getent` or `getcap` fails the check that needs it; a missing `rpm` is only listed in `raw`.
 

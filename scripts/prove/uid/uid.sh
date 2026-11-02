@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Attempts socket and data access as the host postgres uid, and socket access
-# as the pod's mapped uid, checking path existence as root before each attempt.
-# Usage: uid.sh NAMESPACE CLUSTER NODE NODE_ROOT POSTGRES_UID
+# Attempts socket and data access as the host postgres uid and gid, and socket
+# access as the pod's mapped uid and gid, checking path existence as root
+# before each attempt.
+# Usage: uid.sh NAMESPACE CLUSTER NODE NODE_ROOT POSTGRES_UID POSTGRES_GID
 # Exit: 0 records collected (including failed probes), 2 collection error.
 set -euo pipefail
 shopt -s inherit_errexit
@@ -15,6 +16,7 @@ cluster=$2
 node=$3
 node_root=$4
 postgres_uid=$5
+postgres_gid=$6
 psql_command=(psql -w -X -At -c 'select current_user')
 read_command=(dd of=/dev/null bs=1 count=1 status=none)
 # Read the socket helper text before changing uid.
@@ -54,13 +56,13 @@ while read -r pod pod_uid; do
   uid_base=$(awk '$1 == 0 {print $2}' "/proc/$pid/uid_map")
   gid_base=$(awk '$1 == 0 {print $2}' "/proc/$pid/gid_map")
   mapped_uid=$((uid_base + postgres_uid))
-  mapped_gid=$((gid_base + postgres_uid))
-  log "$pod: pid $pid, mapped uid $mapped_uid"
+  mapped_gid=$((gid_base + postgres_gid))
+  log "$pod: pid $pid, mapped uid $mapped_uid, gid $mapped_gid"
 
-  deny_path "uid-$postgres_uid socket-proc-root" "$pod" "$postgres_uid" "$postgres_uid" \
+  deny_path "uid-$postgres_uid socket-proc-root" "$pod" "$postgres_uid" "$postgres_gid" \
     "$process_root/controller/run/.s.PGSQL.5432" \
     "${psql_command[@]}" "host=$process_root/controller/run port=5432 dbname=postgres user=postgres"
-  deny_path "uid-$postgres_uid pgdata-host-path" "$pod" "$postgres_uid" "$postgres_uid" \
+  deny_path "uid-$postgres_uid pgdata-host-path" "$pod" "$postgres_uid" "$postgres_gid" \
     "$pgdata" "${read_command[@]}" "if=$pgdata"
   deny_path "uid-mapped socket-host-path" "$pod uid $mapped_uid" "$mapped_uid" "$mapped_gid" \
     "$socket_dir/.s.PGSQL.5432" bash -c "$socket_text" socket.sh "$socket_dir"
