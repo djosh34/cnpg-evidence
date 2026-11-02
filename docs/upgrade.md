@@ -91,7 +91,7 @@ What to do before and after that upgrade. The rules, sections and probes named h
   ```
 
   Until then, `evidence.sh` reports the NodePort under rule 9.
-- **Readiness.** A replica is ready only while it streams and is less than 16Mi behind (`probes.readiness`). `synchronous` now spells out `dataDurability: required`, CNPG's default, so commits behave as before. The measured effect of a node loss is in [samples.md](samples.md#clients-on-the-read-port).
+- **Readiness.** A replica is ready only while it streams and is less than 16Mi behind (`probes.readiness`). `synchronous` now spells out `dataDurability: required`, CNPG's default, so commits behave as before. The measured effect of a node loss is in [samples.md](samples.md#writes-reads-and-failover).
 
 ### Scripts
 
