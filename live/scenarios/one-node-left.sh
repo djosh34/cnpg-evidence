@@ -39,7 +39,7 @@ log "started $node and $replica_node"
 reads=$(reads_between "$last" "$T0" "$STARTED")
 read -r ok failed <<<"$reads"
 ((ok > 0 && failed == 0)) ||
-  fail "the read port of $last, the last node, answered $ok and failed $failed probes while the other nodes were down"
+  fail "the read port of $last, the last node, answered $ok and failed $failed probes while the other nodes were down; the first failure: $(awk -v ip="$(node_ip "$last")" -v t0="$T0" '$1 >= t0 && $2 == ip && $3 == "fail" {print; exit}' "$READ_LOG")"
 if [[ $WRITER == on ]]; then
   acked=$(writes_between $((T0 + IN_FLIGHT_MS)) "$STARTED")
   ((acked == 0)) || fail "$acked writes were acknowledged while only $last ran"
