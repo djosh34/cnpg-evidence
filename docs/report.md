@@ -138,7 +138,7 @@ The images of one pair line up whether they come from one call or two, since bot
 ### Exit codes
 
 - `0`: every image is written.
-- `2`: an error. No image of this call is left in `<dir>`, and `<dir>` is removed again if the call made it. When the error comes before the images are renamed into place, such as a failed render or a failed write, every older image keeps its content.
+- `2`: an error. After a failed render or a failed write, no image of this call is left in `<dir>`, every older image keeps its content, and `<dir>` is removed again if the call made it. A failed rename is the rare exception described below.
 
 A wrong call, such as a missing `--out`, a second file or an unknown flag, prints a short reason or only the usage line on stderr; `-h` prints the usage line too. Every other error prints one line on stderr that starts with `cnpg-report:`, and a failed render adds the last lines of Chrome's output. Those errors are a file that is not readable or not JSON, a missing key, an unknown `source`, two documents that are not one desired and one actual document of the same script, a `collected_at` that is not a UTC time like `2026-01-02T03:04:05Z`, a host-check `node` or check `id` that does not fit in a file name (letters, digits, `.`, `_` and `-`, starting with a letter or digit), a host-check desired document alone, and a render that fails or takes longer than 5 minutes.
 
