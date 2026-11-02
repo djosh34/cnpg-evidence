@@ -43,7 +43,7 @@ node_ready() {
   [[ $(docker exec "$NODE" kubectl get node "$NODE" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}') == True ]]
 }
 
-# k3s starts its network policy controller after the node is Ready.
+# The network policy controller can add its chains after the node is Ready.
 netpol_chains() {
   [[ $(docker exec "$NODE" iptables-save -t filter) == *"-j KUBE-ROUTER-OUTPUT"* ]]
 }
