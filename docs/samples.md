@@ -115,18 +115,7 @@ kubectl patch service pg-rw-lb -n databases --type=json -p '[{"op":"remove","pat
 
 ### Clients on the read port
 
-A client lists every node in the host field with the read port and a short `connect_timeout`. pgx tries the hosts in order and takes the first that lets it in. For example:
-
-```
-host=node1.example.com,node2.example.com,node3.example.com port=5433 dbname=orders user=orders
-sslmode=verify-ca sslrootcert=ca.crt sslcert=orders-app.crt sslkey=orders-app.key connect_timeout=2
-```
-
-`verify-ca`, because the server certificate names `replication.dnsNames`, not the nodes. With the node names in `replication.dnsNames`, use `verify-full`.
-
-A stopped node does not refuse, so pgx waits for `connect_timeout` before it moves on: while a node listed first is down, each new connection takes that long. A node whose instance is not ready refuses at once.
-
-Reads on the read port can be slightly behind the primary: a commit waits for one replica, and the other replica can be a few milliseconds behind, or more while it is slow or cut off (see [Writes, reads and failover](#writes-reads-and-failover)).
+A client outside the cluster uses rw on 5432 of every node and turns to the read port only while no rw address takes a connection. For pgx and GORM, the package `pgfallback` does that; [pgfallback.md](pgfallback.md) shows how, with the connection string to use.
 
 ## Writes, reads and failover
 
