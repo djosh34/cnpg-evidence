@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -116,9 +117,25 @@ type proxy struct {
 	accepted int
 }
 
+// Proxy ports come from below Linux's ephemeral ports (32768 and up), so
+// while a proxy refuses, no other listener or client socket takes its port.
+var lastPort atomic.Int32
+
+const firstPort = 20000
+
 func newProxy(t *testing.T, name, target string, ips ...string) *proxy {
 	p := &proxy{t: t, name: name, ips: ips, target: target, conns: map[net.Conn]bool{}}
-	p.up()
+	// A port some other program holds is skipped.
+	var err error
+	for range 100 {
+		p.port = firstPort + int(lastPort.Add(1))
+		if err = p.change(false, true); err == nil {
+			break
+		}
+	}
+	if err != nil {
+		t.Fatalf("proxy %s: %v", name, err)
+	}
 	t.Cleanup(func() {
 		p.refuse()
 		p.wg.Wait()
@@ -131,15 +148,21 @@ func (p *proxy) addr() string {
 }
 
 func (p *proxy) up() {
-	p.change(false, true)
+	p.set(false, true)
 }
 
 func (p *proxy) silence() {
-	p.change(true, true)
+	p.set(true, true)
 }
 
 func (p *proxy) refuse() {
-	p.change(false, false)
+	p.set(false, false)
+}
+
+func (p *proxy) set(silent, listen bool) {
+	if err := p.change(silent, listen); err != nil {
+		p.t.Errorf("proxy %s: %v", p.name, err)
+	}
 }
 
 func (p *proxy) setTarget(target string) {
@@ -166,7 +189,7 @@ func (p *proxy) hasClient(addr string) bool {
 	return false
 }
 
-func (p *proxy) change(silent, listen bool) {
+func (p *proxy) change(silent, listen bool) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.silent = silent
@@ -179,28 +202,27 @@ func (p *proxy) change(silent, listen bool) {
 			p.closeConn(ln)
 		}
 		p.lns = nil
-		return
+		return nil
 	}
 	if p.lns != nil {
-		return
+		return nil
 	}
+	var lns []net.Listener
 	for _, ip := range p.ips {
 		ln, err := net.Listen("tcp", net.JoinHostPort(ip, strconv.Itoa(p.port)))
 		if err != nil {
-			p.t.Errorf("proxy %s: %v", p.name, err)
-			return
-		}
-		if p.port == 0 {
-			tcp, ok := ln.Addr().(*net.TCPAddr)
-			if !ok {
-				p.t.Errorf("proxy %s: listener address %v", p.name, ln.Addr())
-				return
+			for _, l := range lns {
+				p.closeConn(l)
 			}
-			p.port = tcp.Port
+			return err
 		}
-		p.lns = append(p.lns, ln)
+		lns = append(lns, ln)
+	}
+	p.lns = lns
+	for _, ln := range lns {
 		p.wg.Go(func() { p.accept(ln) })
 	}
+	return nil
 }
 
 func (p *proxy) accept(ln net.Listener) {
