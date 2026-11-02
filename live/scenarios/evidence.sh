@@ -19,6 +19,7 @@ mkdir -p "$OUT"
 wait_for 600 "three ready instances, two streaming replicas" settled
 values=$(yq -o=json "$REPO/desired.yaml")
 k get secret client-ca -n "$NS" -o jsonpath='{.data.ca\.crt}' | base64 -d >"$OUT/client-ca.pem"
+start_monitoring "${NODES[0]}"
 start_client
 
 T0=$(now_ms)

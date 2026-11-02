@@ -16,13 +16,6 @@ BACKUP=live-backup
 RESTORED=pg-restore
 AFTER_BACKUP_SECONDS=30  # the client goes on this long after the backup
 
-backup_completed() {
-  local phase
-  phase=$(k get backup "$BACKUP" -n "$NS" -o jsonpath='{.status.phase}')
-  [[ $phase != failed ]] || fail "backup $BACKUP failed: $(k get backup "$BACKUP" -n "$NS" -o jsonpath='{.status.error}')"
-  [[ $phase == completed ]] || { echo "backup phase: ${phase:-none}" >&2; return 1; }
-}
-
 # WAL file $2 of instance $1 is archived.
 archived() {
   [[ $(psql_on "$1" -c "select coalesce(last_archived_wal >= '$2' collate \"C\", false) from pg_stat_archiver") == t ]] ||
@@ -30,13 +23,14 @@ archived() {
 }
 
 wait_for 600 "three ready instances, two streaming replicas" settled
+start_monitoring "${NODES[0]}"
 start_client
 
 T0=$(now_ms)
 k cnpg backup "$CLUSTER" -n "$NS" --backup-name "$BACKUP" \
   --method plugin --plugin-name barman-cloud.cloudnative-pg.io >/dev/null
 log "backup $BACKUP started"
-wait_for 600 "backup $BACKUP completed" backup_completed
+wait_for 600 "backup $BACKUP completed" backup_completed "$BACKUP"
 BACKED_UP=$(now_ms)
 sleep "$AFTER_BACKUP_SECONDS"
 wait_back

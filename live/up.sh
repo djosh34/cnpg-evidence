@@ -7,8 +7,9 @@
 # docs/samples.md says, and the script checks that it does. Only
 # local-path-provisioner runs one pod.
 #
-# Also builds live/client and installs kubectl cnpg into $LIVE_WORK/bin, and
-# writes a client certificate for orders-app.test into $LIVE_WORK/certs.
+# Also builds live/client and installs kubectl cnpg into $LIVE_WORK/bin,
+# writes a client certificate for orders-app.test into $LIVE_WORK/certs, and
+# starts a first backup to the store.
 #
 # Needs docker, go, helm, kubectl and curl, and an empty docker: no network
 # "live" and no containers named k3s-1 to k3s-3 or s3.
@@ -325,6 +326,10 @@ main() {
   wait_for 600 "three ready instances, two streaming replicas" settled
   write_client_certificate
   check_placement
+  # The scenario's monitoring waits for it to complete.
+  k cnpg backup "$CLUSTER" -n "$NS" --backup-name "$FIRST_BACKUP" \
+    --method plugin --plugin-name barman-cloud.cloudnative-pg.io >/dev/null
+  log "backup $FIRST_BACKUP started"
   k get pods -n "$NS" -l "cnpg.io/cluster=$CLUSTER,cnpg.io/podRole=instance" \
     -o custom-columns='NAME:.metadata.name,NODE:.spec.nodeName,IMAGE:.spec.containers[?(@.name=="postgres")].image'
   log "ready"

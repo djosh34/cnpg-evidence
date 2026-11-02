@@ -13,3 +13,6 @@ store-hang
 backup-restore
 rejoin-from-archive
 replica-not-streaming
+exporter-node-loss
+lag-and-stall
+lag-after-primary-change

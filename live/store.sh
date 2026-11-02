@@ -76,6 +76,7 @@ hold_and_restore() {
 }
 
 wait_for 600 "three ready instances, two streaming replicas" settled
+start_monitoring "$(instances | awk -v p="$(primary)" '$1 != p {print $2; exit}')"
 start_client
 
 summary "### store-$STORE_MODE, writer $WRITER"

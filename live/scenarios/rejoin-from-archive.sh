@@ -35,13 +35,15 @@ timeout 300 helm upgrade "$CLUSTER" "$REPO/samples/chart" --namespace "$NS" \
   -f "$REPO/desired.yaml" -f "$LIVE_DIR/values.yaml" --set cluster.walKeepSize="$KEEP" >/dev/null
 wait_for 300 "wal_keep_size $KEEP on every instance" wal_keep_size_is "$KEEP"
 wait_for 600 "three ready instances, two streaming replicas" settled
+# The replica whose node stops first, and the node that never stops.
+p=$(primary)
+replica=$(instances | awk -v p="$p" '$1 != p {print $1; exit}')
+start_monitoring "$(instances | awk -v p="$p" -v r="$replica" '$1 != p && $1 != r {print $2; exit}')"
 start_client
 
 summary "### rejoin-from-archive, writer $WRITER, wal_keep_size $KEEP"
 
 # 1. A replica.
-p=$(primary)
-replica=$(instances | awk -v p="$p" '$1 != p {print $1; exit}')
 node=$(node_of "$replica")
 use_api_of "$(other_node "$node")"
 T0=$(now_ms)

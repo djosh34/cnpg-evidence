@@ -40,6 +40,8 @@ p=$(primary)
 replica=$(instances | awk -v p="$p" '$1 != p {print $1; exit}')
 node=$(node_of "$replica")
 use_api_of "$(other_node "$node")"
+start_monitoring "$(other_node "$node")"
+expect_alert CNPGReplicaDown "$replica"
 start_client
 
 T0=$(now_ms)

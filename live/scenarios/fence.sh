@@ -42,6 +42,7 @@ p=$(primary)
 replica=$(instances | awk -v p="$p" '$1 != p {print $1; exit}')
 WANT=$(ident_of "$replica")
 ident_back "$p" || fail "$p and $replica have different pg_ident lines before the fence"
+start_monitoring "${NODES[0]}"
 start_client
 
 T0=$(now_ms)

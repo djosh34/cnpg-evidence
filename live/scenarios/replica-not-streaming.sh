@@ -31,26 +31,13 @@ not_in_replication() {
   [[ $n == 0 ]] || { echo "$1 is in the primary's pg_stat_replication" >&2; return 1; }
 }
 
-# Prometheus has $1 series of query $2.
-prom_count() {
-  local result n
-  result=$(prom_query "$2") || return 1
-  n=$(jq '.data.result | length' <<<"$result")
-  [[ $n == "$1" ]] || { echo "$n series of $2, not $1" >&2; return 1; }
-}
-
-alert_resolved() {
-  local alerts
-  alerts=$(firing_alerts) || return 1
-  ! grep -qxF "$1 $2" <<<"$alerts" || { echo "$1 still fires for $2" >&2; return 1; }
-}
-
 wait_for 600 "three ready instances, two streaming replicas" settled
-start_prometheus
+start_monitoring "${NODES[0]}"
 wait_for 300 "Prometheus seeing two streaming replicas" prom_count 2 'cnpg_sample:replica_streaming'
 p=$(primary)
 replica=$(instances | awk -v p="$p" '$1 != p {print $1; exit}')
 node=$(node_of "$replica")
+expect_alert CNPGReplicaDown "$replica"
 start_client
 
 T0=$(now_ms)
