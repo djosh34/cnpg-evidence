@@ -3,8 +3,8 @@
 # alerts (alertmanager.yaml). docs/monitoring.md lists the scrape targets and
 # the labels the rules expect.
 #
-# The critical alerts are the conditions of the dashboard's Healthy tile: it
-# counts the same expressions with the same thresholds.
+# The dashboard's Healthy tile counts the firing critical alerts, and a tile
+# is red only while the critical alert it shows fires.
 groups:
   - name: cnpg-sample
     rules:
@@ -78,9 +78,12 @@ groups:
         annotations:
           summary: Instance {{ $labels.pod }} of {{ $labels.namespace }}/{{ $labels.cluster }} does not stream from the primary or reports no metrics.
 
+      # cnpg_replica_lag_seconds comes from the chart's query on each replica:
+      # 0 when it has replayed all the WAL its primary reported, else the age
+      # of the last transaction it replayed.
       - alert: CNPGReplicaLag
         expr: |
-          max by (namespace, cluster, pod) (cnpg_pg_replication_lag) > 15
+          max by (namespace, cluster, pod) (cnpg_replica_lag_seconds) > 15
           and on (namespace, cluster) cnpg_sample:database
         for: 2m
         labels:
@@ -113,33 +116,39 @@ groups:
           summary: Backups of {{ $labels.namespace }}/{{ $labels.cluster }} fail or are too old.
           description: The last backup is older than 26 h or missing, the last backup failed, or WAL archiving fails.
 
-      # The used share of each volume of each instance. PVC names are
-      # <cluster>-<serial>, with -wal or -tbs-<name> for WAL and tablespace
-      # volumes.
-      - record: cnpg_sample:volume_used_ratio
+      # The used share of the disk each instance keeps its data on, from the
+      # kubelet's stats of its data volume, the PVC named like the pod. For a
+      # local-path volume the kubelet reports the node's filesystem the volume
+      # is on. With the node the kubelet's scrape adds.
+      - record: cnpg_sample:data_disk_used_ratio
         expr: |
-          max by (namespace, cluster, persistentvolumeclaim) (
+          max by (namespace, cluster, pod, node) (
             label_replace(
-              kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes,
-              "cluster", "$1", "persistentvolumeclaim", "(.+)-[0-9]+(-wal|-tbs-.+)?")
+              label_replace(
+                kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes,
+                "pod", "$1", "persistentvolumeclaim", "(.+-[0-9]+)"),
+              "cluster", "$1", "pod", "(.+)-[0-9]+")
             and on (namespace, cluster) cnpg_sample:database
           )
 
-      - alert: CNPGVolumeFull
-        expr: cnpg_sample:volume_used_ratio > 0.8
+      # Kubernetes evicts pods from a node from about 85 % used: by default
+      # the kubelet keeps 10 % of the node's filesystem and 15 % of the image
+      # filesystem free, and on k3s both are the disk local-path uses.
+      - alert: CNPGDataDiskFull
+        expr: cnpg_sample:data_disk_used_ratio > 0.7
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: Volume {{ $labels.persistentvolumeclaim }} of {{ $labels.namespace }}/{{ $labels.cluster }} is {{ $value | humanizePercentage }} full.
+          summary: The data disk of instance {{ $labels.pod }} of {{ $labels.namespace }}/{{ $labels.cluster }} on node {{ $labels.node }} is {{ $value | humanizePercentage }} full.
 
-      - alert: CNPGVolumeFull
-        expr: cnpg_sample:volume_used_ratio > 0.9
+      - alert: CNPGDataDiskFull
+        expr: cnpg_sample:data_disk_used_ratio > 0.8
         for: 5m
         labels:
           severity: critical
         annotations:
-          summary: Volume {{ $labels.persistentvolumeclaim }} of {{ $labels.namespace }}/{{ $labels.cluster }} is {{ $value | humanizePercentage }} full.
+          summary: The data disk of instance {{ $labels.pod }} of {{ $labels.namespace }}/{{ $labels.cluster }} on node {{ $labels.node }} is {{ $value | humanizePercentage }} full.
 
       # When the chart's Certificates <cluster>-server and <cluster>-replication
       # expire, as cert-manager reports it. 0 means not yet issued.
@@ -217,3 +226,22 @@ groups:
         annotations:
           summary: Metrics of instance {{ $labels.pod }} of {{ $labels.namespace }}/{{ $labels.cluster }} are missing.
           description: Its exporter answers without the metrics of its queries, or the compliance query fails, for example without its grants.
+
+  # Evaluated every 5 s, with the exporter scraped at least as often, so a
+  # wait of 10 s is seen and a shorter one is not.
+  - name: cnpg-sample-writes
+    interval: 5s
+    rules:
+      # Sessions on the primary that wait for a synchronous standby to confirm
+      # their commit, from the chart's query: every commit waits while no
+      # standby confirms.
+      - alert: CNPGWritesBlocked
+        expr: |
+          max by (namespace, cluster, pod) (cnpg_sync_replication_waiting) > 0
+          and on (namespace, cluster) cnpg_sample:database
+        for: 10s
+        labels:
+          severity: critical
+        annotations:
+          summary: Commits on {{ $labels.pod }} of {{ $labels.namespace }}/{{ $labels.cluster }} wait for a synchronous standby.
+          description: "{{ $value }} sessions wait for a standby to confirm their commit. Reads still work."

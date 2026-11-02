@@ -1,6 +1,6 @@
 # Live scenarios
 
-The scripts in `live/` start the samples on a three-node k3s cluster in docker and run scenarios against it: nodes lost, a replica restart during a primary loss, a rollout, switchovers, a fence, a broken object store, a backup and restore, replicas that rejoin from the WAL the primary keeps or from the store, a replica that stops streaming, the evidence scripts. Each failure scenario checks that the cluster recovers by itself, that writes come back in time and that no acknowledged commit is lost, and writes its times to the job summary. The `live` workflow runs them on GitHub's runners, one job and one cluster per scenario.
+The scripts in `live/` start the samples on a three-node k3s cluster in docker and run scenarios against it: nodes lost, a replica restart during a primary loss, a rollout, switchovers, a fence, a broken object store, a backup and restore, replicas that rejoin from the WAL the primary keeps or from the store, a replica that stops streaming, a replica that falls behind and commits that wait, the evidence scripts. Each failure scenario checks that the cluster recovers by itself, that writes come back in time, that no acknowledged commit is lost and that exactly the expected alerts fire, and writes its times to the job summary. The `live` workflow runs them on GitHub's runners, one job and one cluster per scenario.
 
 ## Files
 
@@ -9,7 +9,7 @@ The scripts in `live/` start the samples on a three-node k3s cluster in docker a
 | [`live/up.sh`](../live/up.sh) | Starts the cluster and installs the samples (see [The cluster](#the-cluster)) |
 | [`live/node-init.sh`](../live/node-init.sh) | The first process of each node container: runs k3s and starts it again when it exits |
 | [`live/values.yaml`](../live/values.yaml) | The chart values on top of `desired.yaml`: the S3 store's address |
-| [`live/lib.sh`](../live/lib.sh) | Functions the scenarios share: bounded waits, the cluster's state, the client, the checks and the summary |
+| [`live/lib.sh`](../live/lib.sh) | Functions the scenarios share: bounded waits, the cluster's state, the client, the monitoring stack, the checks and the summary |
 | [`live/client/`](../live/client) | The writer and the read probes, a small Go program (see [The writer and the read probes](#the-writer-and-the-read-probes)) |
 | [`live/scenarios.txt`](../live/scenarios.txt) | The list of scenarios |
 | [`live/scenarios/`](../live/scenarios) | One script per scenario |
@@ -31,7 +31,7 @@ The scripts in `live/` start the samples on a three-node k3s cluster in docker a
 - `samples/chart` as release `pg` in `databases`, with `desired.yaml` and `live/values.yaml`. The instances run the chart's default image, the Hummingbird PostgreSQL image pinned by digest, as uid and gid 999.
 - One pod of every service on every node, as [samples.md](samples.md#one-copy-of-every-service-per-node) says. `up.sh` checks that CoreDNS, Traefik, metrics-server, the cert-manager controller, webhook and CA injector, the operator and the plugin each run one ready pod on each of the three nodes, and that local-path-provisioner runs one.
 
-It also builds `live/client`, installs `kubectl cnpg` 1.30.1 (pinned by checksum) into `$LIVE_WORK/bin`, and writes a client certificate for `orders-app.test`, which logs in as `orders`, into `$LIVE_WORK/certs`. `$LIVE_WORK` is `/tmp/live` by default and also holds a kubeconfig for each node's API server and the client's logs. The scripts use only those kubeconfigs, never the caller's `KUBECONFIG`.
+It also builds `live/client`, installs `kubectl cnpg` 1.30.1 (pinned by checksum) into `$LIVE_WORK/bin`, starts a first backup to the store, as a cluster with scheduled backups has one, and writes a client certificate for `orders-app.test`, which logs in as `orders`, into `$LIVE_WORK/certs`. `$LIVE_WORK` is `/tmp/live` by default and also holds a kubeconfig for each node's API server and the client's logs. The scripts use only those kubeconfigs, never the caller's `KUBECONFIG`.
 
 Every wait in `live/` has a limit and fails with a message that says what it waited for.
 
@@ -44,9 +44,20 @@ Every wait in `live/` has a limit and fails with a message that says what it wai
 
 A scenario runs the writer when `WRITER` is `on`, the default. With `WRITER=off` it writes nothing until the event is over, then makes one write through the rw LoadBalancer, which must succeed. The read probes run in both modes.
 
+## The monitoring stack
+
+Every scenario runs the samples' monitoring, as [monitoring.md](monitoring.md) describes it, in the namespace `otel`, which the chart's NetworkPolicy admits to the metrics port:
+
+- Prometheus with `samples/monitoring/rules.yaml`, scraping every instance's exporter every 5 s with the scrape of [monitoring.md](monitoring.md#scrape-targets-and-labels), the kubelets and their cAdvisor, and cert-manager.
+- Alertmanager with `samples/monitoring/alertmanager.yaml`, which gets Prometheus's alerts. Its receiver's address does not exist, so it sends nothing.
+
+Both run on a node the scenario does not stop, as a rule evaluator outside the database's nodes would. Before the event the scenario waits until Prometheus has every instance's query metrics, the data disks and the chart's two certificates, and the first backup is done.
+
+Each scenario lists the alerts it expects, by alert and instance, and the alerts it allows: alerts that are true when they fire, but whether they fire depends on how long a step of the event takes compared with the alert's waiting time, such as `CNPGWritesBlocked` while a new primary waits for a standby. At its end every alert must have resolved within 3 minutes, every expected alert must have fired since the stack started, and no other alert but the allowed ones. Then every query of `samples/monitoring/dashboard.json`, with the dashboard's variables set to the cluster, must return data for each panel. The summary lists the alerts that fired.
+
 ## Scenarios
 
-Each scenario first waits until all three instances are ready and the primary streams to both replicas. Then, in both modes:
+Each scenario first waits until all three instances are ready and the primary streams to both replicas, and starts the monitoring stack. Then, in both modes:
 
 - Every instance must be ready and streaming again within 10 minutes of the event's end, and then every node's read port must answer within a minute.
 - Every acknowledged commit, the final write included, must be in `live_writes` on the primary afterwards.
@@ -72,7 +83,10 @@ Without the writer, a former primary that rewound onto an idle new primary can w
 | `store-refuse`, `store-hang` | Twice, the store breaks and the primary switches WAL twice, so WAL waits for the archive; then the event. First the primary's node stops with `docker stop -t 0` and starts again 120 s later; then `kubectl cnpg promote` to a replica. The store comes back 60 s after the node started, and in the switchover 60 s after the new primary took over. | After each event, within 15 min, another instance is primary with a standby streaming from it; with the writer, it takes a write. With the writer, writes stop for at most 15 min. The summary gives the times of both events. |
 | `backup-restore` | `kubectl cnpg backup` to the store; the client stops 30 s after it completed, and the primary switches WAL and archives it. Then the chart restores a new cluster `pg-restore` from the store, as [samples.md](samples.md#restore-into-a-new-cluster) says. | The backup completes within 10 min. `pg-restore` has three ready instances with two streaming replicas within 15 min, every acknowledged commit, and `cnpg_compliance_violations` 0 for each of its 4 checks on every instance. |
 | `rejoin-from-archive` | With `wal_keep_size` set to 64MB by `helm upgrade`: a replica's node stops, the primary writes 256 MB of WAL and makes checkpoints until the WAL file it wrote at the stop is gone from its `pg_wal`, and the node starts. Then the same with the primary's node: once another instance is primary, it writes 256 MB until its WAL file of the moment it took over is gone. | Both rejoin from the store: every instance is ready and streaming within 10 min of each start. With the writer, the new primary takes a write within 180 s. |
-| `replica-not-streaming` | Prometheus with `samples/monitoring/rules.yaml` scrapes every instance, as [monitoring.md](monitoring.md#scrape-targets-and-labels) says, from the namespace `otel`. A firewall rule in a replica pod's network namespace rejects its connections to 5432, and the primary ends its WAL sender; its exporter keeps answering. The rule goes once the alert fires. | `CNPGReplicaDown` fires for the replica within 8 min while Prometheus still gets its metrics, and resolves within 2 min after the replica streams again. The summary lists the alerts that fired. |
+| `replica-not-streaming` | A firewall rule in a replica pod's network namespace rejects its connections to 5432, and the primary ends its WAL sender; its exporter keeps answering. The rule goes once the alert fires. | `CNPGReplicaDown` fires for the replica within 8 min while Prometheus still gets its metrics, and resolves within 2 min after the replica streams again. |
+| `exporter-node-loss` | A replica's node stops with `docker stop -t 0` for 400 s, then the primary's node for 400 s: each longer than the 5 min after which Kubernetes marks the lost pod for deletion. While `CNPGReplicaDown` fires for the lost replica, the scenario sends Alertmanager `CNPGMetricsMissing` for that replica and for another instance. | For each instance that is left, in every 15 s in which its exporter answers, at least one answer has the chart's `cnpg_compliance_violations` and CNPG's `cnpg_pg_replication_in_recovery`, and the exporter never goes 60 s without answering; the summary gives each instance's answers without them and its failed scrapes. `CNPGReplicaDown` fires for each lost instance and reaches Alertmanager, which mutes `CNPGMetricsMissing` for the lost replica and not for the other. The primary stays where it is while the replica's node is down. |
+| `lag-and-stall` | Replay pauses on a replica and the primary commits a row; once the alert fires, replay resumes. Then one transaction on the primary runs a 15 s statement and commits. Then replay pauses on both replicas, so a commit on the primary waits for a standby to apply it; once the alert fires, replay resumes. These commits are made in both modes. | `CNPGReplicaLag` fires for the replica within 5 min, reaches Alertmanager and resolves within 2 min of the resume. The 15 s statement does not fire `CNPGWritesBlocked`. The stalled commit fires `CNPGWritesBlocked` for the primary within 2 min, reaches Alertmanager, succeeds after the resume, and the alert resolves within 2 min. |
+| `lag-after-primary-change` | `kubectl cnpg promote` to a replica; then `kubectl cnpg fencing on` the new primary and `fencing off` 30 s later. | After each, once every instance is ready and streaming, every replica's `cnpg_replica_lag_seconds` stays under 1 s for 330 s, longer than the 5 min of false lag CNPG's `cnpg_pg_replication_lag` showed. `CNPGReplicaLag` does not fire. The summary gives the most each metric reported. |
 | `evidence` | `desired.sh`, `evidence.sh` with the `client-ca` Secret's certificate as `--ca`, and `prove.sh` as root on every node, through `/proc/<pid>/root` of the node's container. | `evidence.sh` finds no violation; on every node each `prove.sh` attempt has the value of the desired document; `cnpg_compliance_violations` is 0 for each of its 4 checks on every instance, read through `kubectl port-forward`. |
 
 ## Run in GitHub Actions
@@ -90,7 +104,7 @@ A run has one job per scenario, each on its own `ubuntu-24.04` runner with its o
 
 ## Run one locally
 
-On a Linux host with docker, go, helm, kubectl and curl, and room for the cluster (`replica-not-streaming` also needs jq, and the `evidence` scenario yq, jq, openssl, psql, python3, setpriv and sudo): about 4 GB of memory and 10 GB of disk. The docker network `live`, its subnet and the container names must be free.
+On a Linux host with docker, go, helm, kubectl, curl and jq, and room for the cluster (the `evidence` scenario also needs yq, openssl, psql, python3, setpriv and sudo): about 4 GB of memory and 10 GB of disk. The docker network `live`, its subnet and the container names must be free.
 
 ```bash
 bash live/up.sh
@@ -109,4 +123,4 @@ rm -rf /tmp/live
 
 ## Add a scenario
 
-Add a script `live/scenarios/<name>.sh` that sources `live/lib.sh`, and the name to `live/scenarios.txt`. Most scenarios follow the shape of the existing ones: wait until `settled`, `start_client`, set `T0` and start the event, wait for what must happen with `wait_for`, then `wait_back`, `finish`, and the summary rows.
+Add a script `live/scenarios/<name>.sh` that sources `live/lib.sh`, and the name to `live/scenarios.txt`. Most scenarios follow the shape of the existing ones: wait until `settled`, `start_monitoring` on a node the scenario does not stop, `expect_alert` for each alert that must fire and `allow_alert` for each that may, `start_client`, set `T0` and start the event, wait for what must happen with `wait_for`, then `wait_back`, `finish`, and the summary rows.

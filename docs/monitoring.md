@@ -6,17 +6,17 @@ Alert rules, an Alertmanager configuration and a Grafana dashboard for the sampl
 
 | File | What it is |
 |---|---|
-| [`rules.yaml`](../samples/monitoring/rules.yaml) | The ten alerts as Prometheus rules, and the databases they watch |
+| [`rules.yaml`](../samples/monitoring/rules.yaml) | The eleven alerts as Prometheus rules, and the databases they watch |
 | [`rules.test.yaml`](../samples/monitoring/rules.test.yaml) | Unit tests of the rules, for `promtool test rules` |
 | [`alertmanager.yaml`](../samples/monitoring/alertmanager.yaml) | The route and inhibition rules for those alerts |
 | [`dashboard.json`](../samples/monitoring/dashboard.json) | The Grafana dashboard (see [Dashboard](#dashboard)) |
-| [`dashboard.py`](../samples/monitoring/dashboard.py) | Writes `dashboard.json`; its Healthy tile from the critical alerts of `rules.yaml` |
-| [`check.sh`](../samples/monitoring/check.sh) | Checks the rules and the Alertmanager configuration with `promtool` and `amtool`, runs the unit tests, and checks that `dashboard.json` is up to date and that its Healthy tile counts what the critical alerts see |
+| [`dashboard.py`](../samples/monitoring/dashboard.py) | Writes `dashboard.json` |
+| [`check.sh`](../samples/monitoring/check.sh) | Checks the rules and the Alertmanager configuration with `promtool` and `amtool`, runs the unit tests, and checks that `dashboard.json` is up to date and that its Healthy tile and red tiles follow the firing critical alerts |
 
 ## Set up
 
 1. In `rules.yaml`, set the namespace and cluster name in the `cnpg_sample:database` rule, one rule per CNPG cluster. Every alert covers only the clusters listed there. The thresholds are in the expressions of the alerts, each in one place.
-2. Load `rules.yaml` into the rule evaluator: Prometheus (`rule_files:`) or the Mimir ruler (`mimirtool rules load samples/monitoring/rules.yaml --address=<Mimir URL> --id=<tenant>`). The evaluator sends firing alerts to Alertmanager. Alertmanager evaluates no rules; it only groups, mutes and sends them.
+2. Load `rules.yaml` into the rule evaluator: Prometheus (`rule_files:`) or the Mimir ruler (`mimirtool rules load samples/monitoring/rules.yaml --address=<Mimir URL> --id=<tenant>`). The evaluator sends firing alerts to Alertmanager. Alertmanager evaluates no rules; it only groups, mutes and sends them. The group `cnpg-sample-writes` sets its own interval of 5 s, so `CNPGWritesBlocked` sees a wait of 10 s; scrape the exporter every 5 s too (see below).
 3. Copy the route under `routes:` and the `inhibit_rules` of `alertmanager.yaml` into the Alertmanager configuration, and set the receiver.
 4. Run `bash samples/monitoring/check.sh` after a change. It needs docker, python3 and [yq](https://github.com/mikefarah/yq).
 
@@ -27,16 +27,17 @@ The rules read three sources, under the metric names the exporters give them. A 
 | Source | Metrics the rules read | Labels |
 |---|---|---|
 | CNPG's metrics exporter, `https://<pod address>:9187/metrics` on every instance pod | `cnpg_*`, and `barman_cloud_cloudnative_pg_io_*`, which the barman-cloud plugin reports through it | The scrape adds `namespace`, `pod`, `cluster` (the pod label `cnpg.io/cluster`) and `node` |
-| The kubelet's `/metrics` on every node | `kubelet_volume_stats_used_bytes`, `kubelet_volume_stats_capacity_bytes` | Their own `namespace` and `persistentvolumeclaim`; the scrape adds `node` |
+| The kubelet's `/metrics` on every node | `kubelet_volume_stats_used_bytes`, `kubelet_volume_stats_capacity_bytes` | Their own `namespace` and `persistentvolumeclaim`; the scrape adds `node`, the node's name |
 | cert-manager's controller, port 9402 | `certmanager_certificate_expiration_timestamp_seconds` | Their own `namespace` and `name` of the Certificate, kept as they are (`honor_labels: true`) |
 
 `cluster` is the CNPG cluster's name; it names the database in every rule. The rules need no other source.
 
-For the exporter, a Prometheus scrape that adds the four labels. The OTel collector's `prometheus` receiver takes the same `scrape_configs`. The chart's NetworkPolicy admits 9187 only from the OTel namespace.
+For the exporter, a Prometheus scrape that adds the four labels, every 5 s: `CNPGWritesBlocked` must see a wait of 10 s, and the chart sets `metricsQueriesTTL: 0s`, so each scrape runs the queries anew. The `node` label names each instance by its node on the dashboard. The OTel collector's `prometheus` receiver takes the same `scrape_configs`. The chart's NetworkPolicy admits 9187 only from the OTel namespace.
 
 ```yaml
 scrape_configs:
   - job_name: cnpg
+    scrape_interval: 5s
     scheme: https
     tls_config:
       ca_file: /etc/cnpg/ca.crt  # the CA of the server certificate
@@ -60,8 +61,9 @@ scrape_configs:
 | `CNPGDatabaseDown` | critical | No instance reports a running primary, and none answers without saying whether it is one: PostgreSQL is down or fenced on every instance, no replica has been promoted yet, or the primary's metrics do not arrive | 3 min |
 | `CNPGReplicaDown` | critical | An instance seen in the last day, other than the primary, is not in the primary's `pg_stat_replication`, or reports no metrics: the instance is down, does not stream, or its scrape fails | 5 min |
 | `CNPGReplicaLag` | critical | A replica is more than 15 s behind (see [Replica lag](#replica-lag)) | 2 min |
+| `CNPGWritesBlocked` | critical | Sessions on the primary wait for a synchronous standby to confirm their commit (see [Writes blocked](#writes-blocked)) | 10 s |
 | `CNPGBackupFailing` | critical | The last backup is older than 26 h or there is none, the last backup failed, or WAL archiving fails on the primary | 10 min |
-| `CNPGVolumeFull` | warning, critical | A volume of an instance is more than 80 % or 90 % used | 5 min |
+| `CNPGDataDiskFull` | warning, critical | The disk an instance keeps its data on is more than 70 % or 80 % used (see [Data disks](#data-disks)) | 5 min |
 | `CNPGCertificateExpiring` | warning, critical | The chart's server or replication certificate (`<cluster>-server`, `<cluster>-replication`) expires within 14 or 3 days | 15 min |
 | `CNPGConnectionsHigh` | critical | An instance has more than 90 % of `max_connections` open | 5 min |
 | `CNPGTransactionIDWraparound` | critical | The oldest transaction ID of a database is more than 1 billion transactions old; PostgreSQL stops at about 2.1 billion | 15 min |
@@ -70,49 +72,60 @@ scrape_configs:
 
 The 26 h backup age fits a daily backup; change it to the schedule. CPU, memory, deadlocks, long transactions and primary changes are on the dashboard only.
 
-The critical alerts are also the list of conditions for the dashboard's Healthy tile, which counts the same expressions with the same thresholds. `check.sh` tests that on every case of `rules.test.yaml`.
+The dashboard's Healthy tile counts the critical alerts that fire. `check.sh` tests that on every case of `rules.test.yaml`.
 
 ### Replica lag
 
-Each replica reports `cnpg_pg_replication_lag`: the seconds since the last transaction it replayed, or 0 once it has replayed everything it received. Every commit waits for one replica only, so the other one can fall behind while writes go on, and it still serves reads on its node's read port. `CNPGReplicaLag` fires when a replica stays more than 15 s behind for 2 minutes.
+The chart's query on each replica reports `cnpg_replica_lag_seconds`: 0 when the replica has replayed all the WAL its primary last reported (`latest_end_lsn` of `pg_stat_wal_receiver` is not past `pg_last_wal_replay_lsn()`), otherwise the age of the last transaction it replayed. The primary reports none. Every commit waits for one replica only, so the other one can fall behind while writes go on, and it still serves reads on its node's read port. `CNPGReplicaLag` fires when a replica stays more than 15 s behind for 2 minutes.
 
-A replica that receives nothing reports 0 too. `CNPGReplicaDown` covers that case.
+A replica whose WAL receiver does not run, for example while there is no primary or while it catches up from the object store, reports the age of its last transaction. `CNPGReplicaDown` mutes `CNPGReplicaLag` of a replica that does not stream, and `CNPGDatabaseDown` mutes it once no primary has run for 3 minutes.
+
+### Writes blocked
+
+The chart's query reports `cnpg_sync_replication_waiting`: the sessions that wait right now for a standby to confirm their commit (`wait_event = 'SyncRep'` in `pg_stat_activity`). Every commit waits for one other instance, so while no standby confirms, every write waits; reads still work. `CNPGWritesBlocked` fires when sessions wait at every scrape for 10 s. A long statement does not count: a session counts only while its commit waits, so a commit that waits a moment after a long statement does not fire it.
+
+### Data disks
+
+`cnpg_sample:data_disk_used_ratio` is the used share of the disk each instance keeps its data on, from the kubelet's stats of its data volume (the PVC named like the pod), with the node's name. For a `local-path` volume the kubelet reports the whole filesystem of the node the volume is on, so it is that disk that fills. `CNPGDataDiskFull` warns at 70 % and is critical at 80 %: on k3s the kubelet starts to evict pods from a node at about 85 %, as by default it keeps 10 % of the node's filesystem and 15 % of the image filesystem free, and both are that same disk. The PVC's requested size is not shown, as `local-path` does not enforce it.
 
 ## Dashboard
 
-`dashboard.json` is a Grafana dashboard (Grafana 12 or later) for one CNPG cluster: a status strip, the state of each instance over time, then rows for workload, replication, certificates and rule checks, and nodes. Storage, backups, WAL and vacuum are in a collapsed row. Instances are named by the node they run on; purple marks the primary.
+`dashboard.json` is a Grafana dashboard (Grafana 12 or later) for one CNPG cluster: a status strip, the state of each instance over time, then rows for workload, replication, rule checks and nodes. Backups, WAL and vacuum are in a collapsed row. Instances are named by the node they run on; purple marks the primary.
 
-To import it, in Grafana open *Dashboards*, *New*, *Import*, and upload `dashboard.json`. It expects a Prometheus-type data source, such as Prometheus or Mimir, that holds the metrics below; pick it in the *Data source* variable at the top. The *Namespace* and *Cluster* variables select the CNPG cluster by the `namespace` and `cluster` labels.
+To import it, in Grafana open *Dashboards*, *New*, *Import*, and upload `dashboard.json`. It expects a Prometheus-type data source, such as Prometheus or Mimir, that holds the metrics of the rules' sources and what the rule evaluator writes: the series `rules.yaml` records (`cnpg_sample:*`) and `ALERTS`, the alerts that are pending or firing. Prometheus and the Mimir ruler write both into the data they evaluate. Pick the data source in the *Data source* variable at the top. The *Namespace* and *Cluster* variables select the CNPG cluster by the `namespace` and `cluster` labels.
 
-The dashboard reads the sources of the rules, with the same labels, and two more:
+The dashboard reads one more source:
 
 | Source | Metrics the dashboard reads | Labels |
 |---|---|---|
-| The kubelet's `/metrics/cadvisor` on every node | `container_cpu_usage_seconds_total`, `container_memory_working_set_bytes`, `container_fs_usage_bytes`, `container_fs_limit_bytes`, `machine_cpu_cores`, `machine_memory_bytes` | Their own `namespace`, `pod`, `container`, `id` and `device`; the scrape adds `node` |
-| kube-state-metrics, with the `leases` resource | `kube_lease_owner`: which pod holds CNPG's primary lease, named after the cluster | Their own `namespace`, `lease`, `owner_kind` and `lease_holder`, kept as they are (`honor_labels: true`) |
+| The kubelet's `/metrics/cadvisor` on every node | `container_cpu_usage_seconds_total`, `container_memory_working_set_bytes`, `machine_cpu_cores`, `machine_memory_bytes`, for the CPU and memory of each node | Their own `id`; the scrape adds `node` |
 
-The node of each instance comes from cAdvisor's series of its `postgres` container. A primary is an instance that is not in recovery and holds the lease; without lease data the dashboard decides by PostgreSQL alone.
+Red means that a critical alert fires, nothing else; orange that a value passed a warning threshold.
 
-- **Healthy** counts what the critical alerts see now, without their `for` time: `dashboard.py` writes their expressions into the tile, with the database set by the dashboard's variables. Change a critical alert in `rules.yaml`, then run `python3 samples/monitoring/dashboard.py`. The Certificates and Disks tiles cover more than the alerts: every cert-manager certificate and every node disk. One of them can be red while Healthy says Yes.
-- **Writes blocked** is a primary with fewer standbys connected (`cnpg_pg_replication_streaming_replicas`) than the synchronous standbys it needs (`cnpg_collector_sync_replicas{value="expected"}`). A connected standby does not prove that it confirms commits.
-- **Certificates** shows only certificates that cert-manager manages, every one in the Kubernetes cluster. A CA or client certificate supplied as a Secret without a cert-manager Certificate has no expiry metric and does not appear.
+- **Healthy** is the number of critical alerts that fire for the database. An alert fires only once its condition has held for its waiting time, so Healthy stays at Yes while an alert is pending.
+- **Instances** shows each instance by its node: primary, replica, not streaming, PostgreSQL down or fenced. In red, *Down* while `CNPGReplicaDown` fires for it, also when its node is lost and its metrics are gone, and *Writes blocked* while `CNPGWritesBlocked` fires. An instance with no metrics shows only while `CNPGReplicaDown` fires for it.
+- **Writes blocked** is the number of sessions that wait right now for a synchronous standby, `cnpg_sync_replication_waiting`: orange while any wait, red only while `CNPGWritesBlocked` fires.
+- **Replica lag**, **Rule checks**, **Certificates**, **Data disks** and, in the collapsed row, **Last backup** show their value, and turn red only while their critical alert fires: `CNPGReplicaLag`; `CNPGComplianceViolation` or `CNPGMetricsMissing`; `CNPGCertificateExpiring`; `CNPGDataDiskFull`; `CNPGBackupFailing`. Certificates are the chart's server and replication certificates, the two the alert watches. Data disks is the fullest of the instances' data disks.
 - Panels that read metrics only some setups report stay empty without them: the backup panel without the barman-cloud plugin, the rule checks without the [compliance metric](samples.md#compliance-metric).
+
+`check.sh` checks, at every input step of every case of `rules.test.yaml`, also while an alert is pending, that Healthy equals the number of firing critical alerts and that each red tile is red exactly while one of its alerts fires. Change a panel in `dashboard.py`, then run `python3 samples/monitoring/dashboard.py`.
 
 ## One notification per problem
 
-- An alert about the whole database, such as `CNPGDatabaseDown` or `CNPGBackupFailing`, is one alert per database, not one per pod. Alerts that name a pod, volume, certificate or check carry that name.
-- Alertmanager groups by `namespace`, `cluster` and alert name: one notification when the group fires and one when it resolves. A pod or volume that joins a firing group, or a warning that turns critical, sends an update. While the group fires, a reminder comes every 4 h.
+- An alert about the whole database, such as `CNPGDatabaseDown` or `CNPGBackupFailing`, is one alert per database, not one per pod. Alerts that name a pod, certificate or check carry that name.
+- Alertmanager groups by `namespace`, `cluster` and alert name: one notification when the group fires and one when it resolves. A pod that joins a firing group, or a warning that turns critical, sends an update. While the group fires, a reminder comes every 4 h.
 - `CNPGDatabaseDown` mutes the replica, lag, backup and missing-metrics alerts of the same database.
-- `CNPGReplicaDown` mutes `CNPGMetricsMissing` of the same database: while a node is lost, the other instances can stop reporting their query metrics (see below).
-- A critical alert mutes the warning of the same alert and volume or certificate.
+- `CNPGReplicaDown` mutes `CNPGMetricsMissing` and `CNPGReplicaLag` of the same instance.
+- A critical alert mutes the warning of the same alert and instance or certificate.
 
 Alertmanager does not promise exactly one notification. After a restart that lost its stored state, or between Alertmanager peers that cannot reach each other, a notification can come again.
 
 ## What the rules do not see
 
 - `CNPGDatabaseDown` also fires when PostgreSQL runs but the primary's metrics stop arriving. The rules cannot tell the two apart.
-- The exporter can answer without the metrics of its queries. In tests with CNPG 1.30.1, every instance did so from about five minutes after a node was lost, when Kubernetes marked the pod on it for deletion, until the node returned; meanwhile the instances reconciled the `Cluster` many times a second. The rules then cannot tell which instance is the primary, nor read its `pg_stat_replication`. `CNPGReplicaDown` still fires for the lost instance, as its metrics are gone, and `CNPGMetricsMissing` for the others. If the lost node ran the primary and no replica has been promoted, `CNPGDatabaseDown` resolves once the replicas stop reporting their query metrics; only `CNPGReplicaDown` for the old primary is left.
-- In tests with CNPG 1.30.1, after each primary change, replicas that had caught up reported minutes of `cnpg_pg_replication_lag` for about 4 to 5 minutes, while the primary's `cnpg_pg_stat_replication_replay_diff_bytes` for them stayed 0. The cause is not known. On a cluster with few writes, `CNPGReplicaLag` can fire after a failover; that metric on the primary shows whether a replica is really behind.
+- The exporter answers without the metrics of its queries when the `Cluster` changes many times a second: each change gives every instance a new, empty set of query results. CNPG 1.30.1 makes such changes itself while a lost pod is marked for deletion, unless the `Cluster` lists a Secret in `monitoring.customQueriesSecret`, as the chart does. `CNPGMetricsMissing` fires for an instance whose query metrics stay away for 10 minutes.
 - `CNPGReplicaDown` compares the instances seen in the last day with the primary's `pg_stat_replication`, in `cnpg_pg_stat_replication_*`, where CNPG names each replica by its pod in `application_name`. While no instance reports itself as the primary, it sees only instances whose metrics stopped. An instance removed on purpose keeps the alert for a day, until it drops out of the rule's one-day window; silence it in Alertmanager.
 - `CNPGCertificateExpiring` covers only the chart's two Certificates, as cert-manager reports them. Client certificates and the CA in `caSecret` belong to no database in the rules: a cert-manager Certificate for one needs its own rule on `certmanager_certificate_expiration_timestamp_seconds`, and one made without cert-manager has no expiry metric at all.
-- `CNPGVolumeFull` needs a storage driver that reports kubelet volume stats. Volumes of the `local-path` provisioner report the whole filesystem they are on.
+- Right after a node is lost, the scrapes of the other instances' exporters can take longer than 5 s and fail, for up to about 40 s in the sample's tests. The cause is not known. Their metrics are missing for that time; no alert waits less than 3 minutes for missing metrics.
+- On a cluster without writes, a replica that has replayed everything reports the age of its last transaction as soon as its WAL receiver stops. A failover that takes longer than 2 minutes then fires `CNPGReplicaLag` for the replicas, before `CNPGDatabaseDown` mutes it at 3 minutes. Failovers in the sample's tests took less than 2 minutes, except with a broken object store.
+- `CNPGDataDiskFull` needs a storage driver that reports kubelet volume stats, as `local-path` does. It sees only the data volume; a separate WAL or tablespace volume needs its own rule.

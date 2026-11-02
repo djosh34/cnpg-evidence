@@ -1,7 +1,8 @@
 # Unit tests of rules.yaml: promtool test rules rules.test.yaml
 # The input series carry the labels the scrape adds (namespace, cluster, pod).
 rule_files: [rules.yaml]
-evaluation_interval: 1m
+# Every 5 s, as the writes group of rules.yaml.
+evaluation_interval: 5s
 
 tests:
   # pg-1 is the primary, pg-2 and pg-3 stream from it. Nothing fires.
@@ -19,9 +20,10 @@ tests:
       - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-3"}', values: '1x20'}
       - {series: 'cnpg_pg_stat_replication_backend_start{namespace="databases",cluster="pg",pod="pg-1",application_name="pg-2",usename="streaming_replica"}', values: '1000x20'}
       - {series: 'cnpg_pg_stat_replication_backend_start{namespace="databases",cluster="pg",pod="pg-1",application_name="pg-3",usename="streaming_replica"}', values: '1000x20'}
-      - {series: 'cnpg_pg_replication_lag{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x20'}
-      - {series: 'cnpg_pg_replication_lag{namespace="databases",cluster="pg",pod="pg-2"}', values: '1x20'}
-      - {series: 'cnpg_pg_replication_lag{namespace="databases",cluster="pg",pod="pg-3"}', values: '0x20'}
+      - {series: 'cnpg_replica_lag_seconds{namespace="databases",cluster="pg",pod="pg-2"}', values: '1x20'}
+      - {series: 'cnpg_replica_lag_seconds{namespace="databases",cluster="pg",pod="pg-3"}', values: '0x20'}
+      - {series: 'cnpg_sync_replication_waiting{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x20'}
+      - {series: 'cnpg_sync_replication_waiting{namespace="databases",cluster="pg",pod="pg-2"}', values: '0x20'}
       - {series: 'barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace="databases",cluster="pg",pod="pg-1"}', values: '600x20'}
       - {series: 'barman_cloud_cloudnative_pg_io_last_failed_backup_timestamp{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x20'}
       - {series: 'cnpg_pg_stat_archiver_last_archived_time{namespace="databases",cluster="pg",pod="pg-1"}', values: '800x20'}
@@ -29,8 +31,8 @@ tests:
       # A replica does not archive; its archiver numbers do not count.
       - {series: 'cnpg_pg_stat_archiver_last_archived_time{namespace="databases",cluster="pg",pod="pg-2"}', values: '0x20'}
       - {series: 'cnpg_pg_stat_archiver_last_failed_time{namespace="databases",cluster="pg",pod="pg-2"}', values: '100x20'}
-      - {series: 'kubelet_volume_stats_used_bytes{namespace="databases",persistentvolumeclaim="pg-1"}', values: '50x20'}
-      - {series: 'kubelet_volume_stats_capacity_bytes{namespace="databases",persistentvolumeclaim="pg-1"}', values: '100x20'}
+      - {series: 'kubelet_volume_stats_used_bytes{namespace="databases",persistentvolumeclaim="pg-1",node="node-a"}', values: '50x20'}
+      - {series: 'kubelet_volume_stats_capacity_bytes{namespace="databases",persistentvolumeclaim="pg-1",node="node-a"}', values: '100x20'}
       - {series: 'certmanager_certificate_expiration_timestamp_seconds{namespace="databases",name="pg-server"}', values: '7776000x20'}
       - {series: 'cnpg_backends_total{namespace="databases",cluster="pg",pod="pg-1",datname="orders",state="active"}', values: '10x20'}
       - {series: 'cnpg_pg_settings_setting{namespace="databases",cluster="pg",pod="pg-1",name="max_connections"}', values: '100x20'}
@@ -53,21 +55,22 @@ tests:
         exp_samples:
           - {labels: 'cnpg_sample:replica_streaming{namespace="databases",cluster="pg",pod="pg-2"}', value: 1}
           - {labels: 'cnpg_sample:replica_streaming{namespace="databases",cluster="pg",pod="pg-3"}', value: 1}
-      - expr: cnpg_sample:volume_used_ratio
+      - expr: cnpg_sample:data_disk_used_ratio
         eval_time: 5m
         exp_samples:
-          - {labels: 'cnpg_sample:volume_used_ratio{namespace="databases",cluster="pg",persistentvolumeclaim="pg-1"}', value: 0.5}
+          - {labels: 'cnpg_sample:data_disk_used_ratio{namespace="databases",cluster="pg",pod="pg-1",node="node-a"}', value: 0.5}
     alert_rule_test:
       - {eval_time: 20m, alertname: CNPGDatabaseDown}
       - {eval_time: 20m, alertname: CNPGReplicaDown}
       - {eval_time: 20m, alertname: CNPGReplicaLag}
       - {eval_time: 20m, alertname: CNPGBackupFailing}
-      - {eval_time: 20m, alertname: CNPGVolumeFull}
+      - {eval_time: 20m, alertname: CNPGDataDiskFull}
       - {eval_time: 20m, alertname: CNPGCertificateExpiring}
       - {eval_time: 20m, alertname: CNPGConnectionsHigh}
       - {eval_time: 20m, alertname: CNPGTransactionIDWraparound}
       - {eval_time: 20m, alertname: CNPGComplianceViolation}
       - {eval_time: 20m, alertname: CNPGMetricsMissing}
+      - {eval_time: 20m, alertname: CNPGWritesBlocked}
 
   # PostgreSQL is down on every instance: one alert for the database.
   - name: database down
@@ -256,8 +259,8 @@ tests:
   - name: replica lag
     interval: 1m
     input_series:
-      - {series: 'cnpg_pg_replication_lag{namespace="databases",cluster="pg",pod="pg-2"}', values: '0x4 20x10 0x5'}
-      - {series: 'cnpg_pg_replication_lag{namespace="databases",cluster="pg",pod="pg-3"}', values: '15x14'}
+      - {series: 'cnpg_replica_lag_seconds{namespace="databases",cluster="pg",pod="pg-2"}', values: '0x4 20x10 0x5'}
+      - {series: 'cnpg_replica_lag_seconds{namespace="databases",cluster="pg",pod="pg-3"}', values: '15x14'}
     alert_rule_test:
       - {eval_time: 6m, alertname: CNPGReplicaLag}
       - eval_time: 7m
@@ -331,31 +334,35 @@ tests:
               summary: Backups of databases/pg fail or are too old.
               description: The last backup is older than 26 h or missing, the last backup failed, or WAL archiving fails.
 
-  # pg-1 at 85 % warns; pg-2 at 95 % fires both, and Alertmanager mutes the
-  # warning. A volume of another application does not count.
-  - name: volume full
+  # pg-1's disk at 75 % warns; pg-2's at 85 % fires both, and Alertmanager
+  # mutes the warning. A WAL volume and a volume of another application do
+  # not count.
+  - name: data disk full
     interval: 1m
     input_series:
-      - {series: 'kubelet_volume_stats_used_bytes{namespace="databases",persistentvolumeclaim="pg-1"}', values: '85x10 50x5'}
-      - {series: 'kubelet_volume_stats_capacity_bytes{namespace="databases",persistentvolumeclaim="pg-1"}', values: '100x15'}
-      - {series: 'kubelet_volume_stats_used_bytes{namespace="databases",persistentvolumeclaim="pg-2-wal"}', values: '95x10 50x5'}
-      - {series: 'kubelet_volume_stats_capacity_bytes{namespace="databases",persistentvolumeclaim="pg-2-wal"}', values: '100x15'}
-      - {series: 'kubelet_volume_stats_used_bytes{namespace="storage",persistentvolumeclaim="data-store-0"}', values: '99x15'}
-      - {series: 'kubelet_volume_stats_capacity_bytes{namespace="storage",persistentvolumeclaim="data-store-0"}', values: '100x15'}
+      - {series: 'kubelet_volume_stats_used_bytes{namespace="databases",persistentvolumeclaim="pg-1",node="node-a"}', values: '75x10 50x5'}
+      - {series: 'kubelet_volume_stats_capacity_bytes{namespace="databases",persistentvolumeclaim="pg-1",node="node-a"}', values: '100x15'}
+      - {series: 'kubelet_volume_stats_used_bytes{namespace="databases",persistentvolumeclaim="pg-2",node="node-b"}', values: '85x10 50x5'}
+      - {series: 'kubelet_volume_stats_capacity_bytes{namespace="databases",persistentvolumeclaim="pg-2",node="node-b"}', values: '100x15'}
+      - {series: 'kubelet_volume_stats_used_bytes{namespace="databases",persistentvolumeclaim="pg-3-wal",node="node-c"}', values: '95x15'}
+      - {series: 'kubelet_volume_stats_capacity_bytes{namespace="databases",persistentvolumeclaim="pg-3-wal",node="node-c"}', values: '100x15'}
+      - {series: 'kubelet_volume_stats_used_bytes{namespace="storage",persistentvolumeclaim="data-store-0",node="node-c"}', values: '99x15'}
+      - {series: 'kubelet_volume_stats_capacity_bytes{namespace="storage",persistentvolumeclaim="data-store-0",node="node-c"}', values: '100x15'}
     alert_rule_test:
+      - {eval_time: 4m, alertname: CNPGDataDiskFull}
       - eval_time: 6m
-        alertname: CNPGVolumeFull
+        alertname: CNPGDataDiskFull
         exp_alerts:
-          - exp_labels: {severity: warning, namespace: databases, cluster: pg, persistentvolumeclaim: pg-1}
+          - exp_labels: {severity: warning, namespace: databases, cluster: pg, pod: pg-1, node: node-a}
             exp_annotations:
-              summary: Volume pg-1 of databases/pg is 85% full.
-          - exp_labels: {severity: warning, namespace: databases, cluster: pg, persistentvolumeclaim: pg-2-wal}
+              summary: The data disk of instance pg-1 of databases/pg on node node-a is 75% full.
+          - exp_labels: {severity: warning, namespace: databases, cluster: pg, pod: pg-2, node: node-b}
             exp_annotations:
-              summary: Volume pg-2-wal of databases/pg is 95% full.
-          - exp_labels: {severity: critical, namespace: databases, cluster: pg, persistentvolumeclaim: pg-2-wal}
+              summary: The data disk of instance pg-2 of databases/pg on node node-b is 85% full.
+          - exp_labels: {severity: critical, namespace: databases, cluster: pg, pod: pg-2, node: node-b}
             exp_annotations:
-              summary: Volume pg-2-wal of databases/pg is 95% full.
-      - {eval_time: 12m, alertname: CNPGVolumeFull}
+              summary: The data disk of instance pg-2 of databases/pg on node node-b is 85% full.
+      - {eval_time: 12m, alertname: CNPGDataDiskFull}
 
   # pg-server expires in 10 days, pg-replication in 2 until it is renewed at
   # 30 min. A certificate not yet issued reports 0, and certificates the chart
@@ -477,6 +484,28 @@ tests:
               summary: Metrics of instance pg-3 of databases/pg are missing.
               description: Its exporter answers without the metrics of its queries, or the compliance query fails, for example without its grants.
 
+  # Samples every 5 s, as the exporter is scraped. A statement runs for 15 s
+  # and then waits 5 s for its standby, which the query counts only while it
+  # waits: no alert. Then commits wait 20 s while no standby confirms them:
+  # the alert fires after 10 s and resolves once they go on.
+  - name: writes blocked
+    interval: 5s
+    input_series:
+      - {series: 'cnpg_sync_replication_waiting{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x5 1 0x10 2x4 0x6'}
+      - {series: 'cnpg_sync_replication_waiting{namespace="databases",cluster="pg",pod="pg-2"}', values: '0x26'}
+    alert_rule_test:
+      - {eval_time: 30s, alertname: CNPGWritesBlocked}
+      - {eval_time: 35s, alertname: CNPGWritesBlocked}
+      - {eval_time: 95s, alertname: CNPGWritesBlocked}
+      - eval_time: 100s
+        alertname: CNPGWritesBlocked
+        exp_alerts:
+          - exp_labels: {severity: critical, namespace: databases, cluster: pg, pod: pg-1}
+            exp_annotations:
+              summary: Commits on pg-1 of databases/pg wait for a synchronous standby.
+              description: 2 sessions wait for a standby to confirm their commit. Reads still work.
+      - {eval_time: 115s, alertname: CNPGWritesBlocked}
+
   # A cluster that is not listed in cnpg_sample:database gives no alert; the
   # listed one is healthy.
   - name: unlisted cluster
@@ -489,11 +518,12 @@ tests:
       - {series: 'cnpg_collector_up{namespace="other",cluster="other",pod="other-2"}', values: '1 stale'}
       - {series: 'cnpg_collector_fencing_on{namespace="other",cluster="other",pod="other-1"}', values: '0x20'}
       - {series: 'cnpg_pg_replication_in_recovery{namespace="other",cluster="other",pod="other-1"}', values: '1x20'}
-      - {series: 'cnpg_pg_replication_lag{namespace="other",cluster="other",pod="other-1"}', values: '60x20'}
+      - {series: 'cnpg_replica_lag_seconds{namespace="other",cluster="other",pod="other-1"}', values: '60x20'}
+      - {series: 'cnpg_sync_replication_waiting{namespace="other",cluster="other",pod="other-1"}', values: '3x20'}
       - {series: 'barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace="other",cluster="other",pod="other-1"}', values: '100x20'}
       - {series: 'barman_cloud_cloudnative_pg_io_last_failed_backup_timestamp{namespace="other",cluster="other",pod="other-1"}', values: '200x20'}
-      - {series: 'kubelet_volume_stats_used_bytes{namespace="other",persistentvolumeclaim="other-1"}', values: '99x20'}
-      - {series: 'kubelet_volume_stats_capacity_bytes{namespace="other",persistentvolumeclaim="other-1"}', values: '100x20'}
+      - {series: 'kubelet_volume_stats_used_bytes{namespace="other",persistentvolumeclaim="other-1",node="node-a"}', values: '99x20'}
+      - {series: 'kubelet_volume_stats_capacity_bytes{namespace="other",persistentvolumeclaim="other-1",node="node-a"}', values: '100x20'}
       - {series: 'certmanager_certificate_expiration_timestamp_seconds{namespace="other",name="other-server"}', values: '3600x20'}
       - {series: 'cnpg_backends_total{namespace="other",cluster="other",pod="other-1",datname="orders",state="active"}', values: '99x20'}
       - {series: 'cnpg_pg_settings_setting{namespace="other",cluster="other",pod="other-1",name="max_connections"}', values: '100x20'}
@@ -503,9 +533,10 @@ tests:
       - {eval_time: 20m, alertname: CNPGReplicaDown}
       - {eval_time: 20m, alertname: CNPGReplicaLag}
       - {eval_time: 20m, alertname: CNPGBackupFailing}
-      - {eval_time: 20m, alertname: CNPGVolumeFull}
+      - {eval_time: 20m, alertname: CNPGDataDiskFull}
       - {eval_time: 20m, alertname: CNPGCertificateExpiring}
       - {eval_time: 20m, alertname: CNPGConnectionsHigh}
       - {eval_time: 20m, alertname: CNPGTransactionIDWraparound}
       - {eval_time: 20m, alertname: CNPGComplianceViolation}
       - {eval_time: 20m, alertname: CNPGMetricsMissing}
+      - {eval_time: 20m, alertname: CNPGWritesBlocked}

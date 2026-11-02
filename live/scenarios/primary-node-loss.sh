@@ -15,6 +15,7 @@ wait_for 600 "three ready instances, two streaming replicas" settled
 old=$(primary)
 node=$(node_of "$old")
 use_api_of "$(other_node "$node")"
+start_monitoring "$(other_node "$node")"
 start_client
 
 T0=$(now_ms)

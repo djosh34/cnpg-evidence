@@ -17,6 +17,7 @@ WRITER=off
 wait_for 600 "three ready instances, two streaming replicas" settled
 old=$(primary)
 target=$(instances | awk -v p="$old" '$1 != p {print $1; exit}')
+start_monitoring "${NODES[0]}"
 start_client
 
 T0=$(now_ms)

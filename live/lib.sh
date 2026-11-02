@@ -320,7 +320,9 @@ reads_between() {
 # client and, without the writer, makes the final write. Checks that every
 # acknowledged commit is on the primary and, with the writer, that no time
 # without an acknowledged write since T0 was longer than WRITE_GAP_LIMIT
-# seconds, 180 unless the scenario sets it. Sets COMMITS and GAP (ms).
+# seconds, 180 unless the scenario sets it. Then checks the alerts
+# (check_alerts) and the dashboard's queries (check_dashboard). Sets COMMITS,
+# GAP (ms) and FIRED.
 WRITE_GAP_LIMIT=180
 finish() {
   wait_for 60 "the read port of every node" reads_back
@@ -334,6 +336,8 @@ finish() {
     GAP=$(longest_write_gap "$T0" "$T_END")
     ((GAP <= WRITE_GAP_LIMIT * 1000)) || fail "no acknowledged write for $((GAP / 1000)) s, more than $WRITE_GAP_LIMIT s"
   fi
+  check_alerts
+  check_dashboard
 }
 
 # The object store, the container s3 at S3_IP, breaks in one of two ways.
@@ -403,20 +407,41 @@ compliance_zero() {
   [[ -z $(awk '$2 != 0' <<<"$series") ]] || { echo "$1 has compliance violations: $(awk '$2 != 0' <<<"$series" | paste -sd ' ')" >&2; return 1; }
 }
 
-# Prometheus with the sample rules, in the namespace the chart's
-# NetworkPolicy admits to the metrics port, scraping every instance as
-# docs/monitoring.md says, every 10 s.
+# The backup up.sh starts, so the backup alert sees one, as in a cluster
+# with scheduled backups.
+FIRST_BACKUP=live-first
+
+# Backup $1 has completed; fails at once when it failed.
+backup_completed() {
+  local phase
+  phase=$(k get backup "$1" -n "$NS" -o jsonpath='{.status.phase}')
+  [[ $phase != failed ]] || fail "backup $1 failed: $(k get backup "$1" -n "$NS" -o jsonpath='{.status.error}')"
+  [[ $phase == completed ]] || { echo "backup phase: ${phase:-none}" >&2; return 1; }
+}
+
+# The monitoring stack: Prometheus with samples/monitoring/rules.yaml and
+# Alertmanager with samples/monitoring/alertmanager.yaml, in the namespace the
+# chart's NetworkPolicy admits to the metrics port. Prometheus scrapes what
+# docs/monitoring.md lists: every instance's exporter every 5 s, the kubelets
+# and their cAdvisor, and cert-manager.
 PROMETHEUS_IMAGE=prom/prometheus:v3.7.3@sha256:49214755b6153f90a597adcbff0252cc61069f8ab69ce8411285cd4a560e8038
+ALERTMANAGER_IMAGE=prom/alertmanager:v0.34.1@sha256:e9733bafb1bdef9b00e25a21f8f99dc26a22224bf16641ad754d1649f4c3357a
 PROM_NS=otel
 
-start_prometheus() {
-  local ca
+# Starts the stack on node $1, which the scenario must not stop: a rule
+# evaluator outside the database's nodes, as in docs/monitoring.md. Waits
+# until Prometheus has the metrics of every source and the first backup is
+# done, so no alert fires for a state up.sh leaves, and sets MONITOR_START.
+start_monitoring() {
+  local node=$1 ca
   ca=$(k get secret client-ca -n "$NS" -o jsonpath='{.data.ca\.crt}' | base64 -d)
   k create namespace "$PROM_NS" --dry-run=client -o yaml | k apply -f - >/dev/null
   k create configmap prometheus -n "$PROM_NS" --dry-run=client -o yaml \
     --from-file=rules.yaml="$REPO/samples/monitoring/rules.yaml" \
     --from-literal=ca.crt="$ca" \
     --from-literal=prometheus.yml="$(prometheus_config)" | k apply -f - >/dev/null
+  k create configmap alertmanager -n "$PROM_NS" --dry-run=client -o yaml \
+    --from-file=alertmanager.yml="$REPO/samples/monitoring/alertmanager.yaml" | k apply -f - >/dev/null
   k apply -f - >/dev/null <<YAML
 apiVersion: v1
 kind: ServiceAccount
@@ -425,24 +450,25 @@ metadata:
   namespace: $PROM_NS
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
+kind: ClusterRole
 metadata:
-  name: prometheus
-  namespace: $NS
+  name: live-prometheus
 rules:
   - apiGroups: [""]
-    resources: [pods]
+    resources: [pods, nodes]
     verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [nodes/metrics]
+    verbs: [get]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
+kind: ClusterRoleBinding
 metadata:
-  name: prometheus
-  namespace: $NS
+  name: live-prometheus
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: prometheus
+  kind: ClusterRole
+  name: live-prometheus
 subjects:
   - kind: ServiceAccount
     name: prometheus
@@ -462,6 +488,7 @@ spec:
       labels: {app: prometheus}
     spec:
       serviceAccountName: prometheus
+      nodeSelector: {kubernetes.io/hostname: $node}
       containers:
         - name: prometheus
           image: $PROMETHEUS_IMAGE
@@ -484,18 +511,79 @@ metadata:
 spec:
   selector: {app: prometheus}
   ports: [{port: 9090}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertmanager
+  namespace: $PROM_NS
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: alertmanager}
+  template:
+    metadata:
+      labels: {app: alertmanager}
+    spec:
+      nodeSelector: {kubernetes.io/hostname: $node}
+      containers:
+        - name: alertmanager
+          image: $ALERTMANAGER_IMAGE
+          args: [--config.file=/etc/alertmanager/alertmanager.yml, --storage.path=/alertmanager, --cluster.listen-address=]
+          ports: [{containerPort: 9093}]
+          readinessProbe:
+            httpGet: {path: /-/ready, port: 9093}
+          volumeMounts:
+            - {name: config, mountPath: /etc/alertmanager}
+            - {name: data, mountPath: /alertmanager}
+      volumes:
+        - {name: config, configMap: {name: alertmanager}}
+        - {name: data, emptyDir: {}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager
+  namespace: $PROM_NS
+spec:
+  selector: {app: alertmanager}
+  ports: [{port: 9093}]
 YAML
-  timeout 330 kubectl rollout status deployment/prometheus -n "$PROM_NS" --timeout=300s >/dev/null ||
-    fail "Prometheus not ready after 300s"
+  local d
+  for d in prometheus alertmanager; do
+    timeout 330 kubectl rollout status "deployment/$d" -n "$PROM_NS" --timeout=300s >/dev/null ||
+      fail "$d not ready after 300s"
+  done
+  wait_for 300 "Prometheus with the metrics of every source" prom_has_every_source
+  prom_count 0 "cnpg_sample:data_disk_used_ratio > 0.6" ||
+    fail "a data disk is over 60 % used before the scenario, so CNPGDataDiskFull could fire; the runner's disk: $(df -h / | tail -1)"
+  wait_for 600 "the first backup completed" backup_completed "$FIRST_BACKUP"
+  MONITOR_START=$(now_ms)
+  log "monitoring on $node"
 }
 
-# server_name is one of the server certificate's dnsNames in desired.yaml.
+# Prometheus has, for every instance, its query metrics and data disk, and
+# the chart's two certificates.
+prom_has_every_source() {
+  prom_count 3 "count by (pod) (cnpg_compliance_violations{cluster=\"$CLUSTER\"}) == 4" &&
+    prom_count 3 "cnpg_sample:data_disk_used_ratio{cluster=\"$CLUSTER\"}" &&
+    prom_count 2 "cnpg_sample:certificate_expiration_timestamp_seconds{cluster=\"$CLUSTER\"}"
+}
+
+# The scrape of docs/monitoring.md, with the CA of the server certificate and
+# one of its dnsNames in desired.yaml; the kubelets with the ServiceAccount's
+# token and the cluster's CA, which signs their serving certificates on k3s;
+# cert-manager.
 prometheus_config() {
   cat <<'YAML'
-global: {scrape_interval: 10s, evaluation_interval: 10s}
+global: {scrape_interval: 15s, evaluation_interval: 15s}
 rule_files: [/etc/prometheus/rules.yaml]
+alerting:
+  alertmanagers:
+    - static_configs: [{targets: ["alertmanager:9093"]}]
 scrape_configs:
   - job_name: cnpg
+    scrape_interval: 5s
     scheme: https
     tls_config: {ca_file: /etc/prometheus/ca.crt, server_name: pg-rw}
     kubernetes_sd_configs:
@@ -508,6 +596,28 @@ scrape_configs:
       - {source_labels: [__meta_kubernetes_pod_name], target_label: pod}
       - {source_labels: [__meta_kubernetes_pod_label_cnpg_io_cluster], target_label: cluster}
       - {source_labels: [__meta_kubernetes_pod_node_name], target_label: node}
+  - job_name: kubelet
+    scheme: https
+    authorization: {credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token}
+    tls_config: {ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt}
+    kubernetes_sd_configs: [{role: node}]
+    relabel_configs:
+      - {source_labels: [__meta_kubernetes_node_name], target_label: node}
+  - job_name: cadvisor
+    scheme: https
+    metrics_path: /metrics/cadvisor
+    authorization: {credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token}
+    tls_config: {ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt}
+    kubernetes_sd_configs: [{role: node}]
+    relabel_configs:
+      - {source_labels: [__meta_kubernetes_node_name], target_label: node}
+  - job_name: cert-manager
+    honor_labels: true
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces: {names: [cert-manager]}
+    relabel_configs:
+      - {source_labels: [__meta_kubernetes_pod_container_port_number], regex: "9402", action: keep}
 YAML
 }
 
@@ -521,12 +631,20 @@ prom_query() {
   echo "$out"
 }
 
+# Prometheus has $1 series of query $2.
+prom_count() {
+  local result n
+  result=$(prom_query "$2") || return 1
+  n=$(jq '.data.result | length' <<<"$result")
+  [[ $n == "$1" ]] || { echo "$n series of $2, not $1" >&2; return 1; }
+}
+
 # The firing alerts, as "<alertname> <pod>" lines, "-" for an alert without a
 # pod.
 firing_alerts() {
   local result
   result=$(prom_query 'ALERTS{alertstate="firing"}') || return 1
-  jq -r '.data.result[].metric | "\(.alertname) \(.pod // "-")"' <<<"$result" | sort
+  jq -r '.data.result[].metric | "\(.alertname) \(.pod // "-")"' <<<"$result" | sort -u
 }
 
 # Alert $1 fires for pod $2.
@@ -535,6 +653,97 @@ alert_firing() {
   alerts=$(firing_alerts) || return 1
   grep -qxF "$1 $2" <<<"$alerts" || { echo "firing: $(paste -sd ';' <<<"$alerts")" >&2; return 1; }
 }
+
+# Alert $1 does not fire for pod $2.
+alert_resolved() {
+  local alerts
+  alerts=$(firing_alerts) || return 1
+  ! grep -qxF "$1 $2" <<<"$alerts" || { echo "$1 still fires for $2" >&2; return 1; }
+}
+
+no_alert_firing() {
+  local alerts
+  alerts=$(firing_alerts) || return 1
+  [[ -z $alerts ]] || { echo "still firing: $(paste -sd ';' <<<"$alerts")" >&2; return 1; }
+}
+
+# The alerts that fired since the monitoring started, as "<alertname> <pod>"
+# lines.
+fired_alerts() {
+  local window result
+  window=$((($(now_ms) - MONITOR_START) / 1000 + 1))
+  result=$(prom_query "max by (alertname, pod) (max_over_time(ALERTS{alertstate=\"firing\"}[${window}s]))") || return 1
+  jq -r '.data.result[].metric | "\(.alertname) \(.pod // "-")"' <<<"$result" | sort -u
+}
+
+# Alertmanager's alerts named $1, as "<pod> <state>" lines, state active or
+# suppressed. Alertmanager's API, through the API server's service proxy.
+am_alerts() {
+  local out
+  out=$(k get --raw "/api/v1/namespaces/$PROM_NS/services/alertmanager:9093/proxy/api/v2/alerts") || return 1
+  jq -r --arg name "$1" '.[] | select(.labels.alertname == $name) | "\(.labels.pod // "-") \(.status.state)"' <<<"$out" | sort
+}
+
+# Alertmanager holds alert $1 for pod $2 in state $3.
+am_alert_is() {
+  local alerts
+  alerts=$(am_alerts "$1") || return 1
+  grep -qxF "$2 $3" <<<"$alerts" || { echo "Alertmanager has $1: $(paste -sd ';' <<<"$alerts")" >&2; return 1; }
+}
+
+# Sends critical alert $1 for pod $2 of the database to Alertmanager, as the
+# rule evaluator would, for 2 min, with amtool in its pod.
+am_send() {
+  k exec -n "$PROM_NS" deploy/alertmanager -- amtool alert add "$1" severity=critical \
+    "namespace=$NS" "cluster=$CLUSTER" "pod=$2" \
+    --end="$(date -u -d '+2 min' +%FT%TZ)" --alertmanager.url=http://localhost:9093 >/dev/null
+}
+
+# The alerts a scenario expects to fire, and those it allows: alerts that are
+# true when they fire, but whether they fire depends on how long a step of
+# the event takes compared with the alert's waiting time. As
+# "<alertname> <pod>" lines.
+EXPECTED_ALERTS=()
+ALLOWED_ALERTS=()
+expect_alert() { EXPECTED_ALERTS+=("$1 $2"); }
+allow_alert() { ALLOWED_ALERTS+=("$1 $2"); }
+
+# Every alert has resolved within 3 min, every expected alert fired since the
+# monitoring started, and no other one but the allowed ones. Sets FIRED.
+check_alerts() {
+  local expected missing other
+  wait_for 180 "every alert resolved" no_alert_firing
+  FIRED=$(fired_alerts) || fail "Prometheus did not answer"
+  expected=$(printf '%s\n' "${EXPECTED_ALERTS[@]}" | sed '/^$/d' | sort -u)
+  missing=$(comm -23 <(echo "$expected") <(echo "$FIRED") | sed '/^$/d')
+  other=$(comm -13 <(printf '%s\n' "$expected" "${ALLOWED_ALERTS[@]}" | sed '/^$/d' | sort -u) <(echo "$FIRED") | sed '/^$/d')
+  [[ -z $missing ]] || fail "expected alerts did not fire: $(paste -sd ';' <<<"$missing"); fired: $(paste -sd ';' <<<"${FIRED:-none}")"
+  [[ -z $other ]] || fail "alerts fired that the scenario does not expect: $(paste -sd ';' <<<"$other")"
+}
+
+# Every query of samples/monitoring/dashboard.json, with the dashboard's
+# variables set to the database, returns data: each panel at least one value
+# that is not NaN, which the red tiles return when there is none.
+dashboard_has_data() {
+  local panel title expr result values
+  while read -r panel; do
+    title=$(jq -r .title <<<"$panel")
+    values=0
+    while read -r expr; do
+      expr=${expr//"\$namespace"/$NS}
+      expr=${expr//"\$cluster"/$CLUSTER}
+      expr=${expr//"\$__rate_interval"/1m}
+      result=$(prom_query "$expr") || { echo "the query of dashboard panel $title failed: $expr" >&2; return 1; }
+      values=$((values + $(jq '[.data.result[] | select(.value[1] != "NaN")] | length' <<<"$result")))
+    done < <(jq -r '.targets[].expr' <<<"$panel")
+    ((values > 0)) || { echo "dashboard panel $title has no data" >&2; return 1; }
+  done < <(jq -c '.panels[] | ., .panels[]? | select(.targets)' "$REPO/samples/monitoring/dashboard.json")
+}
+
+# Some sources report again only a while after the event: a started node's
+# kubelet, cert-manager after its leader moved, a new primary's replication
+# figures.
+check_dashboard() { wait_for 180 "data in every dashboard panel" dashboard_has_data; }
 
 # Adds a line to the summary on stdout and in the job summary.
 SUMMARY=()
@@ -560,6 +769,7 @@ common_rows() {
     row "final write" "$(secs "$FINAL_WRITE")"
   fi
   row "acknowledged commits, all on the primary" "$COMMITS"
+  row "alerts that fired, as expected" "$(paste -sd ';' <<<"${FIRED:-none}" | sed 's/;/, /g')"
 }
 print_summary() {
   local line

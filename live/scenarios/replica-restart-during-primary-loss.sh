@@ -38,6 +38,7 @@ container=${container#containerd://}
 [[ -n $container ]] || fail "no postgres container ID for $replica"
 RESTARTS=$(restarts_of "$replica")
 use_api_of "$replica_node"
+start_monitoring "$replica_node"
 start_client
 
 T0=$(now_ms)

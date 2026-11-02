@@ -42,6 +42,7 @@ write_stop() {
 
 wait_for 600 "three ready instances, two streaming replicas" settled
 old=$(primary)
+start_monitoring "${NODES[0]}"
 start_client
 
 T0=$(now_ms)
