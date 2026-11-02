@@ -1,6 +1,6 @@
 # Live scenarios
 
-The scripts in `live/` start the samples on a three-node k3s cluster in docker and run scenarios against it: nodes lost, a replica restart during a primary loss, a rollout, switchovers, a fence, a broken object store, a backup and restore, replicas that rejoin from the WAL the primary keeps or from the store, a replica that stops streaming, a replica that falls behind and commits that wait, the evidence scripts. Each failure scenario checks that the cluster recovers by itself, that writes come back in time, that no acknowledged commit is lost and that exactly the expected alerts fire, and writes its times to the job summary. The `live` workflow runs them on GitHub's runners, one job and one cluster per scenario.
+The scripts in `live/` start the samples on a three-node k3s cluster in docker and run scenarios against it: nodes lost, a replica restart during a primary loss, a rollout, switchovers, a fence, a broken object store, a backup and restore, replicas that rejoin from the WAL the primary keeps or from the store, a replica that stops streaming, a replica that falls behind and commits that wait, the evidence scripts, and the `pgfallback` package from outside the cluster during a drain and node losses. Each failure scenario checks that the cluster recovers by itself, that writes come back in time, that no acknowledged commit is lost and that exactly the expected alerts fire, and writes its times to the job summary. The `live` workflow runs them on GitHub's runners, one job and one cluster per scenario.
 
 ## Files
 
@@ -8,12 +8,14 @@ The scripts in `live/` start the samples on a three-node k3s cluster in docker a
 |---|---|
 | [`live/up.sh`](../live/up.sh) | Starts the cluster and installs the samples (see [The cluster](#the-cluster)) |
 | [`live/node-init.sh`](../live/node-init.sh) | The first process of each node container: runs k3s and starts it again when it exits |
-| [`live/values.yaml`](../live/values.yaml) | The chart values on top of `desired.yaml`: the S3 store's address |
+| [`live/values.yaml`](../live/values.yaml) | The chart values on top of `desired.yaml`: the S3 store's address, and the node names in the server certificate's `dnsNames` |
 | [`live/lib.sh`](../live/lib.sh) | Functions the scenarios share: bounded waits, the cluster's state, the client, the monitoring stack, the checks and the summary |
 | [`live/client/`](../live/client) | The writer and the read probes, a small Go program (see [The writer and the read probes](#the-writer-and-the-read-probes)) |
 | [`live/scenarios.txt`](../live/scenarios.txt) | The list of scenarios |
 | [`live/scenarios/`](../live/scenarios) | One script per scenario |
 | [`live/store.sh`](../live/store.sh) | The steps of `store-refuse` and `store-hang`, which differ only in how the store breaks |
+| [`live/pgfallback.sh`](../live/pgfallback.sh) | The steps of the three `pgfallback-*` scenarios, which differ only in the event (see [pgfallback from outside the cluster](#pgfallback-from-outside-the-cluster)) |
+| [`live/pgfallback/`](../live/pgfallback) | The application of the `pgfallback-*` scenarios and its report, a Go module of its own |
 | [`live/plan.sh`](../live/plan.sh) | Turns the workflow's `scenarios` input into the list of jobs |
 | [`live/after-failure.sh`](../live/after-failure.sh) | Prints the cluster's state after a failed scenario |
 | [`live/host-check.sh`](../live/host-check.sh) | Runs `host-check.sh` on one k3s node in docker and checks that only the known failures of a container node fail; the `ci` workflow runs it (see [host-check.md](host-check.md#known-failures-on-container-nodes)) |
@@ -67,7 +69,7 @@ With the writer, a scenario also fails when there was no acknowledged write for 
 
 Without the writer, a former primary that rewound onto an idle new primary can wait for the primary's next WAL record (see [samples.md](samples.md#writes-reads-and-failover)). When not every instance is back after 10 minutes, the scenario makes its one write then, and every instance must be back within 10 s of it. The summary says so.
 
-`quiet-rewind` always runs without the writer, also in a run with the writer on, since it tests a cluster with no writes.
+`quiet-rewind` always runs without the writer, also in a run with the writer on, since it tests a cluster with no writes. The `pgfallback-*` scenarios run their own application in both modes, since its queries and writes are what they test; the mode starts or leaves out only the writer.
 
 | Scenario | Event | Checks |
 |---|---|---|
@@ -87,7 +89,28 @@ Without the writer, a former primary that rewound onto an idle new primary can w
 | `exporter-node-loss` | A replica's node stops with `docker stop -t 0` for 400 s, then the primary's node for 400 s: each longer than the 5 min after which Kubernetes marks the lost pod for deletion. While `CNPGReplicaDown` fires for the lost replica, the scenario sends Alertmanager `CNPGMetricsMissing` for that replica and for another instance. | For each instance that is left, in every 15 s in which its exporter answers, at least one answer has the chart's `cnpg_compliance_violations` and CNPG's `cnpg_pg_replication_in_recovery`, and the exporter never goes 60 s without answering; the summary gives each instance's answers without them and its failed scrapes. `CNPGReplicaDown` fires for each lost instance and reaches Alertmanager, which mutes `CNPGMetricsMissing` for the lost replica and not for the other. The primary stays where it is while the replica's node is down. |
 | `lag-and-stall` | Replay pauses on a replica and the primary commits a row; once the alert fires, replay resumes. Then one transaction on the primary runs a 15 s statement and commits. Then replay pauses on both replicas, so a commit on the primary waits for a standby to apply it; once the alert fires, replay resumes. These commits are made in both modes. | `CNPGReplicaLag` fires for the replica within 5 min, reaches Alertmanager and resolves within 2 min of the resume. The 15 s statement does not fire `CNPGWritesBlocked`. The stalled commit fires `CNPGWritesBlocked` for the primary within 2 min, reaches Alertmanager, succeeds after the resume, and the alert resolves within 2 min. |
 | `lag-after-primary-change` | `kubectl cnpg promote` to a replica; then `kubectl cnpg fencing on` the new primary and `fencing off` 30 s later. | After each, once every instance is ready and streaming, every replica's `cnpg_replica_lag_seconds` stays under 1 s for 330 s, longer than the 5 min of false lag CNPG's `cnpg_pg_replication_lag` showed. `CNPGReplicaLag` does not fire. The summary gives the most each metric reported. |
+| `pgfallback-drain` | `kubectl drain` of the primary's node with `--ignore-daemonsets --delete-emptydir-data`, which moves the primary; `kubectl uncordon` once the drain is done. | Another instance becomes primary; the `pgfallback` checks below. |
+| `pgfallback-primary-node-loss` | The primary's node stops with `docker stop -t 0` and starts again 120 s later. | Another instance becomes primary within 10 min of the stop; the `pgfallback` checks below. |
+| `pgfallback-replica-node-loss` | A replica's node stops with `docker stop -t 0` and starts again 120 s later. | The primary stays where it is; the `pgfallback` checks below. |
 | `evidence` | `desired.sh`, `evidence.sh` with the `client-ca` Secret's certificate as `--ca`, and `prove.sh` as root on every node, through `/proc/<pid>/root` of the node's container. | `evidence.sh` finds no violation; on every node each `prove.sh` attempt has the value of the desired document; `cnpg_compliance_violations` is 0 for each of its 4 checks on every instance, read through `kubectl port-forward`. |
+
+## pgfallback from outside the cluster
+
+The `pgfallback-*` scenarios use the [`pgfallback`](pgfallback.md) package as an application outside the cluster does, from the runner against the node addresses. `live/pgfallback.sh` copies the program in `live/pgfallback/` out of the checkout and builds it there with `go get github.com/djosh34/cnpg-evidence/pgfallback@<commit>`, the checked out commit, through the Go module proxy. The summary names the version it got. In the repository the module points at the checkout instead, so the `live-client` job of `ci.yml` can vet, test and build it.
+
+The program logs in as `orders` with the client certificate and `sslmode=verify-full`. Its connection string lists the three nodes by name on the rw port 5432, and `pgfallback` adds them on the read port 5433. pgx's `LookupFunc` maps the names to the node addresses; `live/values.yaml` adds the names to the server certificate. At the same time it runs:
+
+- a `pgxpool.Pool` from `pgfallback.Pool`, and GORM on a `*sql.DB` with the options of `pgfallback.Stdlib`, each with a new query every 0.25 s and a write into `pgfallback_writes` every second;
+- a connect to each rw address alone every 0.25 s, so the summary knows when rw took connections again.
+
+It logs every query, write and connect with its start and end, the address that served it and any error. Once every instance is ready and streaming and every read port answers, it runs 30 s more. The summary gives, in seconds after the event:
+
+- when rw took no connection, and when each rw address alone was down and back;
+- for pgx and GORM, when queries and when writes failed and worked again;
+- the last query or write a read address served once rw was back;
+- every failed query and write with its error.
+
+The scenario fails when a read address served a query or write that started more than 1 s plus one attempt at rw after rw was back, when the last query or write of pgx or GORM did not work on rw, or when a write the program got acknowledged is not on the primary. One attempt is what a connect to the rw hosts in order took then, from each address's last connect alone. Every query and write is one statement, so none runs in a transaction that was already open.
 
 ## Run in GitHub Actions
 

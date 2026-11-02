@@ -78,13 +78,24 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: live/client/go.mod
-          cache-dependency-path: live/client/go.sum
+          cache-dependency-path: |
+            live/client/go.sum
+            live/pgfallback/go.sum
       - name: Vet and build the live scenarios' client
         working-directory: live/client
         run: |
           set -euo pipefail
           go version
           go vet ./...
+          go build -o /dev/null .
+      # Against the pgfallback of this checkout; the scenarios get it at the
+      # commit with go get.
+      - name: Vet, test and build the program of the pgfallback scenarios
+        working-directory: live/pgfallback
+        run: |
+          set -euo pipefail
+          go vet ./...
+          go test ./...
           go build -o /dev/null .
 
   # golangci-lint on the root module, with the release binary checked by its
