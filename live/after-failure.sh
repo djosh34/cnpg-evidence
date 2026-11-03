@@ -16,15 +16,15 @@ show() {
 
 operator_errors() {
   k logs -n cnpg-system -l app.kubernetes.io/name=cloudnative-pg --prefix --tail=-1 |
-    grep -iE "error|failover|switchover|leader" |
-    grep -v "There is a switchover or a failover in progress" | tail -100
+    awk 'tolower($0) ~ /error|failover|switchover|leader/ && !/There is a switchover or a failover in progress/' |
+    tail -100
 }
 
 # The instance manager's lines before the last restart of pod $1, if it
 # restarted.
 previous_logs() {
   local restarts
-  restarts=$(k get -n "$NS" "$1" -o jsonpath='{.status.containerStatuses[?(@.name=="postgres")].restartCount}')
+  restarts=$(k get -n "$NS" "$1" -o jsonpath='{.status.containerStatuses[?(@.name=="postgres")].restartCount}') || return
   if ((restarts > 0)); then
     k logs -n "$NS" "$1" -c postgres --previous --tail=150
   fi
