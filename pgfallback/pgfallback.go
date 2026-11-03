@@ -187,8 +187,11 @@ type fallback struct {
 	mu sync.Mutex
 	// The application's config, without the read addresses.
 	rw *pgx.ConnConfig
-	// An attempt at rw worked, and no connection landed on read since.
-	back       bool
+	// An attempt at rw worked, and no connection landed on read since that
+	// tried rw after the attempt started.
+	back bool
+	// When the attempt that set back started.
+	backFrom   time.Time
 	attempting bool
 	lastStart  time.Time
 	lastEnd    time.Time
@@ -218,6 +221,8 @@ func (f *fallback) addReads(cc *pgx.ConnConfig) error {
 		fallbacks = append(fallbacks, &pgconn.FallbackConfig{Host: r.host, Port: r.port, TLSConfig: tlsConfig})
 	}
 	cc.Fallbacks = fallbacks
+	// pgx tries the rw hosts from now on.
+	started := time.Now()
 
 	pairs := map[netip.AddrPort]bool{}
 	lookup := cc.LookupFunc
@@ -252,7 +257,7 @@ func (f *fallback) addReads(cc *pgx.ConnConfig) error {
 		}
 		if pairs[unmap(remote)] {
 			pgConn.CustomData()[readKey] = true
-			f.landedOnRead()
+			f.landedOnRead(started)
 		}
 		return nil
 	}
@@ -277,10 +282,16 @@ func unmap(ap netip.AddrPort) netip.AddrPort {
 }
 
 // landedOnRead clears the "rw is back" state: rw did not take this new
-// connection, so read connections must stay in use.
-func (f *fallback) landedOnRead() {
+// connection, which started trying rw at started, so read connections must
+// stay in use. A connection that started before the attempt that worked
+// says nothing new: with rw addresses that do not answer it can land on
+// read many seconds after it tried them.
+func (f *fallback) landedOnRead(started time.Time) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.back && started.Before(f.backFrom) {
+		return
+	}
 	f.back = false
 	f.startAttempt()
 }
@@ -312,12 +323,12 @@ func (f *fallback) startAttempt() {
 	}
 	f.attempting = true
 	f.lastStart = time.Now()
-	go f.attempt(f.rw.Copy())
+	go f.attempt(f.rw.Copy(), f.lastStart)
 }
 
 // attempt connects to rw with the application's config and closes the
-// connection at once. A failed connect or close only means rw is not back.
-func (f *fallback) attempt(cc *pgx.ConnConfig) {
+// connection at once. It started at start. A failed connect or close only means rw is not back.
+func (f *fallback) attempt(cc *pgx.ConnConfig, start time.Time) {
 	err := f.connect(cc)
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -325,6 +336,7 @@ func (f *fallback) attempt(cc *pgx.ConnConfig) {
 	f.lastEnd = time.Now()
 	if err == nil {
 		f.back = true
+		f.backFrom = start
 	}
 }
 
