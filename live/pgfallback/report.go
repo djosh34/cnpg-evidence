@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"slices"
 	"strconv"
@@ -22,8 +23,8 @@ import (
 //   - A query or write is wrong when a read address served it although it
 //     started more than 1 s plus one attempt at rw after rw was back. The
 //     attempt is pgfallback's own: the first of that client that worked
-//     since rw went down, from its start to when it worked. Without one, 1 s
-//     alone. Every query and write here is one statement, so none ran inside
+//     since rw went down and before it went down again, from when rw was
+//     back, or its start if later, to when it worked. Without one, 1 s alone. Every query and write here is one statement, so none ran inside
 //     a transaction that was already open.
 //   - Every failed query and write with its error, consecutive ones with the
 //     same address and error as one line.
@@ -151,15 +152,23 @@ func spells(states []rwState, event int64, secs func(int64) string) (string, int
 	return strings.Join(downs, ", "), back
 }
 
-// downSince is when the spell without rw that ended at up began, or up when
-// rw was not down before.
-func downSince(states []rwState, up int64) int64 {
-	for i := 1; i < len(states); i++ {
-		if states[i].at == up {
-			return states[i-1].at
+// recovery is the spell without rw that ended at up and the spell with rw
+// after it: when rw went down, or up when it was not down before, and when
+// it went down again, or never.
+func recovery(states []rwState, up int64) (int64, int64) {
+	since, until := up, int64(math.MaxInt64)
+	for i, s := range states {
+		if s.at != up {
+			continue
+		}
+		if i > 0 {
+			since = states[i-1].at
+		}
+		if i+1 < len(states) {
+			until = states[i+1].at
 		}
 	}
-	return up
+	return since, until
 }
 
 // stateAt is the state at time t, and false when no connect ended by then.
@@ -179,11 +188,13 @@ func known(e entry) int64 {
 	return e.start
 }
 
-// workedAttempt is the first attempt at rw of client that worked at or after
-// since: when it started and when it worked, and false when there is none.
-func workedAttempt(attempts []entry, client string, since int64) (int64, int64, bool) {
+// workedAttempt is the first attempt at rw of client that worked from since
+// to before until: when it started and when it worked, and false when there
+// is none. pgfallback runs one attempt at a time per client, so the attempt
+// that worked is the one that started last before.
+func workedAttempt(attempts []entry, client string, since, until int64) (int64, int64, bool) {
 	for _, e := range attempts {
-		if e.client != client || e.detail != "worked" || e.end < since {
+		if e.client != client || e.detail != "worked" || e.end < since || e.end >= until {
 			continue
 		}
 		start := e.end
@@ -240,7 +251,8 @@ func report(w io.Writer, entries []entry, event int64, nodes []node) error {
 			row(client+" "+what+" works again", worksAgain(ops, client, what, event, secs))
 		}
 		if back >= 0 {
-			if start, worked, ok := workedAttempt(attempts, client, downSince(states, back)); ok {
+			since, until := recovery(states, back)
+			if start, worked, ok := workedAttempt(attempts, client, since, until); ok {
 				row(client+" attempt at rw that worked", fmt.Sprintf("started at %s, worked at %s", secs(start), secs(worked)))
 			} else {
 				row(client+" attempt at rw that worked", "none")
@@ -263,8 +275,9 @@ func report(w io.Writer, entries []entry, event int64, nodes []node) error {
 			continue
 		}
 		limit := s.at + 1000
-		if start, worked, ok := workedAttempt(attempts, e.client, downSince(states, s.at)); ok {
-			limit += worked - start
+		since, until := recovery(states, s.at)
+		if start, worked, ok := workedAttempt(attempts, e.client, since, until); ok {
+			limit += max(0, worked-max(start, s.at))
 		}
 		if e.start > limit {
 			wrong = append(wrong, fmt.Sprintf("%s %s on %s at %s, %.1f s after rw was back at %s, limit %.1f s",

@@ -112,7 +112,7 @@ It logs every query, write and connect with its start and end, the address that 
 - the last query or write a read address served once rw was back;
 - every failed query and write with its error.
 
-The scenario fails when a read address served a query or write that started more than 1 s plus one attempt at rw after rw was back, when the last query or write of pgx or GORM did not work on rw, or when a write the program got acknowledged is not on the primary. The attempt is pgfallback's own: the first attempt at rw of that client that worked since rw went down, from its start to when it worked; without one, 1 s alone. The program sees the attempts because pgfallback runs them with the config's `LookupFunc` and `AfterConnect`, but not with the application's context, which the program marks. Every query and write is one statement, so none runs in a transaction that was already open.
+The scenario fails when a read address served a query or write that started more than 1 s plus one attempt at rw after rw was back, when the last query or write of pgx or GORM did not work on rw, or when a write the program got acknowledged is not on the primary. The attempt is pgfallback's own: the first attempt at rw of that client that worked since rw went down and before it went down again, from when rw was back, or its start if later, to when it worked; without one, 1 s alone. The program sees the attempts because pgfallback runs them with the config's `LookupFunc` and `AfterConnect`, but not with the application's context, which the program marks. Every query and write is one statement, so none runs in a transaction that was already open.
 
 ## Run in GitHub Actions
 
