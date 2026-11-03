@@ -223,16 +223,16 @@ func TestReportSlowAttempt(t *testing.T) {
 	}
 }
 
-// An attempt that works more than 1 s plus two attempts after rw was back
-// fails the report. The test nodes are two: 1 s plus 8 s.
+// An attempt that works more than 1 s plus connect_timeout per rw address
+// and one more after rw was back fails the report, also when the client
+// used no read address then. The test nodes are two: 1 s plus 6 s.
 func TestReportLateAttempt(t *testing.T) {
 	log := strings.Replace(lostPrimary, `4900 4900 pgx rw-attempt - ok started
-5100 5100 pgx rw-attempt k3s-2:5432 ok worked`, `14000 14000 pgx rw-attempt - ok started
-14100 14100 pgx rw-attempt k3s-2:5432 ok worked`, 1)
-	log = strings.Replace(log, "7000 7100 pgx query k3s-2:5432", "15000 15100 pgx query k3s-2:5432", 1)
-	log = strings.Replace(log, "5500 5600 pgx query k3s-2:5433", "13000 13100 pgx query k3s-2:5433", 1)
+5100 5100 pgx rw-attempt k3s-2:5432 ok worked`, `12000 12000 pgx rw-attempt - ok started
+12100 12100 pgx rw-attempt k3s-2:5432 ok worked`, 1)
+	log = strings.Replace(log, "5500 5600 pgx query k3s-2:5433", "5500 5600 pgx query k3s-2:5432", 1)
 	out, err := runReport(t, log)
-	if err == nil || !strings.Contains(err.Error(), "the attempt at rw of pgx worked only 9.1 s after rw was back, more than 9.0 s") {
+	if err == nil || !strings.Contains(err.Error(), "the attempt at rw of pgx worked only 7.1 s after rw was back at 4.0, more than 7.0 s") {
 		t.Fatalf("report did not fail for a late attempt: %v\n%s", err, out)
 	}
 }

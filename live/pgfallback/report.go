@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // The report: everything in seconds after the event.
@@ -24,10 +25,10 @@ import (
 //     started more than 1 s after rw was back and after pgfallback's own
 //     attempt at rw had worked: the first attempt of that client that worked
 //     since rw went down and before it went down again. Without one, 1 s
-//     alone. That attempt must work within 1 s plus two attempts of
-//     connect_timeout per rw address after rw was back: the attempt that
-//     was running then, which can wait on addresses it dialed before, and
-//     the next one. Every query and write here is one statement, so none ran inside
+//     alone. That attempt must work within 1 s plus connect_timeout per rw
+//     address and one more after rw was back: the attempt that was running
+//     then can still wait on addresses it dialed before, and the next one
+//     connects. Every query and write here is one statement, so none ran inside
 //     a transaction that was already open.
 //   - Every failed query and write with its error, consecutive ones with the
 //     same address and error as one line.
@@ -193,7 +194,7 @@ func known(e entry) int64 {
 
 // pgfallback marks rw back only after it closed the attempt's connection,
 // which ends after the attempt's AfterConnect logged that it worked.
-const markedBack = 100
+const markedBack = 100 * time.Millisecond
 
 // workedAttempt is the first attempt at rw of client that worked from since
 // to before until: when it started and when it worked, and false when there
@@ -267,10 +268,28 @@ func report(w io.Writer, entries []entry, event int64, nodes []node) error {
 		}
 	}
 
+	// Each client's attempt that worked in each recovery after the event:
+	// within 1 s plus connect_timeout per rw address and one more. The
+	// attempt running when rw came back may still wait on the address that
+	// came back and those after it; the next waits on those before it and
+	// connects to it.
+	bound := time.Second + time.Duration(len(rwAddrs)+1)*connectTimeout
+	for i, st := range states {
+		if !st.up || i == 0 || st.at < event {
+			continue
+		}
+		since, until := recovery(states, st.at)
+		for _, client := range []string{"pgx", "gorm"} {
+			if _, worked, ok := workedAttempt(attempts, client, since, until); ok && worked-st.at > bound.Milliseconds() {
+				problems = append(problems, fmt.Sprintf("the attempt at rw of %s worked only %.1f s after rw was back at %s, more than %.1f s",
+					client, float64(worked-st.at)/1000, secs(st.at), bound.Seconds()))
+			}
+		}
+	}
+
 	// Queries and writes on a read address.
 	var lastRead *entry
 	var wrong []string
-	slow := map[string]bool{}
 	for i, e := range ops {
 		if e.port() != readPort {
 			continue
@@ -285,12 +304,7 @@ func report(w io.Writer, entries []entry, event int64, nodes []node) error {
 		limit := s.at + 1000
 		since, until := recovery(states, s.at)
 		if _, worked, ok := workedAttempt(attempts, e.client, since, until); ok {
-			limit = max(limit, worked+markedBack)
-			if bound := 1000 + 2*int64(len(nodes))*connectTimeout.Milliseconds(); worked-s.at > bound && !slow[e.client] {
-				slow[e.client] = true
-				problems = append(problems, fmt.Sprintf("the attempt at rw of %s worked only %.1f s after rw was back, more than %.1f s",
-					e.client, float64(worked-s.at)/1000, float64(bound)/1000))
-			}
+			limit = max(limit, worked+markedBack.Milliseconds())
 		}
 		if e.start > limit {
 			wrong = append(wrong, fmt.Sprintf("%s %s on %s at %s, %.1f s after rw was back at %s, limit %.1f s",
