@@ -21,10 +21,13 @@ import (
 //     the failures that were still running at the event.
 //   - The last query or write served by a read address after rw was back.
 //   - A query or write is wrong when a read address served it although it
-//     started more than 1 s plus one attempt at rw after rw was back. The
-//     attempt is pgfallback's own: the first of that client that worked
-//     since rw went down and before it went down again, from when rw was
-//     back, or its start if later, to when it worked. Without one, 1 s alone. Every query and write here is one statement, so none ran inside
+//     started more than 1 s after rw was back and after pgfallback's own
+//     attempt at rw had worked: the first attempt of that client that worked
+//     since rw went down and before it went down again. Without one, 1 s
+//     alone. That attempt must work within 1 s plus two attempts of
+//     connect_timeout per rw address after rw was back: the attempt that
+//     was running then, which can wait on addresses it dialed before, and
+//     the next one. Every query and write here is one statement, so none ran inside
 //     a transaction that was already open.
 //   - Every failed query and write with its error, consecutive ones with the
 //     same address and error as one line.
@@ -188,6 +191,10 @@ func known(e entry) int64 {
 	return e.start
 }
 
+// pgfallback marks rw back only after it closed the attempt's connection,
+// which ends after the attempt's AfterConnect logged that it worked.
+const markedBack = 100
+
 // workedAttempt is the first attempt at rw of client that worked from since
 // to before until: when it started and when it worked, and false when there
 // is none. pgfallback runs one attempt at a time per client, so the attempt
@@ -263,6 +270,7 @@ func report(w io.Writer, entries []entry, event int64, nodes []node) error {
 	// Queries and writes on a read address.
 	var lastRead *entry
 	var wrong []string
+	slow := map[string]bool{}
 	for i, e := range ops {
 		if e.port() != readPort {
 			continue
@@ -276,8 +284,13 @@ func report(w io.Writer, entries []entry, event int64, nodes []node) error {
 		}
 		limit := s.at + 1000
 		since, until := recovery(states, s.at)
-		if start, worked, ok := workedAttempt(attempts, e.client, since, until); ok {
-			limit += max(0, worked-max(start, s.at))
+		if _, worked, ok := workedAttempt(attempts, e.client, since, until); ok {
+			limit = max(limit, worked+markedBack)
+			if bound := 1000 + 2*int64(len(nodes))*connectTimeout.Milliseconds(); worked-s.at > bound && !slow[e.client] {
+				slow[e.client] = true
+				problems = append(problems, fmt.Sprintf("the attempt at rw of %s worked only %.1f s after rw was back, more than %.1f s",
+					e.client, float64(worked-s.at)/1000, float64(bound)/1000))
+			}
 		}
 		if e.start > limit {
 			wrong = append(wrong, fmt.Sprintf("%s %s on %s at %s, %.1f s after rw was back at %s, limit %.1f s",

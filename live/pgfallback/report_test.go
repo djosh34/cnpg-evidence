@@ -144,37 +144,6 @@ func TestReportRWNotBack(t *testing.T) {
 	}
 }
 
-// A read address is wrong more than 1 s plus pgx's attempt that worked
-// after rw was back at 5000: it worked 100 ms after.
-func TestReportWrongRead(t *testing.T) {
-	log := strings.Replace(lostPrimary, "5500 5600 pgx query k3s-2:5433", "6300 6350 pgx query k3s-2:5433", 1)
-	out, err := runReport(t, log)
-	var check checkFailed
-	if !errors.As(err, &check) {
-		t.Fatalf("report did not fail: %v\n%s", err, out)
-	}
-	if want := "- pgx query on k3s-2:5433 at 5.3, 1.3 s after rw was back at 4.0, limit 1.1 s"; !strings.Contains(out, want) {
-		t.Errorf("no line %q in\n%s", want, out)
-	}
-	log = strings.Replace(lostPrimary, "5500 5600 pgx query k3s-2:5433", "6050 6100 pgx query k3s-2:5433", 1)
-	if out, err := runReport(t, log); err != nil {
-		t.Fatalf("report failed: %v\n%s", err, out)
-	}
-}
-
-// An attempt that started before rw was back and worked only later, after
-// waiting on an address that did not answer, counts with its whole time:
-// 1.6 s, so a read 1.8 s after rw was back is not wrong.
-func TestReportSlowAttempt(t *testing.T) {
-	log := strings.Replace(lostPrimary, `4900 4900 pgx rw-attempt - ok started
-5100 5100 pgx rw-attempt k3s-2:5432 ok worked`, `4900 4900 pgx rw-attempt - ok started
-6500 6500 pgx rw-attempt k3s-2:5432 ok worked`, 1)
-	log = strings.Replace(log, "5500 5600 pgx query k3s-2:5433", "6800 6850 pgx query k3s-2:5433", 1)
-	if out, err := runReport(t, log); err != nil {
-		t.Fatalf("report failed: %v\n%s", err, out)
-	}
-}
-
 // Without an attempt that worked, a read address may serve only for 1 s
 // after rw was back.
 func TestReportNoAttempt(t *testing.T) {
@@ -188,23 +157,6 @@ func TestReportNoAttempt(t *testing.T) {
 	var check checkFailed
 	if out, err := runReport(t, log); !errors.As(err, &check) {
 		t.Fatalf("report did not fail for a read 1.05 s after rw was back: %v\n%s", err, out)
-	}
-}
-
-// An attempt that started 1.9 s before rw was back and worked 0.2 s after
-// it counts only those 0.2 s.
-func TestReportAttemptBeforeRWBack(t *testing.T) {
-	log := strings.Replace(lostPrimary, `4900 4900 pgx rw-attempt - ok started
-5100 5100 pgx rw-attempt k3s-2:5432 ok worked`, `3100 3100 pgx rw-attempt - ok started
-5200 5200 pgx rw-attempt k3s-2:5432 ok worked`, 1)
-	log = strings.Replace(log, "5500 5600 pgx query k3s-2:5433", "6150 6200 pgx query k3s-2:5433", 1)
-	if out, err := runReport(t, log); err != nil {
-		t.Fatalf("report failed: %v\n%s", err, out)
-	}
-	log = strings.Replace(log, "6150 6200 pgx query k3s-2:5433", "6300 6350 pgx query k3s-2:5433", 1)
-	var check checkFailed
-	if out, err := runReport(t, log); !errors.As(err, &check) {
-		t.Fatalf("report did not fail for a read 1.3 s after rw was back: %v\n%s", err, out)
 	}
 }
 
@@ -231,5 +183,56 @@ func TestReportTwoOutages(t *testing.T) {
 	}
 	if want := "- pgx query on k3s-2:5433 at 5.3, 1.3 s after rw was back at 4.0, limit 1.0 s"; !strings.Contains(out, want) {
 		t.Errorf("no line %q in\n%s", want, out)
+	}
+}
+
+// rw is back at 5000 and pgx's attempt worked at 5100: a read address may
+// serve pgx until 1 s after rw was back.
+func TestReportWrongRead(t *testing.T) {
+	log := strings.Replace(lostPrimary, "5500 5600 pgx query k3s-2:5433", "6150 6200 pgx query k3s-2:5433", 1)
+	out, err := runReport(t, log)
+	var check checkFailed
+	if !errors.As(err, &check) {
+		t.Fatalf("report did not fail: %v\n%s", err, out)
+	}
+	if want := "- pgx query on k3s-2:5433 at 5.2, 1.1 s after rw was back at 4.0, limit 1.0 s"; !strings.Contains(out, want) {
+		t.Errorf("no line %q in\n%s", want, out)
+	}
+	log = strings.Replace(lostPrimary, "5500 5600 pgx query k3s-2:5433", "5950 6000 pgx query k3s-2:5433", 1)
+	if out, err := runReport(t, log); err != nil {
+		t.Fatalf("report failed: %v\n%s", err, out)
+	}
+}
+
+// pgx's attempt that was running when rw came back waited on addresses it
+// dialed before, failed, and the next one worked at 6500: a read address
+// may serve pgx until then.
+func TestReportSlowAttempt(t *testing.T) {
+	log := strings.Replace(lostPrimary, `4900 4900 pgx rw-attempt - ok started
+5100 5100 pgx rw-attempt k3s-2:5432 ok worked`, `3500 3500 pgx rw-attempt - ok started
+6400 6400 pgx rw-attempt - ok started
+6500 6500 pgx rw-attempt k3s-2:5432 ok worked`, 1)
+	log = strings.Replace(log, "5500 5600 pgx query k3s-2:5433", "6550 6600 pgx query k3s-2:5433", 1)
+	if out, err := runReport(t, log); err != nil {
+		t.Fatalf("report failed: %v\n%s", err, out)
+	}
+	log = strings.Replace(log, "6550 6600 pgx query k3s-2:5433", "6650 6700 pgx query k3s-2:5433", 1)
+	var check checkFailed
+	if out, err := runReport(t, log); !errors.As(err, &check) {
+		t.Fatalf("report did not fail for a read after the attempt worked: %v\n%s", err, out)
+	}
+}
+
+// An attempt that works more than 1 s plus two attempts after rw was back
+// fails the report. The test nodes are two: 1 s plus 8 s.
+func TestReportLateAttempt(t *testing.T) {
+	log := strings.Replace(lostPrimary, `4900 4900 pgx rw-attempt - ok started
+5100 5100 pgx rw-attempt k3s-2:5432 ok worked`, `14000 14000 pgx rw-attempt - ok started
+14100 14100 pgx rw-attempt k3s-2:5432 ok worked`, 1)
+	log = strings.Replace(log, "7000 7100 pgx query k3s-2:5432", "15000 15100 pgx query k3s-2:5432", 1)
+	log = strings.Replace(log, "5500 5600 pgx query k3s-2:5433", "13000 13100 pgx query k3s-2:5433", 1)
+	out, err := runReport(t, log)
+	if err == nil || !strings.Contains(err.Error(), "the attempt at rw of pgx worked only 9.1 s after rw was back, more than 9.0 s") {
+		t.Fatalf("report did not fail for a late attempt: %v\n%s", err, out)
 	}
 }
