@@ -16,7 +16,7 @@ if [[ ${wanted[*]} == all ]]; then
   wanted=("${known[@]}")
 fi
 for s in "${wanted[@]}"; do
-  if ! printf '%s\n' "${known[@]}" | grep -qxF -- "$s"; then
+  if ! grep -qxF -- "$s" "$here/scenarios.txt"; then
     echo "plan.sh: unknown scenario $s; known: ${known[*]}" >&2
     exit 1
   fi

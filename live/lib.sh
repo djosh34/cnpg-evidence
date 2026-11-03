@@ -315,7 +315,7 @@ check_commits() {
   psql_on "$p" -d orders -c 'select n from live_writes' | sort >"$present"
   lost=$(comm -23 "$acked" "$present" | wc -l)
   if ((lost > 0)); then
-    fail "$lost of $(wc -l <"$acked") acknowledged commits are not on $p, the first: $(comm -23 "$acked" "$present" | head -5 | paste -sd ' ')"
+    fail "$lost of $(wc -l <"$acked") acknowledged commits are not on $p, the first: $(comm -23 "$acked" "$present" | awk 'NR <= 5' | paste -sd ' ')"
   fi
   wc -l <"$acked"
 }
