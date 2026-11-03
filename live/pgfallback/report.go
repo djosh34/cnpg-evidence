@@ -5,10 +5,12 @@ import (
 	"cmp"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // The report: everything in seconds after the event.
@@ -20,13 +22,15 @@ import (
 //     the failures that were still running at the event.
 //   - The last query or write served by a read address after rw was back.
 //   - A query or write is wrong when a read address served it although it
-//     started more than 1 s plus one attempt at rw after rw was back. One
-//     attempt is what a connect to the rw hosts in order took if it started
-//     just before rw was back or right then, whichever is longer, with each
-//     address's last connect alone known when the attempt got to it: the
-//     failed ones before the first that worked, and that one. Every query and write here
-//     is one statement, so none ran inside a transaction that was already
-//     open.
+//     started more than 1 s after rw was back, while rw took connections
+//     until 0.25 s after it ended, and after pgfallback's own attempt at rw
+//     had worked: the first attempt of that client that worked since rw went
+//     down and before it went down again. Without one, 1 s alone. That
+//     attempt must work within 1 s plus connect_timeout per rw address and
+//     one more after rw was back: the attempt that was running then can
+//     still wait on addresses it dialed before, and the next one connects.
+//     Every query and write here is one statement, so none ran inside a
+//     transaction that was already open.
 //   - Every failed query and write with its error, consecutive ones with the
 //     same address and error as one line.
 //   - At the end, the last query and write of each client worked on rw.
@@ -153,6 +157,25 @@ func spells(states []rwState, event int64, secs func(int64) string) (string, int
 	return strings.Join(downs, ", "), back
 }
 
+// recovery is the spell without rw that ended at up and the spell with rw
+// after it: when rw went down, or up when it was not down before, and when
+// it went down again, or never.
+func recovery(states []rwState, up int64) (int64, int64) {
+	since, until := up, int64(math.MaxInt64)
+	for i, s := range states {
+		if s.at != up {
+			continue
+		}
+		if i > 0 {
+			since = states[i-1].at
+		}
+		if i+1 < len(states) {
+			until = states[i+1].at
+		}
+	}
+	return since, until
+}
+
 // stateAt is the state at time t, and false when no connect ended by then.
 func stateAt(states []rwState, t int64) (rwState, bool) {
 	i, _ := slices.BinarySearchFunc(states, t+1, func(s rwState, t int64) int { return cmp.Compare(s.at, t) })
@@ -170,45 +193,40 @@ func known(e entry) int64 {
 	return e.start
 }
 
-// attemptAt is how long a connect to the rw hosts in order took when it
-// started at time t. It takes each address with its last connect alone known
-// when the attempt got to it: a failed one adds its whole time, also when it
-// ended later, and the first that worked adds its time and ends the attempt.
-func attemptAt(connects []entry, rwAddrs []string, t int64) int64 {
-	var total int64
-	for _, a := range rwAddrs {
-		var last *entry
-		for i := range connects {
-			if connects[i].addr == a && known(connects[i]) <= t+total && (last == nil || known(connects[i]) >= known(*last)) {
-				last = &connects[i]
-			}
-		}
-		if last == nil {
-			total += connectTimeout.Milliseconds()
+// pgfallback marks rw back only after it closed the attempt's connection,
+// which ends after the attempt's AfterConnect logged that it worked.
+const markedBack = 100 * time.Millisecond
+
+// workedAttempt is the first attempt at rw of client that worked from since
+// to before until: when it started and when it worked, and false when there
+// is none. pgfallback runs one attempt at a time per client, so the attempt
+// that worked is the one that started last before.
+func workedAttempt(attempts []entry, client string, since, until int64) (int64, int64, bool) {
+	for _, e := range attempts {
+		if e.client != client || e.detail != "worked" || e.end < since || e.end >= until {
 			continue
 		}
-		total += last.end - last.start
-		if last.ok {
-			break
+		start := e.end
+		for _, a := range attempts {
+			if a.client == client && a.detail == "started" && a.end <= e.end {
+				start = a.end
+			}
 		}
+		return start, e.end, true
 	}
-	return total
-}
-
-// oneAttempt is one attempt at rw once rw was back at u: the longer of one
-// that started just before, which got to each address later, and one that
-// started then.
-func oneAttempt(connects []entry, rwAddrs []string, u int64) int64 {
-	return max(attemptAt(connects, rwAddrs, u-1), attemptAt(connects, rwAddrs, u))
+	return 0, 0, false
 }
 
 func report(w io.Writer, entries []entry, event int64, nodes []node) error {
 	slices.SortStableFunc(entries, func(a, b entry) int { return cmp.Compare(a.end, b.end) })
-	var connects, ops []entry
+	var connects, attempts, ops []entry
 	for _, e := range entries {
-		if e.client == "rw" {
+		switch {
+		case e.client == "rw":
 			connects = append(connects, e)
-		} else {
+		case e.what == "rw-attempt":
+			attempts = append(attempts, e)
+		default:
 			ops = append(ops, e)
 		}
 	}
@@ -235,10 +253,38 @@ func report(w io.Writer, entries []entry, event int64, nodes []node) error {
 		row("rw on "+a+" alone took no connection", down)
 	}
 
-	// Reads and writes of each client.
+	// Reads and writes of each client, and the attempt at rw that brought it
+	// back.
 	for _, client := range []string{"pgx", "gorm"} {
 		for _, what := range []string{"query", "write"} {
 			row(client+" "+what+" works again", worksAgain(ops, client, what, event, secs))
+		}
+		if back >= 0 {
+			since, until := recovery(states, back)
+			if start, worked, ok := workedAttempt(attempts, client, since, until); ok {
+				row(client+" attempt at rw that worked", fmt.Sprintf("started at %s, worked at %s", secs(start), secs(worked)))
+			} else {
+				row(client+" attempt at rw that worked", "none")
+			}
+		}
+	}
+
+	// Each client's attempt that worked in each recovery after the event:
+	// within 1 s plus connect_timeout per rw address and one more. The
+	// attempt running when rw came back may still wait on the address that
+	// came back and those after it; the next waits on those before it and
+	// connects to it.
+	bound := time.Second + time.Duration(len(rwAddrs)+1)*connectTimeout
+	for i, st := range states {
+		if !st.up || i == 0 || st.at < event {
+			continue
+		}
+		since, until := recovery(states, st.at)
+		for _, client := range []string{"pgx", "gorm"} {
+			if _, worked, ok := workedAttempt(attempts, client, since, until); ok && worked-st.at > bound.Milliseconds() {
+				problems = append(problems, fmt.Sprintf("the attempt at rw of %s worked only %.1f s after rw was back at %s, more than %.1f s",
+					client, float64(worked-st.at)/1000, secs(st.at), bound.Seconds()))
+			}
 		}
 	}
 
@@ -252,11 +298,19 @@ func report(w io.Writer, entries []entry, event int64, nodes []node) error {
 		if back >= 0 && e.end > back && (lastRead == nil || e.end > lastRead.end) {
 			lastRead = &ops[i]
 		}
+		// Only while rw took connections from the start to 0.25 s after the
+		// end: one that was running when rw went down may land on read, and
+		// the connects alone see rw down up to their interval later.
 		s, known := stateAt(states, e.start)
-		if !known || !s.up {
+		if end, _ := stateAt(states, e.end+connectEvery.Milliseconds()); !known || !s.up || end.at != s.at {
 			continue
 		}
-		if limit := s.at + 1000 + oneAttempt(connects, rwAddrs, s.at); e.start > limit {
+		limit := s.at + 1000
+		since, until := recovery(states, s.at)
+		if _, worked, ok := workedAttempt(attempts, e.client, since, until); ok {
+			limit = max(limit, worked+markedBack.Milliseconds())
+		}
+		if e.start > limit {
 			wrong = append(wrong, fmt.Sprintf("%s %s on %s at %s, %.1f s after rw was back at %s, limit %.1f s",
 				e.client, e.what, e.addr, secs(e.start), float64(e.start-s.at)/1000, secs(s.at), float64(limit-s.at)/1000))
 		}

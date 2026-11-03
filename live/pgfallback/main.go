@@ -15,8 +15,8 @@
 // pgxpool.Pool and a GORM DB at the same time, each with a query every
 // 0.25 s and a write every second, and connects to each rw address alone
 // every 0.25 s, until it gets SIGTERM or SIGINT. Each starts on time, also
-// while earlier ones still wait. It prints one line per
-// attempt on stdout:
+// while earlier ones still wait. It prints one line per query, write and
+// connect on stdout:
 //
 //	<start unix ms> <end unix ms> <client> <what> <address> ok|fail <detail>
 //
@@ -25,6 +25,12 @@
 // connection was made. A query's detail is whether the server was in
 // recovery and the last write of that client it saw, a write's is its n, a
 // failure's is the error.
+//
+// pgfallback's attempts at rw run the config's LookupFunc and AfterConnect
+// too, but not with the application's context, which the program marks. So
+// the program also logs when an attempt of pgx or gorm starts, as what
+// rw-attempt with address - and detail started, and when one worked, with
+// the address it reached and detail worked. A failed attempt logs no end.
 //
 // report reads such a log and prints, in Markdown, what happened from the
 // event on (see report.go). It exits 1 when the client did what pgfallback
@@ -184,12 +190,33 @@ func runClients(ctx context.Context, certs string, nodes []node) (err error) {
 		return []string{ip}, nil
 	}
 	c := &clients{nodes: nodes}
+	ctx = context.WithValue(ctx, appKey{}, true)
+	// An attempt at rw looks up every rw host, the first one first.
+	lookupLogged := func(client string) func(context.Context, string) ([]string, error) {
+		return func(ctx context.Context, host string) ([]string, error) {
+			if host == names[0] && ctx.Value(appKey{}) == nil {
+				now := time.Now()
+				logLine(now, now, client, "rw-attempt", "-", "ok", "started")
+			}
+			return lookup(ctx, host)
+		}
+	}
+	afterConnect := func(client string) func(context.Context, *pgconn.PgConn) error {
+		return func(ctx context.Context, pgConn *pgconn.PgConn) error {
+			if ctx.Value(appKey{}) == nil {
+				now := time.Now()
+				logLine(now, now, client, "rw-attempt", c.addrOf(pgConn), "ok", "worked")
+			}
+			return nil
+		}
+	}
 
 	poolConfig, err := pgxpool.ParseConfig(dsn(certs, names))
 	if err != nil {
 		return err
 	}
-	poolConfig.ConnConfig.LookupFunc = lookup
+	poolConfig.ConnConfig.LookupFunc = lookupLogged("pgx")
+	poolConfig.ConnConfig.AfterConnect = afterConnect("pgx")
 	if err := pgfallback.Pool(poolConfig, reads...); err != nil {
 		return err
 	}
@@ -205,7 +232,8 @@ func runClients(ctx context.Context, certs string, nodes []node) (err error) {
 	if err != nil {
 		return err
 	}
-	stdConfig.LookupFunc = lookup
+	stdConfig.LookupFunc = lookupLogged("gorm")
+	stdConfig.AfterConnect = afterConnect("gorm")
 	opts, err := pgfallback.Stdlib(reads...)
 	if err != nil {
 		return err
@@ -214,7 +242,9 @@ func runClients(ctx context.Context, certs string, nodes []node) (err error) {
 	defer func() {
 		err = errors.Join(err, db.Close())
 	}()
-	c.gorm, err = gorm.Open(postgres.New(postgres.Config{Conn: db}), &gorm.Config{Logger: logger.Discard})
+	// GORM's own ping would connect without the application's context.
+	c.gorm, err = gorm.Open(postgres.New(postgres.Config{Conn: db}),
+		&gorm.Config{Logger: logger.Discard, DisableAutomaticPing: true})
 	if err != nil {
 		return fmt.Errorf("opening GORM: %w", err)
 	}
@@ -247,6 +277,9 @@ func runClients(ctx context.Context, certs string, nodes []node) (err error) {
 	wg.Wait()
 	return nil
 }
+
+// appKey marks the application's contexts.
+type appKey struct{}
 
 func (c *clients) ensureTable(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, attemptTimeout)
