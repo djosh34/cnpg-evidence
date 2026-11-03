@@ -49,7 +49,7 @@ log "cut off $replica from 5432"
 wait_for 60 "$replica gone from the primary's pg_stat_replication" not_in_replication "$replica"
 STOPPED=$(now_ms)
 wait_for 480 "CNPGReplicaDown firing for $replica" alert_firing CNPGReplicaDown "$replica"
-FIRED=$(now_ms)
+DOWN_AT=$(now_ms)
 prom_count 1 "cnpg_collector_up{pod=\"$replica\"} == 1" || fail "Prometheus gets no metrics from $replica"
 FIRING=$(firing_alerts | paste -sd ',' | sed 's/,/, /g')
 
@@ -66,7 +66,7 @@ summary ""
 row "Seconds after $replica was cut off from 5432" ""
 summary "|---|---|"
 row "$replica not in the primary's pg_stat_replication" "$(secs "$STOPPED")"
-row "CNPGReplicaDown fires for $replica, its metrics still scraped; firing then: $FIRING" "$(secs "$FIRED")"
+row "CNPGReplicaDown fires for $replica, its metrics still scraped; firing then: $FIRING" "$(secs "$DOWN_AT")"
 row "rule removed" "$(secs "$UNBLOCKED")"
 row "CNPGReplicaDown resolved" "$(secs "$RESOLVED")"
 common_rows
