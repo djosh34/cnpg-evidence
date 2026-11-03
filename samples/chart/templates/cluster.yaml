@@ -24,11 +24,12 @@ spec:
   # waits on a lag check. A starting or rewound replica may open the read port
   # while it is still behind a primary; clients read pg-rw first.
 
-  # A rollout moves the primary with a switchover (docs/samples.md names the
-  # exception), and a stopping instance ends open sessions at once instead of
-  # waiting up to 180 s for them. A rollout or a switchover stops writes for
-  # about 11 s.
-  primaryUpdateMethod: switchover
+  # A rollout restarts the primary in place instead of switching over: with
+  # CloudNativePG 1.30.1, a switchover in a rollout can leave a replica
+  # holding the primary lease, and the next switchover then never ends
+  # (docs/samples.md). A stopping instance ends open sessions at once instead
+  # of waiting up to 180 s for them.
+  primaryUpdateMethod: restart
   smartShutdownTimeout: 0
 
   # No replication slots: a slot keeps WAL for an instance that is gone until

@@ -18,17 +18,6 @@ FENCE_SECONDS=30
 BACK_LIMIT=600
 WRITE_GAP_LIMIT=$((FENCE_SECONDS + BACK_LIMIT))
 
-ident_of() {
-  psql_on "$1" -c 'select map_name, sys_name, pg_username, error from pg_ident_file_mappings order by 1, 2, 3'
-}
-
-# Instance $1 has the pg_ident lines in $WANT.
-ident_back() {
-  local got
-  got=$(ident_of "$1") || return 1
-  [[ $got == "$WANT" ]] || { echo "pg_ident of $1: $(paste -sd ' ' <<<"$got")" >&2; return 1; }
-}
-
 # psql on instance $1 cannot connect: it exits with 2, which kubectl exec
 # passes on. Its own errors exit with 1.
 stopped() {
@@ -39,9 +28,7 @@ stopped() {
 
 wait_for 600 "three ready instances, two streaming replicas" settled
 p=$(primary)
-replica=$(instances | awk -v p="$p" '$1 != p {print $1; exit}')
-WANT=$(ident_of "$replica")
-ident_back "$p" || fail "$p and $replica have different pg_ident lines before the fence"
+want_ident "$p"
 start_monitoring "${NODES[0]}"
 start_client
 
