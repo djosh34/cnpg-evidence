@@ -16,3 +16,6 @@ replica-not-streaming
 exporter-node-loss
 lag-and-stall
 lag-after-primary-change
+pgfallback-drain
+pgfallback-primary-node-loss
+pgfallback-replica-node-loss

@@ -1,4 +1,8 @@
 # The live cluster's values for samples/chart, on top of desired.yaml and the
-# chart's own values.yaml: the S3 store that live/up.sh starts.
+# chart's own values.yaml: the S3 store that live/up.sh starts, and the node
+# names in the server certificate, so a client outside the cluster can check
+# it with verify-full against the node it dials (live/pgfallback.sh).
 objectStore:
   endpointURL: http://s3.s3.svc:9000
+replication:
+  dnsNames: [pg-rw, pg-rw.databases.svc, k3s-1, k3s-2, k3s-3]
