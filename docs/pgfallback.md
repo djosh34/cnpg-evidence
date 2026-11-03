@@ -24,7 +24,7 @@ go get github.com/djosh34/cnpg-evidence/pgfallback@<tag>
   - An idle read connection that is not handed out again stays open until the pool's own limits close it: `MaxConnIdleTime` in pgxpool, 30 minutes by default, and `SetConnMaxIdleTime` in database/sql, no limit by default. It serves nothing in that time.
   - From about 2 s after an rw address takes connections again, no query is served by a read address, as long as the rw addresses that are still down refuse. When the first rw address does not answer at all, add `connect_timeout`.
   - After an idle spell of more than 2 s with no attempt, a read connection that is handed out is closed too, so the first query after it tries rw first.
-- **A new connection that lands on a read address again,** because rw went away again, keeps read connections in use. One that tried the rw hosts before the attempt that worked started does not: while rw addresses do not answer, it can land on a read address many seconds after it tried them. It serves the query that opened it, and is closed after that like every read connection.
+- **A new connection that lands on a read address again,** because rw went away again, keeps read connections in use. One that tried the rw hosts before the attempt that worked started does not: while rw addresses do not answer, it can land on a read address many seconds after it tried them. pgxpool closes it before it serves anything; database/sql and GORM let it serve the query that opened it and close it the next time it is handed out.
 
 It does not:
 
