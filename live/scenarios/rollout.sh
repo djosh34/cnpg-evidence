@@ -31,7 +31,7 @@ rolled_out() {
     pending=$(psql_on "$pod" -c 'select count(*) from pg_settings where pending_restart')
     [[ $pending == 0 ]] || { echo "$pod has $pending settings pending a restart" >&2; return 1; }
   done
-  ident_everywhere
+  ident_everywhere || return 1
   settled
 }
 
