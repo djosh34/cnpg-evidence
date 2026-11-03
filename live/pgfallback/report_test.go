@@ -238,13 +238,20 @@ func TestReportLateAttempt(t *testing.T) {
 }
 
 // A query that started a moment before rw went down and landed on a read
-// address is not wrong, although rw had been up for more than 1 s.
+// address is not wrong, although rw had been up for more than 1 s, also when
+// it ended before the connects alone saw rw down.
 func TestReportReadAsRWGoesDown(t *testing.T) {
 	log := "0 50 rw connect k3s-1:5432 ok connected\n0 50 rw connect k3s-2:5432 ok connected\n" + lostPrimary
 	log = strings.Replace(log, "1000 1100 rw connect k3s-1:5432 fail", "1100 1200 rw connect k3s-1:5432 fail", 1)
 	log = strings.Replace(log, "1000 1100 rw connect k3s-2:5432 fail", "1100 1200 rw connect k3s-2:5432 fail", 1)
-	log += "1095 1300 gorm query k3s-2:5433 ok in_recovery=true last=1\n"
-	if out, err := runReport(t, log); err != nil {
-		t.Fatalf("report failed: %v\n%s", err, out)
+	for _, read := range []string{
+		// Running when the connects alone saw rw down.
+		"1095 1300 gorm query k3s-2:5433 ok in_recovery=true last=1\n",
+		// Over just before they did.
+		"1060 1090 gorm query k3s-2:5433 ok in_recovery=true last=1\n",
+	} {
+		if out, err := runReport(t, log+read); err != nil {
+			t.Fatalf("report failed for %q: %v\n%s", read, err, out)
+		}
 	}
 }

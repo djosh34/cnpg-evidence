@@ -23,14 +23,14 @@ import (
 //   - The last query or write served by a read address after rw was back.
 //   - A query or write is wrong when a read address served it although it
 //     started more than 1 s after rw was back, while rw took connections
-//     until it ended, and after pgfallback's own attempt at rw had worked:
-//     the first attempt of that client that worked since rw went down and
-//     before it went down again. Without one, 1 s alone. That attempt must
-//     work within 1 s plus connect_timeout per rw address and one more after
-//     rw was back: the attempt that was running then can still wait on
-//     addresses it dialed before, and the next one connects. Every query and
-//     write here is one statement, so none ran inside a transaction that was
-//     already open.
+//     until 0.25 s after it ended, and after pgfallback's own attempt at rw
+//     had worked: the first attempt of that client that worked since rw went
+//     down and before it went down again. Without one, 1 s alone. That
+//     attempt must work within 1 s plus connect_timeout per rw address and
+//     one more after rw was back: the attempt that was running then can
+//     still wait on addresses it dialed before, and the next one connects.
+//     Every query and write here is one statement, so none ran inside a
+//     transaction that was already open.
 //   - Every failed query and write with its error, consecutive ones with the
 //     same address and error as one line.
 //   - At the end, the last query and write of each client worked on rw.
@@ -298,10 +298,11 @@ func report(w io.Writer, entries []entry, event int64, nodes []node) error {
 		if back >= 0 && e.end > back && (lastRead == nil || e.end > lastRead.end) {
 			lastRead = &ops[i]
 		}
-		// Only while rw took connections from the start to the end: one
-		// that was running when rw went down may land on read.
+		// Only while rw took connections from the start to 0.25 s after the
+		// end: one that was running when rw went down may land on read, and
+		// the connects alone see rw down up to their interval later.
 		s, known := stateAt(states, e.start)
-		if end, _ := stateAt(states, e.end); !known || !s.up || end.at != s.at {
+		if end, _ := stateAt(states, e.end+connectEvery.Milliseconds()); !known || !s.up || end.at != s.at {
 			continue
 		}
 		limit := s.at + 1000
