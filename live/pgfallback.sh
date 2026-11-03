@@ -116,7 +116,7 @@ case $EVENT in
     what="primary $first"
     ;;
   replica-node-loss)
-    replica=$(instances | awk -v p="$first" '$1 != p {print $1; exit}')
+    replica=$(instances | awk -v p="$first" '$1 != p && !found++ {print $1}')
     node=$(node_of "$replica")
     what="replica $replica"
     ;;

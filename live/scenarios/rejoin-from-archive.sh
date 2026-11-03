@@ -37,11 +37,11 @@ wait_for 300 "wal_keep_size $KEEP on every instance" wal_keep_size_is "$KEEP"
 wait_for 600 "three ready instances, two streaming replicas" settled
 # The replica whose node stops first, and the node that never stops.
 p=$(primary)
-replica=$(instances | awk -v p="$p" '$1 != p {print $1; exit}')
+replica=$(instances | awk -v p="$p" '$1 != p && !found++ {print $1}')
 # It is behind while it catches up from the store after its start, and
 # CNPGReplicaLag fires when that takes longer than its 2 min.
 allow_alert CNPGReplicaLag "$replica"
-start_monitoring "$(instances | awk -v p="$p" -v r="$replica" '$1 != p && $1 != r {print $2; exit}')"
+start_monitoring "$(instances | awk -v p="$p" -v r="$replica" '$1 != p && $1 != r && !found++ {print $2}')"
 start_client
 
 summary "### rejoin-from-archive, writer $WRITER, wal_keep_size $KEEP"

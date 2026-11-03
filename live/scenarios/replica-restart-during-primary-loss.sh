@@ -31,7 +31,7 @@ restarted() {
 wait_for 600 "three ready instances, two streaming replicas" settled
 old=$(primary)
 node=$(node_of "$old")
-replica=$(instances | awk -v p="$old" '$1 != p {print $1; exit}')
+replica=$(instances | awk -v p="$old" '$1 != p && !found++ {print $1}')
 replica_node=$(node_of "$replica")
 container=$(k get pod "$replica" -n "$NS" -o jsonpath='{.status.containerStatuses[?(@.name=="postgres")].containerID}')
 container=${container#containerd://}

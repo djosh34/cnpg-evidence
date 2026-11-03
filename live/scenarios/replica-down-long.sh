@@ -37,7 +37,7 @@ caught_up() {
 
 wait_for 600 "three ready instances, two streaming replicas" settled
 p=$(primary)
-replica=$(instances | awk -v p="$p" '$1 != p {print $1; exit}')
+replica=$(instances | awk -v p="$p" '$1 != p && !found++ {print $1}')
 node=$(node_of "$replica")
 use_api_of "$(other_node "$node")"
 start_monitoring "$(other_node "$node")"

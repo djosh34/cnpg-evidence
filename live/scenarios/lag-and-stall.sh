@@ -25,8 +25,8 @@ replay() { psql_on "$2" -c "select pg_wal_replay_$1()" >/dev/null; }
 
 wait_for 600 "three ready instances, two streaming replicas" settled
 p=$(primary)
-replica=$(instances | awk -v p="$p" '$1 != p {print $1; exit}')
-other=$(instances | awk -v p="$p" -v r="$replica" '$1 != p && $1 != r {print $1; exit}')
+replica=$(instances | awk -v p="$p" '$1 != p && !found++ {print $1}')
+other=$(instances | awk -v p="$p" -v r="$replica" '$1 != p && $1 != r && !found++ {print $1}')
 start_monitoring "${NODES[0]}"
 expect_alert CNPGReplicaLag "$replica"
 expect_alert CNPGWritesBlocked "$p"

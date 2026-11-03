@@ -35,7 +35,7 @@ wait_for 600 "three ready instances, two streaming replicas" settled
 start_monitoring "${NODES[0]}"
 wait_for 300 "Prometheus seeing two streaming replicas" prom_count 2 'cnpg_sample:replica_streaming'
 p=$(primary)
-replica=$(instances | awk -v p="$p" '$1 != p {print $1; exit}')
+replica=$(instances | awk -v p="$p" '$1 != p && !found++ {print $1}')
 node=$(node_of "$replica")
 expect_alert CNPGReplicaDown "$replica"
 # Without a WAL receiver the replica reports the age of its last transaction.

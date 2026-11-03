@@ -63,7 +63,7 @@ if [[ $WRITER == on ]]; then
   wait_first_write "$rolled" "$STOP_LIMIT" "$ROLLED"
 fi
 
-target=$(instances | awk -v p="$rolled" '$1 != p {print $1; exit}')
+target=$(instances | awk -v p="$rolled" '$1 != p && !found++ {print $1}')
 SWITCH=$(now_ms)
 k cnpg promote "$CLUSTER" "$target" -n "$NS" >/dev/null
 log "promoting $target, primary was $rolled"
