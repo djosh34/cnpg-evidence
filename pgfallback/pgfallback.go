@@ -327,7 +327,8 @@ func (f *fallback) startAttempt() {
 }
 
 // attempt connects to rw with the application's config and closes the
-// connection at once. start is when it started. A failed connect or close only means rw is not back.
+// connection at once. start is when it started. A failed connect or close
+// only means rw is not back.
 func (f *fallback) attempt(cc *pgx.ConnConfig, start time.Time) {
 	err := f.connect(cc)
 	f.mu.Lock()
