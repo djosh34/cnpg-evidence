@@ -22,9 +22,9 @@ IN_FLIGHT_MS=5000
 wait_for 600 "three ready instances, two streaming replicas" settled
 old=$(primary)
 node=$(node_of "$old")
-replica=$(instances | awk -v p="$old" '$1 != p {print $1; exit}')
+replica=$(instances | awk -v p="$old" '$1 != p && !found++ {print $1}')
 replica_node=$(node_of "$replica")
-last=$(instances | awk -v p="$old" -v r="$replica" '$1 != p && $1 != r {print $2; exit}')
+last=$(instances | awk -v p="$old" -v r="$replica" '$1 != p && $1 != r && !found++ {print $2}')
 use_api_of "$last"
 start_monitoring "$last"
 start_client

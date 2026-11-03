@@ -81,7 +81,7 @@ hold_and_restore() {
 }
 
 wait_for 600 "three ready instances, two streaming replicas" settled
-start_monitoring "$(instances | awk -v p="$(primary)" '$1 != p {print $2; exit}')"
+start_monitoring "$(instances | awk -v p="$(primary)" '$1 != p && !found++ {print $2}')"
 start_client
 
 summary "### store-$STORE_MODE, writer $WRITER"
@@ -120,7 +120,7 @@ NODE_LOSS=$T0
 
 # A switchover.
 old=$(primary)
-target=$(instances | awk -v p="$old" '$1 != p {print $1; exit}')
+target=$(instances | awk -v p="$old" '$1 != p && !found++ {print $1}')
 break_store_leaving_wal "$old"
 T0=$(now_ms)
 k cnpg promote "$CLUSTER" "$target" -n "$NS" >/dev/null

@@ -42,7 +42,7 @@ watch_lag() {
 
 wait_for 600 "three ready instances, two streaming replicas" settled
 old=$(primary)
-target=$(instances | awk -v p="$old" '$1 != p {print $1; exit}')
+target=$(instances | awk -v p="$old" '$1 != p && !found++ {print $1}')
 start_monitoring "${NODES[0]}"
 start_client
 

@@ -102,7 +102,7 @@ pgf_check_commits() {
   psql_on "$p" -d orders -c "select client || ' ' || n from pgfallback_writes" | sort >"$present"
   lost=$(comm -23 "$acked" "$present" | wc -l)
   if ((lost > 0)); then
-    fail "$lost of $(wc -l <"$acked") writes pgfallback got acknowledged are not on $p, the first: $(comm -23 "$acked" "$present" | head -5 | paste -sd ' ')"
+    fail "$lost of $(wc -l <"$acked") writes pgfallback got acknowledged are not on $p, the first: $(comm -23 "$acked" "$present" | awk 'NR <= 5' | paste -sd ' ')"
   fi
   wc -l <"$acked"
 }
@@ -116,7 +116,7 @@ case $EVENT in
     what="primary $first"
     ;;
   replica-node-loss)
-    replica=$(instances | awk -v p="$first" '$1 != p {print $1; exit}')
+    replica=$(instances | awk -v p="$first" '$1 != p && !found++ {print $1}')
     node=$(node_of "$replica")
     what="replica $replica"
     ;;
