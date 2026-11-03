@@ -108,11 +108,11 @@ Each query, write and connect starts on time, also while earlier ones still wait
 It logs every query, write and connect with its start and end, the address that served it and any error. Once every instance is ready and streaming and every read port answers, it runs 30 s more. The summary gives, in seconds after the event:
 
 - when rw took no connection, and when each rw address alone took none: from the start of a connect that failed to the end of the next one that worked;
-- for pgx and GORM, when queries and when writes failed and worked again;
+- for pgx and GORM, when queries and when writes failed and worked again, and when the attempt at rw that brought each back started and worked;
 - the last query or write a read address served once rw was back;
 - every failed query and write with its error.
 
-The scenario fails when a read address served a query or write that started more than 1 s plus one attempt at rw after rw was back, when the last query or write of pgx or GORM did not work on rw, or when a write the program got acknowledged is not on the primary. One attempt is what a connect to the rw hosts in order took if it started just before rw was back or right then, whichever is longer, with each address's last connect alone known when the attempt got to it. Every query and write is one statement, so none runs in a transaction that was already open.
+The scenario fails when a read address served a query or write that started more than 1 s plus one attempt at rw after rw was back, when the last query or write of pgx or GORM did not work on rw, or when a write the program got acknowledged is not on the primary. The attempt is pgfallback's own: the first attempt at rw of that client that worked since rw went down, from its start to when it worked; without one, 1 s alone. The program sees the attempts because pgfallback runs them with the config's `LookupFunc` and `AfterConnect`, but not with the application's context, which the program marks. Every query and write is one statement, so none runs in a transaction that was already open.
 
 ## Run in GitHub Actions
 
