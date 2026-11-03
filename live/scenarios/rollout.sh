@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # A rollout, then a switchover, with the writer's pooled session open. The
 # rollout changes shared_buffers on the Cluster, a parameter that needs a
-# restart: CNPG restarts the replicas, switches over to one of them
-# (primaryUpdateMethod: switchover) and restarts the former primary. The
-# switchover is kubectl cnpg promote to a replica. After each, every instance
-# must be ready and streaming within 10 min, and the primary must have moved;
-# with the writer, writes may stop for at most 30 s at any time, and the
-# summary gives the longest stop in each.
+# restart: CNPG restarts the replicas, then restarts the primary in place
+# (primaryUpdateMethod: restart). PostgreSQL then starts with CNPG's own
+# pg_ident lines only, and the chart's lines come back at the instance's next
+# reconcile (docs/samples.md). The switchover is kubectl cnpg promote to a
+# replica. After the rollout, every instance must be ready and streaming with
+# the chart's pg_ident lines within 10 min, and the primary must not have
+# moved; after the switchover, every instance must be ready and streaming
+# within 10 min. With the writer, writes may stop for at most 30 s at any
+# time, and the summary gives the longest stop in each.
 set -euo pipefail
 shopt -s inherit_errexit
 
@@ -17,8 +20,8 @@ SHARED_BUFFERS=160MB
 STOP_LIMIT=30
 WRITE_GAP_LIMIT=$STOP_LIMIT
 
-# Every instance runs with the new shared_buffers and no pending restart, and
-# the cluster has settled.
+# Every instance runs with the new shared_buffers and no pending restart, has
+# the pg_ident lines in $WANT, and the cluster has settled.
 rolled_out() {
   local pods pod value pending
   pods=$(instance_pods) || return 1
@@ -28,6 +31,7 @@ rolled_out() {
     pending=$(psql_on "$pod" -c 'select count(*) from pg_settings where pending_restart')
     [[ $pending == 0 ]] || { echo "$pod has $pending settings pending a restart" >&2; return 1; }
   done
+  ident_everywhere || return 1
   settled
 }
 
@@ -42,6 +46,7 @@ write_stop() {
 
 wait_for 600 "three ready instances, two streaming replicas" settled
 old=$(primary)
+want_ident "$old"
 start_monitoring "${NODES[0]}"
 start_client
 
@@ -49,10 +54,10 @@ T0=$(now_ms)
 k patch cluster "$CLUSTER" -n "$NS" --type merge \
   -p "{\"spec\":{\"postgresql\":{\"parameters\":{\"shared_buffers\":\"$SHARED_BUFFERS\"}}}}" >/dev/null
 log "shared_buffers set to $SHARED_BUFFERS, primary was $old"
-wait_for 600 "every instance on shared_buffers $SHARED_BUFFERS, ready and streaming" rolled_out
+wait_for 600 "every instance on shared_buffers $SHARED_BUFFERS with the chart's pg_ident lines, ready and streaming" rolled_out
 ROLLED=$(now_ms)
 rolled=$(primary)
-[[ $rolled != "$old" ]] || fail "the rollout restarted primary $old in place instead of switching over"
+[[ $rolled == "$old" ]] || fail "the rollout moved the primary from $old to $rolled instead of restarting it in place"
 log "rollout done, primary $rolled"
 if [[ $WRITER == on ]]; then
   wait_first_write "$rolled" "$STOP_LIMIT" "$ROLLED"
@@ -78,7 +83,7 @@ summary "### rollout, writer $WRITER"
 summary ""
 row "Seconds after shared_buffers was set to $SHARED_BUFFERS, primary was $old" ""
 summary "|---|---|"
-row "rollout done: every instance restarted, ready and streaming, $rolled primary" "$(secs "$ROLLED")"
+row "rollout done: every instance restarted, ready and streaming with the chart's pg_ident lines, $rolled still primary" "$(secs "$ROLLED")"
 if [[ $WRITER == on ]]; then
   row "longest time without an acknowledged write in the rollout" "$ROLLOUT_STOP"
 fi

@@ -130,6 +130,35 @@ settled() {
   [[ $streaming == 2 ]] || { echo "replicas streaming from $p: $streaming" >&2; return 1; }
 }
 
+# The pg_ident lines of instance $1, as PostgreSQL reads them from its file.
+ident_of() {
+  psql_on "$1" -c 'select map_name, sys_name, pg_username, error from pg_ident_file_mappings order by 1, 2, 3'
+}
+
+# Instance $1 has the pg_ident lines in $WANT.
+ident_back() {
+  local got
+  got=$(ident_of "$1") || return 1
+  [[ $got == "$WANT" ]] || { echo "pg_ident of $1: $(paste -sd ' ' <<<"$got")" >&2; return 1; }
+}
+
+# Every instance has the pg_ident lines in $WANT.
+ident_everywhere() {
+  local pods pod
+  pods=$(instance_pods) || return 1
+  for pod in $pods; do
+    ident_back "$pod" || return 1
+  done
+}
+
+# Sets WANT to the pg_ident lines of instance $1, which must hold the chart's
+# client lines, and checks that every instance has the same.
+want_ident() {
+  WANT=$(ident_of "$1")
+  grep -q '^clients|' <<<"$WANT" || fail "$1 has none of the chart's pg_ident lines: $(paste -sd ' ' <<<"$WANT")"
+  ident_everywhere || fail "the instances have different pg_ident lines"
+}
+
 # Instance $1 is the primary and out of recovery.
 primary_is() {
   local p
