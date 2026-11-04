@@ -2247,7 +2247,7 @@
      "id": 24,
      "type": "stat",
      "title": "Last backup",
-     "description": "Age of the newest completed base backup (Barman Cloud plugin). Orange after 26 h, the daily schedule plus 2 h; red while CNPGBackupFailing fires.",
+     "description": "Age of the newest completed base backup the Barman Cloud plugin reported in the last 2 h. Orange after 26 h, the daily schedule plus 2 h; red while CNPGBackupFailing fires.",
      "datasource": {
       "type": "prometheus",
       "uid": "${datasource}"
@@ -2265,7 +2265,7 @@
         "type": "prometheus",
         "uid": "${datasource}"
        },
-       "expr": "((time() - max(barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace=\"$namespace\", cluster=\"$cluster\"} > 0)) or on () vector(NaN)) and on () (count(ALERTS{alertstate=\"firing\", alertname=~\"CNPGBackupFailing\", severity=\"critical\", namespace=\"$namespace\", cluster=\"$cluster\"}) > 0)",
+       "expr": "((time() - max(max_over_time(barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace=\"$namespace\", cluster=\"$cluster\"}[2h]) > 0)) or on () vector(NaN)) and on () (count(ALERTS{alertstate=\"firing\", alertname=~\"CNPGBackupFailing\", severity=\"critical\", namespace=\"$namespace\", cluster=\"$cluster\"}) > 0)",
        "legendFormat": "",
        "refId": "A",
        "range": false,
@@ -2277,7 +2277,7 @@
         "type": "prometheus",
         "uid": "${datasource}"
        },
-       "expr": "((time() - max(barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace=\"$namespace\", cluster=\"$cluster\"} > 0)) or on () vector(NaN)) unless on () count(ALERTS{alertstate=\"firing\", alertname=~\"CNPGBackupFailing\", severity=\"critical\", namespace=\"$namespace\", cluster=\"$cluster\"})",
+       "expr": "((time() - max(max_over_time(barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace=\"$namespace\", cluster=\"$cluster\"}[2h]) > 0)) or on () vector(NaN)) unless on () count(ALERTS{alertstate=\"firing\", alertname=~\"CNPGBackupFailing\", severity=\"critical\", namespace=\"$namespace\", cluster=\"$cluster\"})",
        "legendFormat": "",
        "refId": "B",
        "range": false,

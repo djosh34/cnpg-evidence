@@ -92,14 +92,17 @@ groups:
           summary: Replica {{ $labels.pod }} of {{ $labels.namespace }}/{{ $labels.cluster }} is {{ $value | humanizeDuration }} behind the primary.
 
       # The last backup is older than 26 h (a daily schedule plus 2 h) or
-      # there is none, the last backup failed, or WAL archiving fails.
+      # there is none, the last backup failed, or WAL archiving fails. The
+      # last backup is the newest the plugin reported in the last 2 h: after
+      # it reads an empty backup list from the store, it reports 0 until its
+      # next maintenance cycle, 30 min later (docs/monitoring.md).
       - alert: CNPGBackupFailing
         expr: |
           (
-            time() - max by (namespace, cluster) (barman_cloud_cloudnative_pg_io_last_available_backup_timestamp) > 26 * 3600
+            time() - max by (namespace, cluster) (max_over_time(barman_cloud_cloudnative_pg_io_last_available_backup_timestamp[2h])) > 26 * 3600
             or
             max by (namespace, cluster) (barman_cloud_cloudnative_pg_io_last_failed_backup_timestamp)
-              > max by (namespace, cluster) (barman_cloud_cloudnative_pg_io_last_available_backup_timestamp)
+              > max by (namespace, cluster) (max_over_time(barman_cloud_cloudnative_pg_io_last_available_backup_timestamp[2h]))
             or
             max by (namespace, cluster) (
               cnpg_pg_stat_archiver_last_failed_time > cnpg_pg_stat_archiver_last_archived_time

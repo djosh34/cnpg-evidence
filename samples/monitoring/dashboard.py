@@ -115,7 +115,8 @@ def named(expr):
 
 
 PRIMARY_ONLY = f"on (namespace, pod) (({STATE0}) == 2)"
-BACKUP_AGE = f"time() - max(barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{{{S}}} > 0)"
+# The newest backup the plugin reported in the last 2 h, as CNPGBackupFailing reads it.
+BACKUP_AGE = f"time() - max(max_over_time(barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{{{S}}}[2h]) > 0)"
 
 
 # ---- Healthy: the firing critical alerts of rules.yaml.
@@ -384,7 +385,7 @@ def dashboard(rules):
            gp(0, y + 1, 12, 7), unit="s", fixed=PRIMARY),
         ts("Transaction ID age", "Oldest unfrozen transaction ID per database. Wraparound trouble starts near 2 billion.",
            [tgt(f"max by (datname) (cnpg_pg_database_xid_age{{{S}}})", "{{datname}}")], gp(12, y + 1, 12, 7)),
-        alert_stat("Last backup", "Age of the newest completed base backup (Barman Cloud plugin). Orange after 26 h, the daily "
+        alert_stat("Last backup", "Age of the newest completed base backup the Barman Cloud plugin reported in the last 2 h. Orange after 26 h, the daily "
                    "schedule plus 2 h; red while CNPGBackupFailing fires.",
                    BACKUP_AGE, "CNPGBackupFailing", gp(0, y + 8, 4, 5), unit="s", decimals=0, thr=thresholds((None, OK), (93600, WARN)),
                    missing="None", text_size={"valueSize": 28}),
