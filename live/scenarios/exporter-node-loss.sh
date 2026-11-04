@@ -9,6 +9,11 @@
 # nothing else. The summary gives each instance's answers without them and
 # its failed scrapes.
 #
+# Each phase starts only once every exporter's last answer has those two
+# series. The check's first 15 s reach back before the node stop, and an
+# instance whose node just came back answers without them until PostgreSQL
+# takes connections, a few seconds after its pod is ready.
+#
 # While CNPGReplicaDown fires for the lost replica, the scenario sends
 # Alertmanager CNPGMetricsMissing for that replica and for another instance:
 # the sample's configuration must mute the first and not the second.
@@ -71,6 +76,20 @@ kept_metrics() {
   done
 }
 
+# Every instance's exporter answered its last scrape with the two series
+# kept_metrics checks: Prometheus has both for each instance now. An answer
+# without one, or a failed scrape, leaves Prometheus without it until the
+# next answer that has it.
+exporters_answer() {
+  local pods pod series
+  pods=$(instance_pods) || return 1
+  for pod in $pods; do
+    for series in "cnpg_compliance_violations{check=\"cn_mapping\", pod=\"$pod\"}" "cnpg_pg_replication_in_recovery{namespace=\"$NS\", pod=\"$pod\"}"; do
+      prom_count 1 "$series" || return 1
+    done
+  done
+}
+
 # How the scrapes of instance $1 in the last $2 seconds went: how many
 # failed, the longest, and the times without cnpg_collector_up for 15 s or
 # longer.
@@ -99,6 +118,7 @@ summary "### exporter-node-loss, writer $WRITER"
 summary ""
 row "Seconds after the stop of $node, the node of replica $replica" ""
 summary "|---|---|"
+wait_for 60 "every exporter answering with its query metrics" exporters_answer
 T0=$(now_ms)
 docker stop -t 0 "$node" >/dev/null
 log "stopped $node"
@@ -118,6 +138,8 @@ STARTED=$(now_ms)
 row "$node started" "$(secs "$STARTED")"
 wait_back
 row "every instance ready and streaming" "$(secs "$BACK")"
+wait_for 60 "every exporter answering with its query metrics" exporters_answer
+row "every exporter answers with its query metrics" "$(secs "$(now_ms)")"
 
 summary ""
 old=$p
@@ -137,6 +159,7 @@ docker start "$node" >/dev/null
 STARTED=$(now_ms)
 row "$node started" "$(secs "$STARTED")"
 wait_back
+wait_for 60 "every exporter answering with its query metrics" exporters_answer
 finish
 common_rows
 print_summary
