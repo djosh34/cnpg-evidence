@@ -302,9 +302,11 @@ tests:
               description: The last backup is older than 26 h or missing, the last backup failed, or WAL archiving fails.
       - {eval_time: 16m, alertname: CNPGBackupFailing}
 
-  # The plugin reports 0 for 30 min, from 2 h, as after an empty backup list
-  # from the store; an older backup had failed. The newest backup of the last
-  # 2 h still counts, so nothing fires.
+  # The plugin reports 0 for 30 min, from 2 h, as after a backup list from
+  # the store that missed the backup; an older backup had failed. The newest
+  # backup of the last 2 h still counts, so nothing fires. This covers the
+  # comparison with the failed backup; the case "backup timestamp 0 for over
+  # 2 h" covers the 0 in the age.
   - name: backup timestamp 0 for 30 min
     interval: 5m
     input_series:

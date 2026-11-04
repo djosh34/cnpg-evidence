@@ -93,9 +93,9 @@ groups:
 
       # The last backup is older than 26 h (a daily schedule plus 2 h) or
       # there is none, the last backup failed, or WAL archiving fails. The
-      # last backup is the newest the plugin reported in the last 2 h: after
-      # it reads an empty backup list from the store, it reports 0 until its
-      # next maintenance cycle, 30 min later (docs/monitoring.md).
+      # last backup is the newest the plugin reported in the last 2 h: it can
+      # report 0 for a while when its list of the store's backups missed the
+      # backup (docs/monitoring.md).
       - alert: CNPGBackupFailing
         expr: |
           (
