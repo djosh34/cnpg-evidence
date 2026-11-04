@@ -302,6 +302,55 @@ tests:
               description: The last backup is older than 26 h or missing, the last backup failed, or WAL archiving fails.
       - {eval_time: 16m, alertname: CNPGBackupFailing}
 
+  # The plugin reports 0 for 30 min, from 2 h, as after a backup list from
+  # the store that missed the backup; an older backup had failed. The newest
+  # backup of the last 2 h still counts, so nothing fires. This covers the
+  # comparison with the failed backup; the case "backup timestamp 0 for over
+  # 2 h" covers the 0 in the age.
+  - name: backup timestamp 0 for 30 min
+    interval: 5m
+    input_series:
+      - {series: 'barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace="databases",cluster="pg",pod="pg-1"}', values: '3600x23 0x5 3600x12'}
+      - {series: 'barman_cloud_cloudnative_pg_io_last_failed_backup_timestamp{namespace="databases",cluster="pg",pod="pg-1"}', values: '1800x40'}
+    alert_rule_test:
+      - {eval_time: 2h15m, alertname: CNPGBackupFailing}
+      - {eval_time: 2h25m, alertname: CNPGBackupFailing}
+      - {eval_time: 2h45m, alertname: CNPGBackupFailing}
+
+  # No backup was ever made: the plugin reports 0. It fires once 26 h have
+  # passed, here from the start of the test.
+  - name: no backup for 26 h
+    interval: 10m
+    input_series:
+      - {series: 'barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x180'}
+      - {series: 'barman_cloud_cloudnative_pg_io_last_failed_backup_timestamp{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x180'}
+    alert_rule_test:
+      - {eval_time: 26h, alertname: CNPGBackupFailing}
+      - eval_time: 26h20m
+        alertname: CNPGBackupFailing
+        exp_alerts:
+          - exp_labels: {severity: critical, namespace: databases, cluster: pg}
+            exp_annotations:
+              summary: Backups of databases/pg fail or are too old.
+              description: The last backup is older than 26 h or missing, the last backup failed, or WAL archiving fails.
+
+  # A backup at 25 h, then the plugin reports 0 from 28h10m on. Within 2 h
+  # that backup still counts; once the 0 lasts longer, it fires.
+  - name: backup timestamp 0 for over 2 h
+    interval: 10m
+    input_series:
+      - {series: 'barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x149 90000x18 0x30'}
+      - {series: 'barman_cloud_cloudnative_pg_io_last_failed_backup_timestamp{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x199'}
+    alert_rule_test:
+      - {eval_time: 29h30m, alertname: CNPGBackupFailing}
+      - eval_time: 31h
+        alertname: CNPGBackupFailing
+        exp_alerts:
+          - exp_labels: {severity: critical, namespace: databases, cluster: pg}
+            exp_annotations:
+              summary: Backups of databases/pg fail or are too old.
+              description: The last backup is older than 26 h or missing, the last backup failed, or WAL archiving fails.
+
   - name: WAL archiving fails
     interval: 1m
     input_series:
