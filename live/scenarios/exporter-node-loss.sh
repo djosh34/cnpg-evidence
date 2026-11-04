@@ -11,8 +11,8 @@
 #
 # Each phase starts only once every exporter's last answer has those two
 # series. The check's first 15 s reach back before the node stop, and an
-# instance whose node just came back answers without them until PostgreSQL
-# takes connections, a few seconds after its pod is ready.
+# instance whose node just came back can answer without them for a few
+# seconds after its pod is ready.
 #
 # While CNPGReplicaDown fires for the lost replica, the scenario sends
 # Alertmanager CNPGMetricsMissing for that replica and for another instance:
@@ -48,6 +48,12 @@ gaps() {
     | if length == 0 then "no gap found" else join(", ") end' <<<"$result"
 }
 
+# Sets SERIES to the two query metrics the checks read for instance $1: the
+# chart's cn_mapping check and CNPG's in_recovery.
+series_of() {
+  SERIES=("cnpg_compliance_violations{check=\"cn_mapping\", pod=\"$1\"}" "cnpg_pg_replication_in_recovery{namespace=\"$NS\", pod=\"$1\"}")
+}
+
 # Instances $2... kept their query metrics from $1 (ms) to now: in every
 # 15 s in which an instance's exporter answered, at least one answer had
 # them. A change of the Cluster gives each exporter new, empty query
@@ -64,7 +70,8 @@ kept_metrics() {
     scrapes=$(scrapes_of "$pod" "$window")
     prom_count 0 "min_over_time((sum(count_over_time(cnpg_collector_up{pod=\"$pod\"}[${NO_ANSWER_LIMIT}s])) or vector(0))[${window}s:5s]) == 0" ||
       fail "the exporter of $pod did not answer for ${NO_ANSWER_LIMIT} s or longer: $scrapes"
-    for series in "cnpg_compliance_violations{check=\"cn_mapping\", pod=\"$pod\"}" "cnpg_pg_replication_in_recovery{namespace=\"$NS\", pod=\"$pod\"}"; do
+    series_of "$pod"
+    for series in "${SERIES[@]}"; do
       if ! prom_count 0 "max_over_time((sum(count_over_time(cnpg_collector_up{pod=\"$pod\"}[15s])) > 0 unless on () sum(count_over_time(${series}[15s])))[${window}s:5s])"; then
         n=$(gaps "$series" "$window")
         fail "the exporter of $pod answered for 15 s or longer without $series, $n"
@@ -84,7 +91,8 @@ exporters_answer() {
   local pods pod series
   pods=$(instance_pods) || return 1
   for pod in $pods; do
-    for series in "cnpg_compliance_violations{check=\"cn_mapping\", pod=\"$pod\"}" "cnpg_pg_replication_in_recovery{namespace=\"$NS\", pod=\"$pod\"}"; do
+    series_of "$pod"
+    for series in "${SERIES[@]}"; do
       prom_count 1 "$series" || return 1
     done
   done
