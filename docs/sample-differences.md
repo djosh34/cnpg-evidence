@@ -472,6 +472,8 @@ barman-cloud uses the AWS SDK's retries, 5 attempts per call by default; the plu
 
 Each attempt waits out the read timeout again, so 5 attempts of 5 s would still cost about 25 s per call, and a promotion makes several calls. A failed archive or restore is not lost: PostgreSQL calls the archive command again for a WAL file until it succeeds, and a replica asks for the next WAL file again. So retrying inside one call only makes a broken store slower to give up on. With one attempt, a call ends at its first failure.
 
+The setting also applies to the plugin's own reads of the store. When the primary's plugin sidecar starts, and every `retentionPolicyIntervalSeconds` after that, it lists the store's backups. If the store does not answer every read of that list, Barman can return a list without the backup and still succeed, and the plugin then reports its last backup as 0. More attempts would make that rarer, but every call during a failover would again wait out several read timeouts. The value stays 1, and the backup alert and the dashboard read the newest backup of the last 2 h instead (see [Backup age from the newest backup of the last 2 h](#backup-age-from-the-newest-backup-of-the-last-2-h)).
+
 # The Cluster
 
 ## Red Hat's Hummingbird PostgreSQL image, pinned by digest
@@ -485,7 +487,7 @@ CNPG 1.30.1 runs `ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie` when `im
 
 [../samples/chart/values.yaml](../samples/chart/values.yaml)
 
-Hummingbird is a minimal image that pulls without a login. It has bash, coreutils and `psql`, and no `openssl`; the scripts in `scripts/` run only `psql` in it, always as `-U postgres`, so they work with this image and with any image that has `psql`. A tag can be pushed again with other content; a digest cannot. With the digest, every instance runs the same image, and a new image reaches the cluster only through a change of the chart's values, which rolls the instances with a switchover.
+Hummingbird is a minimal image that pulls without a login. It has bash, coreutils and `psql`, and no `openssl`; the scripts in `scripts/` run only `psql` in it, always as `-U postgres`, so they work with this image and with any image that has `psql`. A tag can be pushed again with other content; a digest cannot. With the digest, every instance runs the same image, and a new image reaches the cluster only through a change of the chart's values, which rolls the instances one at a time.
 
 ## PostgreSQL runs as uid and gid 999
 
@@ -637,19 +639,6 @@ CNPG promotes the most advanced ready replica by default, without checking that 
 
 With `any 1`, either replica may have confirmed a commit. Without the quorum, CNPG could promote a replica that is ready but did not receive the last confirmed commits, and they would be lost. With the quorum, CNPG promotes a replica only when it can tell that the replica holds every confirmed commit. With one confirming copy and two replicas, it needs both replicas ready to decide. A replica that restarts while the primary's node is down is ready again once it has replayed its own WAL, so the quorum then sees both replicas and promotes, some seconds later than otherwise.
 
-## Rollouts move the primary with a switchover
-
-CNPG restarts the primary in place in a rollout by default (`primaryUpdateMethod: restart`). The sample sets `switchover`.
-
-```yaml
-  primaryUpdateMethod: switchover
-  smartShutdownTimeout: 0
-```
-
-[../samples/chart/templates/cluster.yaml](../samples/chart/templates/cluster.yaml)
-
-A rollout that changes the pods, or a parameter that needs a restart, restarts the replicas one at a time and then the primary. Restarting the primary in place stops writes for as long as PostgreSQL takes to stop and start, behind sessions that are still open. With `switchover`, CNPG switches over to an updated replica and restarts the former primary as a replica. With `smartShutdownTimeout: 0` too, a rollout or a switchover stops writes for about 11 s, also with a pooled session open. One case still restarts the primary in place: lowering `max_connections`, `max_worker_processes`, `max_wal_senders`, `max_prepared_transactions` or `max_locks_per_transaction`. With this setting CNPG also refuses a change of `imageName` together with a change of PostgreSQL parameters; they are applied one after the other.
-
 ## A stopping instance ends open sessions at once
 
 CNPG gives a stopping instance's smart shutdown 180 s by default (`smartShutdownTimeout`), during which open sessions may go on. The sample sets 0.
@@ -660,7 +649,7 @@ CNPG gives a stopping instance's smart shutdown 180 s by default (`smartShutdown
 
 [../samples/chart/templates/cluster.yaml](../samples/chart/templates/cluster.yaml)
 
-A smart shutdown waits for every session to close, and a connection pool never closes its sessions by itself. A primary that stops in a switchover would then hold writes for up to 180 s before the fast shutdown. With 0, it ends open sessions at once. A commit that is still waiting for its standby then ends with the warning that it committed locally but might not have been replicated; it stays committed.
+A smart shutdown waits for every session to close, and a connection pool never closes its sessions by itself. A primary that stops, in a rollout or a switchover, would then hold writes for up to 180 s before the fast shutdown. With 0, it ends open sessions at once. A rollout for a parameter that needs a restart then stops writes for about 6 s, and a switchover for about 11 s, also with a pooled session open. A commit that is still waiting for its standby then ends with the warning that it committed locally but might not have been replicated; it stays committed.
 
 ## No app database, app role or app Secret
 
@@ -1043,6 +1032,24 @@ CNPG's example rules have no certificate alert. The sample's `CNPGCertificateExp
 
 The certificates are not CNPG's own, so CNPG does not renew them; cert-manager does. A renewal that fails leaves an expiring certificate. An expired server certificate stops every client that checks it, and an expired replication certificate stops the replicas from logging in, after which writes stop too. cert-manager's controller reports the expiry on port 9402.
 
+## Backup age from the newest backup of the last 2 h
+
+CNPG's example rules alert only on a failed WAL archive (`LastFailedArchiveTime`), and have no alert for the age of the last backup. The sample's `CNPGBackupFailing` also fires when the last backup is older than 26 h, when there is none, or when the last backup failed. It takes the newest backup the barman-cloud plugin reported in the last 2 h. The dashboard's **Last backup** panel reads the same value.
+
+```yaml
+            time() - max by (namespace, cluster) (max_over_time(barman_cloud_cloudnative_pg_io_last_available_backup_timestamp[2h])) > 26 * 3600
+```
+
+```python
+BACKUP_AGE = f"time() - max(max_over_time(barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{{{S}}}[2h]) > 0)"
+```
+
+[../samples/monitoring/rules.yaml](../samples/monitoring/rules.yaml), [../samples/monitoring/dashboard.py](../samples/monitoring/dashboard.py)
+
+A cluster without a recent backup cannot be restored to a recent state, and a failed or missing base backup does not show in the WAL archive's metrics. The 26 h fits a daily backup, a daily schedule plus 2 h; it changes with the schedule.
+
+The barman-cloud plugin can report its last backup as 0 for a while when the backup is still in the store. The primary's plugin sidecar lists the store's backups when it starts and every `retentionPolicyIntervalSeconds` (30 min by default). If the store does not answer every read of that list, Barman can return a list without the backup and still succeed. The plugin then deletes the `Backup` object of each backup missing from the list, and reports 0. With the plain metric, the alert's condition then holds and the panel has no data. In live runs this happened in 4 of 20 runs of `one-node-left` with the writer, when the primary came back after its node and another node were lost. The backup in the store is not touched, but its `Backup` object stays deleted. With the newest value of the last 2 h, such a 0 is ignored for 2 h. A 0 that lasts longer counts as no backup, and the alert fires 10 minutes later.
+
 ## Alertmanager groups by database and alert, and mutes what follows
 
 Alertmanager groups every alert of a route into one group unless `group_by` is set. The sample's route groups by `namespace`, `cluster` and alert name, and writes out Alertmanager's default timing (`group_wait: 30s`, `group_interval: 5m`, `repeat_interval: 4h`). Three inhibition rules mute alerts that follow from another.
@@ -1275,6 +1282,20 @@ The test cluster starts one backup after install instead of a `ScheduledBackup`.
 ## The node grace period stays at 50 s
 
 k3s marks a lost node unreachable after 50 s, the Kubernetes default (`node-monitor-grace-period`). Failover starts only then, so that wait is most of the minute a primary node loss costs. A shorter grace period saves time: in tests 20 s saved about 28 s. It also marks a slow node as lost: at 10 s, a network delay of 2 s made a node look lost and the primary fail over. A shorter grace period also needs a shorter kubelet lease, and a node marked lost by mistake costs a failover. The grace period is k3s configuration, outside the chart.
+
+## A rollout restarts the primary in place
+
+```yaml
+  primaryUpdateMethod: restart
+```
+
+[../samples/chart/templates/cluster.yaml](../samples/chart/templates/cluster.yaml)
+
+`restart` is CNPG's default; the chart writes it out. A rollout that changes the pods, or a parameter that needs a restart, restarts the replicas one at a time, then the primary, which stays primary: for a parameter, PostgreSQL restarts inside the running pod; for a change of the pods, CNPG recreates the pod. For a parameter that needs a restart, writes stop for about 6 s while PostgreSQL restarts, also with a pooled session open. A rollout that changes the pods stops them until the primary's new pod accepts connections.
+
+`switchover` would move the primary to an updated replica instead. In CloudNativePG 1.30.1, the switchover of a rollout can name one replica as the target and then another a moment later. The first one keeps trying to take the primary lease. At the next switchover the primary releases the lease, that replica takes it and keeps it, and the switchover never ends, with no primary, until that replica's pod restarts. In repeated live runs this stopped 5 of 119 switchovers made right after a rollout; with `restart`, none of 144. CloudNativePG fixed it after 1.30.1 ([cloudnative-pg#11677](https://github.com/cloudnative-pg/cloudnative-pg/pull/11677)). With `restart`, a rollout makes no switchover.
+
+After a restart inside the pod, PostgreSQL starts with CNPG's own `pg_ident` lines only. The chart's lines come back at the instance's next reconcile, which the restart itself sets off, within a few seconds. Until then replicas cannot log in with the replication certificate and client certificate logins fail, so commits wait.
 
 ## CNPG's default startup probe
 

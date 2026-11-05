@@ -68,6 +68,7 @@ bash scripts/test.sh
 | `desired.yaml` | The desired state of the cluster, read by the chart, `evidence.sh` and `desired.sh` | [samples.md](docs/samples.md) |
 | `samples/` | Helm chart rendered from `desired.yaml`, operator, plugin and cert-manager values, RBAC for the operator and the plugin, the Traefik DaemonSet setting for k3s | [samples.md](docs/samples.md) |
 | `samples/monitoring/` | Alert rules, the Alertmanager route and inhibition rules, and a Grafana dashboard for the cluster | [monitoring.md](docs/monitoring.md) |
+| `docs/sample-differences.md` | Every place where the samples differ from the upstream projects' defaults and examples, and why | [sample-differences.md](docs/sample-differences.md) |
 | `scripts/evidence/evidence.sh` | Who can do what in PostgreSQL and Kubernetes, and every rule the live state breaks | [evidence.md](docs/evidence.md) |
 | `scripts/host-check/host-check.sh` | SELinux, accounts, modes, k3s credentials and low ports on one node | [host-check.md](docs/host-check.md) |
 | `scripts/prove/prove.sh` | Login and host-uid attempts that must fail | [prove.md](docs/prove.md) |
