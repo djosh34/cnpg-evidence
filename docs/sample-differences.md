@@ -1243,7 +1243,7 @@ The test cluster's nodes run without `--selinux` and without `--secrets-encrypti
 
 [host-check.md](host-check.md#known-failures-on-container-nodes)
 
-The runners' kernel has no SELinux. Secrets encryption and the low-port threshold do not change failover, alerts or logins, which the scenarios test, and the other two failures come from the node being a container. `live/host-check.sh` checks that only these known failures appear.
+The runners' kernel has no SELinux. Secrets encryption and the low-port threshold do not change failover, alerts or logins, which the scenarios test. `postgres-account` fails because the k3s image has no `getent`, and `dir-modes` because the node has no volume yet. `live/host-check.sh` checks that only these known failures appear.
 
 ## An S3 store next to the nodes, over plain HTTP
 
