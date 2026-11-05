@@ -8,15 +8,13 @@ The last two categories list what only the test cluster in `live/` sets, and the
 
 k3s's CoreDNS manifest sets no replica count, so it runs one pod. The sample scales it to three, one per node. k3s's manifest already spreads CoreDNS pods by host name, so three replicas land on three nodes.
 
-```
+```text
 | CoreDNS | `kubectl scale deployment coredns -n kube-system --replicas=3`. k3s's manifest spreads its pods by host name and sets no replica count, so the count holds across k3s restarts as long as a k3s version does not add one |
 ```
 
 [samples.md](samples.md#one-copy-of-every-service-per-node), [live/up.sh](../live/up.sh)
 
 With one CoreDNS pod, a lost node can take all name lookups in the cluster with it until Kubernetes starts the pod elsewhere, about 5 minutes later. A failover depends on names: a promotion asks the object store, by its host name, for the timeline history and the last WAL file. With the only CoreDNS pod on the lost primary node, that lookup fails and the promotion waits for DNS. With a pod on every node, the other two nodes keep answering. One gap stays: until Kubernetes marks the lost node unreachable, about 50 s, its CoreDNS pod stays in the DNS Service, so about one in three lookups in the cluster times out in that time. Failover waits for the same mark, so this does not delay it.
-
-The change holds across k3s restarts because k3s's manifest sets no `replicas` field that would overwrite it.
 
 ## Traefik runs as a DaemonSet
 
@@ -97,7 +95,7 @@ A `kubectl exec` into an instance pod gives a shell next to PostgreSQL's data, a
 
 A plain k3s install runs containerd without SELinux support. The samples assume hosts with SELinux enforcing and k3s started with its SELinux option, so that containerd's generated config has `enable_selinux = true`. `host-check.sh` fails a node where either is missing.
 
-```
+```text
     ["selinux", "enforcing, enable_selinux true"],
 ```
 
@@ -238,9 +236,9 @@ spec:
 
 With every certificate from one issuer, CNPG holds no CA key of its own: CNPG's own CA would keep its key in a `<cluster>-ca` Secret next to the cluster, and the CA's certificates would be one more set of CAs for clients to trust. The replication certificate is a client certificate like any other: its CN is the host name of one node, in a certificate that the issuer's CA signs. CNPG mounts this one certificate into every instance. Since CNPG maps only the CN `streaming_replica` to the replication role, the chart adds one pg_ident line for this CN (see [pg_ident](#pg_ident-maps-each-client-cn-to-one-role)). CNPG checks that the certificate allows `client auth`.
 
-## The certificate Secrets are not created ahead with the reload label
+## The certificate Secrets carry no reload label
 
-CNPG's cert-manager examples create each certificate's Secret ahead of cert-manager, with the label `cnpg.io/reload`. The sample's chart creates only the `Certificate` objects, and cert-manager creates their Secrets.
+CNPG's cert-manager examples create each certificate's Secret ahead of cert-manager, with the label `cnpg.io/reload`. The sample's chart creates only the `Certificate` objects, with no `secretTemplate`, so cert-manager creates their Secrets without that label.
 
 ```yaml
 apiVersion: cert-manager.io/v1
@@ -254,13 +252,13 @@ spec:
 
 [../samples/chart/templates/certificates.yaml](../samples/chart/templates/certificates.yaml)
 
-CNPG already watches every Secret the `Cluster` names under `certificates`, with or without the label, and reloads PostgreSQL when one changes. So the chart needs no Secret of its own for them, and cert-manager alone creates and renews each one.
+cert-manager alone creates and renews each Secret, and the chart owns no Secret that cert-manager writes into. The cost is in renewal. CNPG 1.30.1 reacts to a change of a Secret it did not create only when the Secret has the `cnpg.io/reload` label. Without it, a renewed certificate reaches PostgreSQL only at the operator's next reconcile of the cluster, which the renewal itself does not start; any later change of the `Cluster` or its pods does. `CNPGCertificateExpiring` reads the expiry cert-manager reports for the Secret, not the certificate PostgreSQL serves, so it does not see a renewal that PostgreSQL has not loaded yet.
 
 # The CNPG operator
 
 ## The chart's RBAC is off; two RBAC files replace it
 
-The operator chart creates a ClusterRole and a ClusterRoleBinding by default, which give the operator Secrets, ConfigMaps, `pods/exec` and the rest in every namespace, plus the aggregated `view` and `edit` ClusterRoles. The sample turns the chart's RBAC off and applies `rbac-cnpg-operator.yaml`: a small ClusterRole for the cluster-scoped objects, and the chart's namespaced rules in a ClusterRole that RoleBindings grant only in `cnpg-system` and `databases`.
+The operator chart creates a ClusterRole and a ClusterRoleBinding by default, which give the operator Secrets, ConfigMaps, `pods/exec` and the rest in every namespace, plus `view` and `edit` ClusterRoles for the CNPG resources. The sample turns the chart's RBAC off and applies `rbac-cnpg-operator.yaml`: a small ClusterRole for the cluster-scoped objects, and the chart's namespaced rules in a ClusterRole that RoleBindings grant only in `cnpg-system` and `databases`.
 
 ```yaml
 rbac:
@@ -474,6 +472,18 @@ Each attempt waits out the read timeout again, so 5 attempts of 5 s would still 
 
 The setting also applies to the plugin's own reads of the store. When the primary's plugin sidecar starts, and every `retentionPolicyIntervalSeconds` after that, it lists the store's backups. If the store does not answer every read of that list, Barman can return a list without the backup and still succeed, and the plugin then reports its last backup as 0. More attempts would make that rarer, but every call during a failover would again wait out several read timeouts. The value stays 1, and the backup alert and the dashboard read the newest backup of the last 2 h instead (see [Backup age from the newest backup of the last 2 h](#backup-age-from-the-newest-backup-of-the-last-2-h)).
 
+## The backup bucket: credentials for one bucket, encrypted at rest
+
+The plugin's examples name a bucket and a credentials Secret and say nothing about the bucket itself. The sample gives the credentials in `objectStore.credentialsSecret` access to this one bucket only, and turns on encryption at rest for the bucket.
+
+```text
+The bucket holds every database's WAL and base backups. Give the credentials in `objectStore.credentialsSecret` access to this one bucket only, and turn on encryption at rest for the bucket.
+```
+
+[samples.md](samples.md#backup-bucket)
+
+The bucket holds a full copy of every database: its base backups and every WAL file since. The credentials sit in a Secret in the cluster's namespace and in every instance's sidecar. Limited to one bucket, they reach no other data in the store. Encryption at rest keeps the copies unreadable on the store's own disks.
+
 # The Cluster
 
 ## Red Hat's Hummingbird PostgreSQL image, pinned by digest
@@ -549,7 +559,7 @@ PostgreSQL's WAL files are 16 MB by default, and CNPG passes no `--wal-segsize` 
 
 [../samples/chart/templates/cluster.yaml](../samples/chart/templates/cluster.yaml), [../samples/chart/values.yaml](../samples/chart/values.yaml)
 
-PostgreSQL switches to a new WAL file at least every 5 minutes (CNPG's `archive_timeout`), and a switched file keeps its full size. A quiet cluster then writes 288 MiB of WAL a day instead of 4.5 GiB, so `wal_keep_size` holds months of a quiet cluster's WAL instead of days, and the store grows more slowly. Small files also keep each upload to the store short, which is what lets the 5 s read timeout above stay safe. The costs: each file is one call to the store, so the archive keeps up only while the primary writes less than about 2.5 MB/s, and initdb sets `max_wal_size` to 64 MB, so a primary under load makes a checkpoint every 64 MB of WAL. The size is fixed when a cluster is created; a restore keeps the size of its backup.
+PostgreSQL switches to a new WAL file at least every 5 minutes (CNPG's `archive_timeout`), and a switched file keeps its full size. A quiet cluster then writes 288 MiB of WAL a day instead of 4.5 GiB, so `wal_keep_size` holds months of a quiet cluster's WAL instead of days, and the store grows more slowly. The costs: each file is one call to the store, so the archive keeps up only while the primary writes less than about 2.5 MB/s, and initdb sets `max_wal_size` to 64 MB, so a primary under load makes a checkpoint every 64 MB of WAL. The size is fixed when a cluster is created; a restore keeps the size of its backup.
 
 ## wal_keep_size is 30GB
 
@@ -1050,6 +1060,51 @@ A cluster without a recent backup cannot be restored to a recent state, and a fa
 
 The barman-cloud plugin can report its last backup as 0 for a while when the backup is still in the store. The primary's plugin sidecar lists the store's backups when it starts and every `retentionPolicyIntervalSeconds` (30 min by default). If the store does not answer every read of that list, Barman can return a list without the backup and still succeed. The plugin then deletes the `Backup` object of each backup missing from the list, and reports 0. With the plain metric, the alert's condition then holds and the panel has no data. In live runs this happened in 4 of 20 runs of `one-node-left` with the writer, when the primary came back after its node and another node were lost. The backup in the store is not touched, but its `Backup` object stays deleted. With the newest value of the last 2 h, such a 0 is ignored for 2 h. A 0 that lasts longer counts as no backup, and the alert fires 10 minutes later.
 
+## Too many connections, at 90 % for 5 minutes
+
+CNPG's example rules have no alert on the number of connections. The sample's `CNPGConnectionsHigh` fires when an instance has more than 90 % of `max_connections` open for 5 minutes.
+
+```yaml
+      - alert: CNPGConnectionsHigh
+        expr: |
+          sum by (namespace, cluster, pod) (cnpg_backends_total)
+            / max by (namespace, cluster, pod) (cnpg_pg_settings_setting{name="max_connections"})
+          > 0.9
+```
+
+[../samples/monitoring/rules.yaml](../samples/monitoring/rules.yaml)
+
+Once every connection slot is taken, PostgreSQL refuses new connections, so new client sessions fail although the database runs. A pool that keeps opening connections, or sessions that are never closed, reach that point step by step. 90 % leaves room to act before the refusals start, and 5 minutes leaves out a short burst.
+
+## Transaction ID age at 1 billion, critical
+
+CNPG's example `PGDatabaseXidAge` warns when a database's oldest transaction ID is more than 300 million transactions old for 1 minute. The sample's `CNPGTransactionIDWraparound` is critical at 1 billion for 15 minutes.
+
+```yaml
+      # PostgreSQL stops assigning transaction IDs at about 2.1 billion.
+      - alert: CNPGTransactionIDWraparound
+        expr: |
+          max by (namespace, cluster) (cnpg_pg_database_xid_age) > 1000000000
+          and on (namespace, cluster) cnpg_sample:database
+        for: 15m
+```
+
+[../samples/monitoring/rules.yaml](../samples/monitoring/rules.yaml)
+
+PostgreSQL stops assigning transaction IDs at about 2.1 billion, and then takes no more writes. Autovacuum starts an aggressive vacuum of a table at 200 million by default (`autovacuum_freeze_max_age`), so an age of a few hundred million is normal on a busy database and is not something a person must act on. Every alert of the sample is something to act on, mostly critical. At 1 billion, vacuum has failed to freeze old rows for a long time, and about half of the range is left. The age changes slowly, so 15 minutes costs nothing. The dashboard shows the age of each database.
+
+## No alerts on long transactions, waiting backends or deadlocks
+
+CNPG's example rules warn on a transaction that runs longer than 5 minutes (`LongRunningTransaction`), on backends that wait for locks (`BackendsWaiting`) and on more than 10 deadlocks in an hour (`DatabaseDeadlockConflicts`). The sample has no alert for these. Its dashboard shows the longest transaction on each instance.
+
+```python
+        [tgt(named(f"max by (namespace, pod) (cnpg_backends_max_tx_duration_seconds{{{S}}})"), "{{node}} {{role}}")],
+```
+
+[../samples/monitoring/dashboard.py](../samples/monitoring/dashboard.py)
+
+Each of these depends on the application: a report can run for an hour by design, and some lock waits are normal. None of them means on its own that the database is down, behind or at risk of losing data, and the sample's alerts are what a person must act on. On the dashboard, the longest transaction helps explain a problem that an alert found.
+
 ## Alertmanager groups by database and alert, and mutes what follows
 
 Alertmanager groups every alert of a route into one group unless `group_by` is set. The sample's route groups by `namespace`, `cluster` and alert name, and writes out Alertmanager's default timing (`group_wait: 30s`, `group_interval: 5m`, `repeat_interval: 4h`). Three inhibition rules mute alerts that follow from another.
@@ -1152,7 +1207,7 @@ done
 
 [../live/node-init.sh](../live/node-init.sh)
 
-k3s's systemd unit does the same (`Restart=always`, `KillMode=process`), so a node's pods keep running while k3s is down. As a container's first process, a k3s exit would stop every pod on the node. k3s exits, for example, on the last node when two of three are gone. The script also moves itself out of the root cgroup so containerd can create cgroups below it.
+k3s's systemd unit does the same (`Restart=always`, `KillMode=process`), so a node's pods keep running while k3s is down. As a container's first process, a k3s exit would stop every pod on the node. k3s exits, for example, when it loses a leader lease because two of three nodes are gone. The script also moves itself out of the root cgroup so containerd can create cgroups below it.
 
 ## kube-proxy leaves the conntrack table size alone
 
@@ -1180,15 +1235,15 @@ The scenarios reach every node's API server by its address, with one kubeconfig 
 
 ## No SELinux, no secrets encryption, low ports open
 
-The test cluster's nodes run without `--selinux` and without `--secrets-encryption`, and docker sets `ip_unprivileged_port_start` to 0 in their network namespaces. `host-check.sh` fails these checks there, and CI expects exactly these failures.
+The test cluster's nodes run without `--selinux` and without `--secrets-encryption`, and docker sets `ip_unprivileged_port_start` to 0 in their network namespaces. `host-check.sh` fails five checks there: `selinux`, `k3s-secrets` and `low-ports` for these reasons, `postgres-account` because the k3s image has no `getent`, and `dir-modes` because no volume was made on the node yet. CI expects exactly these failures.
 
-```
+```text
 | `selinux` | `disabled; enable_selinux false` | The runner's kernel has no SELinux, and k3s runs without `--selinux` |
 ```
 
 [host-check.md](host-check.md#known-failures-on-container-nodes)
 
-The runners' kernel has no SELinux. Secrets encryption and the low-port threshold do not change failover, alerts or logins, which the scenarios test. `live/host-check.sh` checks that only these known failures appear.
+The runners' kernel has no SELinux. Secrets encryption and the low-port threshold do not change failover, alerts or logins, which the scenarios test, and the other two failures come from the node being a container. `live/host-check.sh` checks that only these known failures appear.
 
 ## An S3 store next to the nodes, over plain HTTP
 
@@ -1281,9 +1336,11 @@ The test cluster starts one backup after install instead of a `ScheduledBackup`.
 
 ## The node grace period stays at 50 s
 
-k3s marks a lost node unreachable after 50 s, the Kubernetes default (`node-monitor-grace-period`). Failover starts only then, so that wait is most of the minute a primary node loss costs. A shorter grace period saves time: in tests 20 s saved about 28 s. It also marks a slow node as lost: at 10 s, a network delay of 2 s made a node look lost and the primary fail over. A shorter grace period also needs a shorter kubelet lease, and a node marked lost by mistake costs a failover. The grace period is k3s configuration, outside the chart.
+k3s marks a lost node unreachable after 50 s, the Kubernetes default (`node-monitor-grace-period`). Failover starts only then, so that wait is most of the minute a primary node loss costs. A shorter grace period saves time: in tests 20 s saved about 28 s. It also marks a slow node as lost: at 10 s, a network delay of 2 s made a node look lost and the primary fail over. A node marked lost by mistake costs a failover. The grace period is k3s configuration, outside the chart.
 
 ## A rollout restarts the primary in place
+
+`primaryUpdateMethod: restart` is CNPG's default; the chart writes it out.
 
 ```yaml
   primaryUpdateMethod: restart
@@ -1291,7 +1348,7 @@ k3s marks a lost node unreachable after 50 s, the Kubernetes default (`node-moni
 
 [../samples/chart/templates/cluster.yaml](../samples/chart/templates/cluster.yaml)
 
-`restart` is CNPG's default; the chart writes it out. A rollout that changes the pods, or a parameter that needs a restart, restarts the replicas one at a time, then the primary, which stays primary: for a parameter, PostgreSQL restarts inside the running pod; for a change of the pods, CNPG recreates the pod. For a parameter that needs a restart, writes stop for about 6 s while PostgreSQL restarts, also with a pooled session open. A rollout that changes the pods stops them until the primary's new pod accepts connections.
+A rollout that changes the pods, or a parameter that needs a restart, restarts the replicas one at a time, then the primary, which stays primary: for a parameter, PostgreSQL restarts inside the running pod; for a change of the pods, CNPG recreates the pod. For a parameter that needs a restart, writes stop for about 6 s while PostgreSQL restarts, also with a pooled session open. A rollout that changes the pods stops them until the primary's new pod accepts connections.
 
 `switchover` would move the primary to an updated replica instead. In CloudNativePG 1.30.1, the switchover of a rollout can name one replica as the target and then another a moment later. The first one keeps trying to take the primary lease. At the next switchover the primary releases the lease, that replica takes it and keeps it, and the switchover never ends, with no primary, until that replica's pod restarts. In repeated live runs this stopped 5 of 119 switchovers made right after a rollout; with `restart`, none of 144. CloudNativePG fixed it after 1.30.1 ([cloudnative-pg#11677](https://github.com/cloudnative-pg/cloudnative-pg/pull/11677)). With `restart`, a rollout makes no switchover.
 
@@ -1307,7 +1364,7 @@ An instance is ready, and its node opens the read port, once PostgreSQL accepts 
 
 ## The primary isolation check stays on, with its default timeouts
 
-CNPG's liveness probe on a primary also checks that the primary can reach the API server or another instance, and restarts PostgreSQL when it can reach neither. With one node left that runs the primary, the check restarts PostgreSQL after about 30 s, and it cannot start without the API, so reads on that node stop too. Turning the check off would keep those reads, but it would also let an old primary that is cut off from the rest keep serving reads on its node's read port while another primary takes the writes. Its timeouts are short, so a large added network delay on the primary's node can fail it too; the cluster then fails over and recovers by itself. Nodes on one network do not see such delays.
+CNPG's liveness probe on a primary also checks that the primary can reach the API server or another instance, and restarts PostgreSQL when it can reach neither. With one node left that runs the primary, the check restarts PostgreSQL after about 30 s, and it cannot start without the API, so reads on that node stop too. Turning the check off would keep those reads, but it would also let an old primary that is cut off from the rest keep serving reads on its node's read port while another primary takes the writes.
 
 ## No backup retention policy
 
@@ -1323,13 +1380,15 @@ The plugin chart always updates with `Recreate`, and has no value to change it. 
 
 ## archive_timeout stays at 5 minutes
 
-CNPG sets `archive_timeout` to 5 minutes, so PostgreSQL switches to a new WAL file, and archives the old one, at least that often. A longer timeout would cut the WAL a quiet cluster writes, but commits would then wait longer before they reach the store, and a restore from the store alone would miss more of them. The sample makes WAL files smaller instead (1 MB), which cuts the WAL of a quiet cluster as much and keeps the 5-minute bound.
+CNPG sets `archive_timeout` to 5 minutes, so PostgreSQL switches to a new WAL file, and archives the old one, at least that often. A longer timeout would cut the WAL a quiet cluster writes, but commits would then wait longer before they reach the store, and a restore from the store alone would miss more of them. The sample makes WAL files smaller instead (1 MB), which cuts a quiet cluster's WAL from 4.5 GiB to 288 MiB a day and keeps the 5-minute bound.
 
 ## wal_compression stays off
 
-PostgreSQL's `wal_compression` compresses full-page images inside WAL records. A quiet cluster's WAL is mostly the unused rest of files switched by `archive_timeout`, which it does not shrink, so it made no difference there. Smaller WAL files do, and barman-cloud already compresses each file with gzip before it uploads it.
+PostgreSQL's `wal_compression` compresses full-page images inside WAL records. It does not change the size of a WAL file: a file switched by `archive_timeout` keeps its full size however little it holds. Smaller WAL files cut that, and barman-cloud already compresses each file with gzip before it uploads it.
 
 ## Superuser access stays off
+
+`enableSuperuserAccess` is off in CNPG by default; CNPG's full example turns it on. The chart writes it out.
 
 ```yaml
   # No postgres password and no <cluster>-superuser Secret.
@@ -1338,19 +1397,11 @@ PostgreSQL's `wal_compression` compresses full-page images inside WAL records. A
 
 [../samples/chart/templates/cluster.yaml](../samples/chart/templates/cluster.yaml)
 
-`enableSuperuserAccess` is off in CNPG by default; CNPG's full example turns it on. The chart writes it out: with it on, `postgres` gets a password and its Secret `<cluster>-superuser` sits in the namespace, which rule 2 forbids. Superuser access stays local, as `postgres` over `kubectl exec`.
-
-## dataDurability stays required
-
-```yaml
-      dataDurability: required  # and stops while no other instance can confirm it
-```
-
-[../samples/chart/templates/cluster.yaml](../samples/chart/templates/cluster.yaml)
-
-`required` is CNPG's default once synchronous replication is on; the chart writes it out. `preferred` lowers the number of standbys a commit waits for when replicas are unready, down to none, so the primary goes on writing alone, and a commit acknowledged then exists on one node only. With `required`, writes stop while no other instance can confirm, and come back when one can.
+With it on, `postgres` gets a password and its Secret `<cluster>-superuser` sits in the namespace, which rule 2 forbids. Superuser access stays local, as `postgres` over `kubectl exec`.
 
 ## config.clusterWide stays true
+
+The operator chart's default is `config.clusterWide: true`, and the sample keeps it.
 
 ```yaml
 config:
@@ -1360,4 +1411,4 @@ config:
 
 [../samples/values-cnpg-operator.yaml](../samples/values-cnpg-operator.yaml)
 
-The operator chart's default is `true`. With `false`, the chart writes `WATCH_NAMESPACE` as its own namespace only and renders namespaced RBAC there. The sample needs two namespaces, so it keeps `true`, turns the chart's RBAC off and sets `WATCH_NAMESPACE` itself (see [The operator watches only cnpg-system and databases](#the-operator-watches-only-cnpg-system-and-databases)).
+With `false`, the chart writes `WATCH_NAMESPACE` as its own namespace only and renders namespaced RBAC there. The sample needs two namespaces, so it keeps `true`, turns the chart's RBAC off and sets `WATCH_NAMESPACE` itself (see [The operator watches only cnpg-system and databases](#the-operator-watches-only-cnpg-system-and-databases)).
