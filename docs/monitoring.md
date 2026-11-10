@@ -1,6 +1,6 @@
 # Monitoring
 
-Alert rules, an Alertmanager configuration and a Grafana dashboard for the sample's cluster, in `samples/monitoring/`. Nothing of it runs in the Kubernetes cluster: a rule evaluator outside it reads the metrics, Alertmanager sends the notifications, and Grafana shows the dashboard.
+Alert rules, an Alertmanager configuration and a Grafana dashboard for the sample's cluster, in `samples/monitoring/`, and the OTel collectors that send the metrics, in [`samples/charts/cnpg-opentelemetry-collector/`](../samples/charts/cnpg-opentelemetry-collector). Only the collectors run in the Kubernetes cluster. Outside it, an upstream OTel service receives the metrics, a rule evaluator reads them, Alertmanager sends the notifications, and Grafana shows the dashboard. The [bench](bench.md#monitoring) runs it this way.
 
 ## Files
 
@@ -32,7 +32,7 @@ The rules read three sources, under the metric names the exporters give them. A 
 
 `cluster` is the CNPG cluster's name; it names the database in every rule. The rules need no other source.
 
-For the exporter, a Prometheus scrape that adds the four labels, every 5 s: `CNPGWritesBlocked` must see a wait of 10 s, and the chart sets `metricsQueriesTTL: 0s`, so each scrape runs the queries anew. The `node` label names each instance by its node on the dashboard. The OTel collector's `prometheus` receiver takes the same `scrape_configs`. The chart's NetworkPolicy admits 9187 only from the OTel namespace.
+For the exporter, a Prometheus scrape that adds the four labels, every 5 s: `CNPGWritesBlocked` must see a wait of 10 s, and the chart sets `metricsQueriesTTL: 0s`, so each scrape runs the queries anew. The `node` label names each instance by its node on the dashboard. The OTel collector's `prometheus` receiver takes the same `scrape_configs`. The chart's NetworkPolicy admits 9187 only from the OTel namespace. The scrape checks the server certificate with the CA that issued it and one of the names in it, `replication.dnsNames`; a company CA that issues only approved names, such as the node names, issues no `pg-rw`.
 
 ```yaml
 scrape_configs:
@@ -40,8 +40,8 @@ scrape_configs:
     scrape_interval: 5s
     scheme: https
     tls_config:
-      ca_file: /etc/cnpg/ca.crt  # the CA of the server certificate
-      server_name: pg-rw         # one of its dnsNames
+      ca_file: /etc/otel/company-ca/ca.crt  # the CA of the server certificate
+      server_name: k3s-1.example.test       # one of its dnsNames
     kubernetes_sd_configs:
       - role: pod
         namespaces: {names: [databases]}
@@ -54,12 +54,25 @@ scrape_configs:
       - {source_labels: [__meta_kubernetes_pod_node_name], target_label: node}
 ```
 
+## Collectors
+
+[`cnpg-opentelemetry-collector`](../samples/charts/cnpg-opentelemetry-collector) is a values chart of the upstream `opentelemetry-collector` chart with two collectors in the namespace `otel`:
+
+| Collector | Kind | Scrapes |
+|---|---|---|
+| `otel-agent` | DaemonSet, one per node | The CNPG exporters of the instances on its node every 5 s, as above; its node's kubelet `/metrics` and `/metrics/cadvisor` |
+| `otel-cluster` | Deployment, one replica | cert-manager's controllers |
+
+Each scrape is done once. Both send OTLP over gRPC with mTLS to one upstream URL, `otel.example.test:4317`, with a client certificate from the company CA (`templates/certificate.yaml`) and the CA from the Secret `company-ca`. The upstream service hands the metrics to the rule evaluator by remote write with `translation_strategy: UnderscoreEscapingWithoutSuffixes`, which keeps every metric name: with suffixes, `cnpg_pg_stat_database_xact_commit` would arrive as `cnpg_pg_stat_database_xact_commit_total`. Every label of the scrape arrives as it is.
+
+A collector that is lost with its node sends no stale marker, so the evaluator keeps its last samples for its lookback, 5 minutes in Prometheus: a lost primary would still count as the primary. The rules therefore count an instance only while its metrics arrive, `cnpg_sample:instance_reports`: its newest `cnpg_collector_up` is at most 30 s older than the newest of its cluster. An instance whose collector is lost counts as reporting nothing 30 s later, so `CNPGReplicaDown` fires about 5.5 minutes after its node is lost, also for the primary, and a lost primary no longer hides `CNPGDatabaseDown`. When every collector stops, the newest samples are all old, and the instances count until the lookback ends.
+
 ## Alerts
 
 | Alert | Severity | Fires when | For |
 |---|---|---|---|
 | `CNPGDatabaseDown` | critical | No instance reports a running primary, and none answers without saying whether it is one: PostgreSQL is down or fenced on every instance, no replica has been promoted yet, or the primary's metrics do not arrive | 3 min |
-| `CNPGReplicaDown` | critical | An instance seen in the last day, other than the primary, is not in the primary's `pg_stat_replication`, or reports no metrics: the instance is down, does not stream, or its scrape fails | 5 min |
+| `CNPGReplicaDown` | critical | An instance seen in the last day, other than the primary, is not in the primary's `pg_stat_replication`, or its metrics do not arrive: the instance is down, does not stream, its scrape fails, or its collector is lost | 5 min |
 | `CNPGReplicaLag` | critical | A replica is more than 15 s behind (see [Replica lag](#replica-lag)) | 2 min |
 | `CNPGWritesBlocked` | critical | Sessions on the primary wait for a synchronous standby to confirm their commit (see [Writes blocked](#writes-blocked)) | 10 s |
 | `CNPGBackupFailing` | critical | The last backup is older than 26 h or there is none, the last backup failed, or WAL archiving fails on the primary | 10 min |

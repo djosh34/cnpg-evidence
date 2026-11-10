@@ -31,11 +31,12 @@ bash bench/host.sh
    - `dns`: CoreDNS, which names every container below.
    - `acme.example.test`: OpenBao as the company CA. The run makes a new root. OpenBao serves ACME with an EAB key required, checks each name with http-01, and signs only the approved names, the nodes and the client, for server and client auth.
    - `s3.example.test`: versitygw with TLS, with a certificate of that CA.
+   - The monitoring, as [Monitoring](#monitoring) says: `otel.example.test`, `prometheus.example.test`, `alertmanager.example.test` and `grafana.example.test`.
 4. Starts three k3s servers with embedded etcd, `k3s-1.example.test` to `k3s-3.example.test`, one after another. Each runs [`bench/node-init.sh`](../bench/node-init.sh), which starts k3s again when it exits, so the pods outlive k3s as on a VM. Each gets [`k3s/config.yaml`](../samples/k3s/config.yaml) and the files of `k3s/manifests/`.
 5. Runs one CoreDNS and metrics-server pod per node, as [samples.md](samples.md) says.
 6. Makes the Secrets that only the run knows: the EAB key and CA of the company CA, `client-ca`, the store's CA `s3-ca`, and `backup-creds`.
 7. Installs the releases of [`charts/releases.yaml`](../samples/charts/releases.yaml) in order: `helm dependency build --skip-refresh` on the chart, then `helm upgrade --install --wait` with the release's values files and `values/<release>.yaml`. The charts are copied out of the mounted directory first.
-8. Waits until the cluster is healthy and names the instances: the primary, replica 1 and replica 2.
+8. Waits until the cluster is healthy, takes a first backup, as a cluster with scheduled backups has one, and waits until it is done and Prometheus has the metrics of every source. Then it names the instances: the primary, replica 1 and replica 2.
 9. Runs the scenario with godog. At its first When line it starts the client.
 10. Runs [`always.feature`](../samples/features/always.feature), also after a failed scenario, prints the timing table and, after a failure, the cluster's state.
 
@@ -50,8 +51,22 @@ bash bench/host.sh
 | `charts/cnpg-cluster/`, `charts/company-acme/` | Charts of this repository: the CNPG cluster, and the ClusterIssuer of the company CA. |
 | `charts/releases.yaml` | The releases in install order. |
 | `desired.yaml` | The cluster's values, which `evidence.sh` also compares against. |
+| `monitoring/` | `rules.yaml`, `alertmanager.yaml` and `dashboard.json`, which the containers outside k3s load. |
 | `values/` | The bench's own values, per release, on top of the others. |
 | `features/` | The scenarios. |
+
+## Monitoring
+
+As [monitoring.md](monitoring.md) describes it. Inside k3s, the release `otel` of [`charts/cnpg-opentelemetry-collector`](../samples/charts/cnpg-opentelemetry-collector) runs a collector per node and one for cert-manager, each sending OTLP with mTLS to `otel.example.test:4317`. Outside k3s, as containers next to the nodes:
+
+| Container | What |
+|---|---|
+| `otel.example.test` | The upstream OTel service: OTLP over gRPC with a certificate of the company CA, client certificates of that CA only, handed to Prometheus by remote write with every metric name and label as the scrape gave it. |
+| `prometheus.example.test` | The rule evaluator, with `monitoring/rules.yaml`. It scrapes nothing; the metrics come by remote write. |
+| `alertmanager.example.test` | With `monitoring/alertmanager.yaml` as it is. Its receiver, `https://alerts.example.com/hook`, is the bench itself, on the network's gateway with a certificate of the company CA. |
+| `grafana.example.test` | With `monitoring/dashboard.json` and a Prometheus data source. |
+
+The bench queries Prometheus, Alertmanager and Grafana over their HTTP APIs. A scenario starts once the first backup is done and Prometheus has, for each instance, the four compliance checks and its data disk, and the chart's two certificates.
 
 ## The client
 
@@ -67,8 +82,14 @@ Most lines are `<thing> is <word>`. The bench cuts a line into thing, word and l
 | `<thing> is <word> < N s` | A state: waits up to N s from the line above. A measure: its limit. |
 | `<thing> is <word> < N s after the <event>` | A state: waits until N s after that event. |
 | `<thing> is <word> for N s` | A state: checks it for N s. |
+| `<thing> has been <word> since the <event>` | Checks the whole time from that event to now. |
 | `<thing> starts / stops / runs / passes` | The same lookup. |
 | `N s pass`, `N s pass after the <event>` | Waits. |
+| `<ALERT> fires / resolves for <role> < N s` | Waits up to N s until the alert fires, or no longer fires. Without a limit: checks now. |
+| `<ALERT> fired / has not fired for <role>` | Checks whether it fired since the scenario started. |
+| `<ALERT> may fire for <role>` | Allows it. |
+| `Alertmanager gets <ALERT> for <role>` | Sends Alertmanager the critical alert for 2 min, as the rule evaluator would. An event. |
+| `Alertmanager sends / mutes <ALERT> for <role> < N s` | Waits up to N s until the bench got a notification of it firing, or Alertmanager holds it suppressed. |
 | `no writes` | The client does not write in this scenario. |
 
 An event comes only in a Given or When line, a check only in a Given or Then line. Roles: **the primary**, **replica 1** and **replica 2**, named when the cluster is ready; **the new primary**, the instance that became primary last; **another instance**, any instance but the primary.
@@ -77,11 +98,17 @@ An event comes only in a Given or When line, a check only in a Given or Then lin
 |---|---|
 | `the cluster is healthy` | Three ready instances, the phase healthy, two replicas streaming from the primary. |
 | `<role> is promoted` | `kubectl cnpg promote`. Its event is "the promote". |
-| `<role> is primary` | The instance is the cluster's current primary, out of recovery. |
+| `<role>'s node is killed` | `docker stop -t 0` of the node the instance runs on, as a lost VM. The bench then uses the API server of a node that runs. Its event is "the kill". |
+| `the node starts` | `docker start` of the killed node. Its event is "the start". |
+| `<role> is primary`, `<role> is still primary` | The instance is the cluster's current primary, out of recovery. |
 | `writing stops` | The client stops writing; the reads go on. |
 | `reading is healthy < N s` | The longest time without a successful read of the client, from its first, is under N s. |
 | `writing is healthy < N s` | The longest time without an acknowledged write of the client, from its first until the writes stop, is under N s. |
 | `no acknowledged write is lost` | Stops the client. Every write it got acknowledged is in `bench_writes` on the primary. |
+| `the alerts are healthy` | No alert fires. Every alert the scenario says `fired` or `fires` fired since the scenario started, and no other did, but those it says `may fire`. |
+| `the dashboard is healthy` | Grafana has the dashboard, and every panel's queries, with the dashboard's variables set to the database, give at least one value through Grafana's data source. |
+| `the exporters are healthy` | Every instance's exporter answered in the last 30 s with `cnpg_compliance_violations` of the check `cn_mapping` and `cnpg_pg_replication_in_recovery`. |
+| `the exporters of <role> and <role> have been healthy since the <event>` | In every 15 s in which one of their exporters answered, at least one answer had both of those metrics, and none went 60 s without answering. |
 
 `always.feature` runs after every scenario, with the same steps. A scenario's own `writing is healthy < N s` line sets N for that scenario there too; every other limit of `always.feature` holds for every scenario.
 
