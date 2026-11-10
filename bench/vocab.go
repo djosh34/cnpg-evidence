@@ -25,6 +25,8 @@ type word struct {
 	event   func(context.Context, *scenario, args) error
 	state   func(context.Context, *scenario, args) error
 	longest func(context.Context, *scenario) (time.Duration, error)
+	// A measure whose limit in always.feature a scenario's own line sets.
+	scenarioLimit bool
 }
 
 var vocabulary = map[string]word{
@@ -40,7 +42,7 @@ var vocabulary = map[string]word{
 	// Measures, on the client: the longest time without a successful read,
 	// and without an acknowledged write while the client writes.
 	"reading | healthy": {longest: longestReadGap},
-	"writing | healthy": {longest: longestWriteGap},
+	"writing | healthy": {longest: longestWriteGap, scenarioLimit: true},
 }
 
 // promote: kubectl cnpg promote; the instance is then the new primary.

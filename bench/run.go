@@ -49,7 +49,7 @@ func runScenario(name string, res *results) int {
 		Options: &godog.Options{
 			Format: format, Output: io.Discard, Strict: true, NoColors: true,
 			Paths: []string{filepath.Join(benchDir, "features")},
-			Tags:  "@" + name,
+			Tags:  "@" + name + " && ~@always",
 		},
 	}
 	status := suite.Run()
@@ -82,12 +82,13 @@ func (s *scenario) setUp(sn *godog.Scenario) error {
 	return nil
 }
 
-// tearDown runs always.feature after a passed scenario, keeps the client's
-// log, prints the timing table and, on a failure, the cluster's state.
+// tearDown runs always.feature after the scenario, passed or failed, once
+// its cluster was built. It keeps the client's log and the cluster's state,
+// prints the timing table and, on a failure, the state.
 func (s *scenario) tearDown(sn *godog.Scenario, err error) error {
-	if err == nil {
+	if s.w != nil {
 		logf("always.feature")
-		err = s.runAlways()
+		err = errors.Join(err, s.runAlways())
 	}
 	if s.cl != nil {
 		err = errors.Join(err, s.stopClient(s.ctx))
@@ -96,13 +97,11 @@ func (s *scenario) tearDown(sn *godog.Scenario, err error) error {
 	}
 	table := s.table(sn.Name)
 	say(os.Stdout, "\n%s\n", table)
-	err = errors.Join(err, s.results.write("timing.md", table))
+	state := dumpState(s.ctx)
 	if err != nil {
-		state := dumpState(s.ctx)
 		say(os.Stdout, "\n%s", state)
-		err = errors.Join(err, s.results.write("state.txt", state))
 	}
-	return err
+	return errors.Join(err, s.results.write("timing.md", table), s.results.write("state.txt", state))
 }
 
 // table is the timing table of the scenario, in Markdown.
@@ -124,7 +123,6 @@ var stateCommands = [][]string{
 	{"docker", "logs", "--tail", "30", "k3s-1"},
 	{"docker", "logs", "--tail", "30", "k3s-2"},
 	{"docker", "logs", "--tail", "30", "k3s-3"},
-	{"docker", "exec", "k3s-1", "ls", "-la", "/run", "/run/flannel"},
 	{"kubectl", "get", "nodes", "-o", "wide"},
 	{"kubectl", "get", "pods", "-A", "-o", "wide"},
 	{"kubectl", "get", "clusters,backups,certificates,certificaterequests,orders,challenges", "-A"},

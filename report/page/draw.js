@@ -85,7 +85,7 @@ function plan(doc, desired) {
     for (const { side: which, doc: from, reader } of pair) {
       const rows = ordered(visible(image.rows(reader, docs), image.names));
       const context = [['System', system(source, from, node)]];
-      if (which === 'desired') context.push(['Made by', 'desired.sh, from samples/desired.yaml']);
+      if (which === 'desired') context.push(['Made by', 'desired.sh, from desired.yaml']);
       else context.push(['Collected by', SOURCES[source].by]);
       // A desired row for every instance ("*") gives no count.
       if (image.noun && !rows.some(r => r.every)) {

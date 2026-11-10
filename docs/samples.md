@@ -313,6 +313,8 @@ A cluster bootstrapped with CNPG's defaults has an `app` database, an `app` role
 
 ## RBAC on chart upgrades
 
+To upgrade an upstream chart, replace its directory in `samples/charts/` with the new version, pulled with `helm pull <chart> --repo <repo> --version <version> --untar --untardir samples/charts`, and set the same version in the `dependencies` of its values chart's `Chart.yaml`. `helm dependency build` fails while the two differ.
+
 The values charts disable the upstream RBAC and supply their own templates. A new upstream version can need a rule that these templates lack. It then shows as `forbidden` in the operator or plugin log. Before each chart upgrade, render the committed upstream RBAC. Save this output, replace the upstream charts with the new versions, render again and compare.
 
 ```bash

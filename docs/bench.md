@@ -9,7 +9,7 @@ docker run --rm --privileged -v "$PWD/samples:/bench:ro" -v "$PWD/results:/resul
 
 - The argument is the tag of one scenario, without the `@`.
 - `/bench` is the mounted directory, mounted read-only. The bench never writes into it.
-- `/results` is optional. When it is mounted, the run writes a new directory `<scenario>-<time>` there, owned by the owner of the mounted directory: `cucumber.json`, `junit.xml`, `timing.md`, `client.log` and, after a failure, `state.txt`.
+- `/results` is optional. When it is mounted, the run writes a new directory `<scenario>-<time>` there, owned by the owner of the mounted directory: `cucumber.json` and `junit.xml` of the scenario, `always.cucumber.json` and `always.junit.xml` of `always.feature`, `timing.md`, `client.log` and the cluster's state in `state.txt`.
 - `--rm` matters: the run's disk is a volume of the container, and `--rm` removes it with the container. A run that passed, failed or was killed then leaves no container, volume or network on the host.
 - Exit code 0: the scenario passed. 1: it failed. 2: it could not run.
 
@@ -37,7 +37,7 @@ bash bench/host.sh
 7. Installs the releases of [`charts/releases.yaml`](../samples/charts/releases.yaml) in order: `helm dependency build --skip-refresh` on the chart, then `helm upgrade --install --wait` with the release's values files and `values/<release>.yaml`. The charts are copied out of the mounted directory first.
 8. Waits until the cluster is healthy and names the instances: the primary, replica 1 and replica 2.
 9. Runs the scenario with godog. At its first When line it starts the client.
-10. Runs [`always.feature`](../samples/features/always.feature), prints the timing table and, after a failure, the cluster's state.
+10. Runs [`always.feature`](../samples/features/always.feature), also after a failed scenario, prints the timing table and, after a failure, the cluster's state.
 
 ## The mounted directory
 
@@ -55,7 +55,7 @@ bash bench/host.sh
 
 ## The client
 
-The client image is the application host: a container outside k3s, `orders-app.test`. It gets its own certificate from the company CA by ACME, with its own EAB key. Then it reads and writes through [pgfallback](pgfallback.md) for the whole scenario: a query and an insert every 0.25 s, each allowed 10 s, against the rw port 5432 of the three nodes, and their read port 5433 when no rw address takes a connection. It logs in as `orders` with `verify-full`. The bench reads only its log. A scenario with `Given no writes` starts it without writes, and `When writing stops` stops the writes while the reads go on.
+The client image is the application host: a container outside k3s, `orders-app.test`. It gets its own certificate from the company CA by ACME, with its own EAB key. Then it reads and writes through [pgfallback](pgfallback.md) for the whole scenario: a query and an insert every 0.25 s, each allowed 10 s, against the rw port 5432 of the three nodes, and their read port 5433 when no rw address takes a connection. It logs in as `orders` with `verify-full`. The bench reads only its log. A scenario with `Given no writes` starts it without writes. `When writing stops` stops the writes while the reads go on; the line ends once every write the client started has ended, so no write is acknowledged after it.
 
 ## How a scenario reads
 
@@ -83,7 +83,7 @@ An event comes only in a Given or When line, a check only in a Given or Then lin
 | `writing is healthy < N s` | The longest time without an acknowledged write of the client, from its first until the writes stop, is under N s. |
 | `no acknowledged write is lost` | Stops the client. Every write it got acknowledged is in `bench_writes` on the primary. |
 
-`always.feature` runs after every scenario, with the same steps. A scenario's own `reading is healthy < N s` or `writing is healthy < N s` line sets N for that scenario there too.
+`always.feature` runs after every scenario, with the same steps. A scenario's own `writing is healthy < N s` line sets N for that scenario there too; every other limit of `always.feature` holds for every scenario.
 
 ## Building the images
 

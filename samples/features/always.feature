@@ -1,10 +1,10 @@
 @always
 Feature: What always holds
-  The bench runs this scenario after every scenario, with the same steps.
-  Reading and writing are what the client, the application outside the
-  cluster, gets through pgfallback over the whole scenario. A scenario's own
-  "reading is healthy < N s" or "writing is healthy < N s" sets N for that
-  scenario.
+  The bench runs this scenario after every scenario, passed or failed, with
+  the same steps. Reading and writing are what the client, the application
+  outside the cluster, gets through pgfallback over the whole scenario. A
+  scenario's own "writing is healthy < N s" sets N for that scenario; every
+  other limit here holds for every scenario.
 
   Scenario: After every scenario
     Then the cluster is healthy < 600 s

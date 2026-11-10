@@ -1,4 +1,4 @@
-# The ClusterIssuer's name, the issuer the cluster chart's values name.
+# The ClusterIssuer's name. samples/values/pg.yaml names it as the cluster's issuer.
 name: company-acme
 # The ACME directory of the company CA.
 server: https://acme.example.com/v1/pki/acme/directory

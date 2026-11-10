@@ -21,7 +21,7 @@ source "$here/../lib/common.sh"
 expected() { jq -r -L "$here/violations" "include \"expected\"; $1" <<<"$values"; }
 
 usage() {
-  echo "usage: yq -o=json samples/desired.yaml | ${0##*/} --ca client-ca.pem" >&2
+  echo "usage: yq -o=json desired.yaml | ${0##*/} --ca client-ca.pem" >&2
   exit 2
 }
 
@@ -34,7 +34,7 @@ for tool in kubectl jq openssl timeout base64; do
 done
 
 values=$(jq -c .) || die "the desired state on stdin is not JSON"
-[[ -n $values ]] || die "stdin is empty: pipe in samples/desired.yaml as JSON"
+[[ -n $values ]] || die "stdin is empty: pipe in desired.yaml as JSON"
 [[ $(expected valid_values) == true ]] || die "$(expected values_needed)"
 operator_account=$(expected operator_account) || exit 2
 plugin_account=$(expected plugin_account) || exit 2

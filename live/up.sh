@@ -300,7 +300,7 @@ main() {
       fail "$d not rolled out after 300s"
   done
   log "installing cert-manager"
-  helm dependency build --skip-refresh "$SAMPLES/charts/cnpg-cert-manager"
+  helm dependency build --skip-refresh "$SAMPLES/charts/cnpg-cert-manager" >/dev/null
   wait_for 900 "cert-manager installed" helm_install cert-manager "$SAMPLES/charts/cnpg-cert-manager" \
     --namespace cert-manager --create-namespace
   k create namespace cnpg-system >/dev/null
@@ -308,10 +308,10 @@ main() {
   wait_for 300 "the Issuer applied" apply_issuer
   wait_for 120 "Issuer example-ca Ready" issuer_ready
   log "installing the CNPG operator and the barman-cloud plugin"
-  helm dependency build --skip-refresh "$SAMPLES/charts/cnpg-cloudnative-pg"
+  helm dependency build --skip-refresh "$SAMPLES/charts/cnpg-cloudnative-pg" >/dev/null
   wait_for 900 "the CNPG operator installed" helm_install cnpg "$SAMPLES/charts/cnpg-cloudnative-pg" \
     --namespace cnpg-system
-  helm dependency build --skip-refresh "$SAMPLES/charts/cnpg-plugin-barman-cloud"
+  helm dependency build --skip-refresh "$SAMPLES/charts/cnpg-plugin-barman-cloud" >/dev/null
   wait_for 900 "the barman-cloud plugin installed" helm_install barman-cloud "$SAMPLES/charts/cnpg-plugin-barman-cloud" \
     --namespace cnpg-system
   log "installing samples/charts/cnpg-cluster as release pg in $NS"

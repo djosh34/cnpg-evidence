@@ -10,7 +10,8 @@
 // detail is the address of the server and whether it is in recovery, a
 // write's is its n and the address of the server, a failure's is the error.
 //
-// SIGUSR1 stops the writes, and the line "<ms> <ms> writes stopped" says when.
+// SIGUSR1 stops the writes. Once every write it started has ended, the line
+// "<ms> <ms> writes stopped" says when; no write is acknowledged after it.
 //
 // Usage:
 //
@@ -119,12 +120,17 @@ func run() error {
 
 	stopWrites := make(chan os.Signal, 1)
 	signal.Notify(stopWrites, syscall.SIGUSR1)
-	var attempts sync.WaitGroup
-	attempts.Go(func() { every250ms(ctx, nil, &attempts, func() { read(pool) }) })
+	var loops sync.WaitGroup
+	loops.Go(func() { every250ms(ctx, nil, func() { read(pool) }) })
 	if *writes {
-		attempts.Go(func() { every250ms(ctx, stopWrites, &attempts, func() { write(pool) }) })
+		loops.Go(func() {
+			if every250ms(ctx, stopWrites, func() { write(pool) }) {
+				now := time.Now()
+				logLine(now, now, "writes", "stopped", "")
+			}
+		})
 	}
-	attempts.Wait()
+	loops.Wait()
 	return nil
 }
 
@@ -232,20 +238,21 @@ func ensureTable(ctx context.Context, pool *pgxpool.Pool) error {
 }
 
 // every250ms starts attempt every 0.25 s, each in its own goroutine, until
-// ctx ends or stop gets a signal. The attempts are not canceled: each ends
-// within attemptTimeout and logs what it got.
-func every250ms(ctx context.Context, stop <-chan os.Signal, attempts *sync.WaitGroup, attempt func()) {
+// ctx ends or stop gets a signal, and returns once every attempt it started
+// has ended, with whether stop ended it. The attempts are not canceled: each
+// ends within attemptTimeout and logs what it got.
+func every250ms(ctx context.Context, stop <-chan os.Signal, attempt func()) bool {
+	var attempts sync.WaitGroup
+	defer attempts.Wait()
 	tick := time.NewTicker(every)
 	defer tick.Stop()
 	for {
 		attempts.Go(attempt)
 		select {
 		case <-ctx.Done():
-			return
+			return false
 		case <-stop:
-			now := time.Now()
-			logLine(now, now, "writes", "stopped", "")
-			return
+			return true
 		case <-tick.C:
 		}
 	}

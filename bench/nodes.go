@@ -33,41 +33,35 @@ func nodeIP(i int) string   { return fmt.Sprintf("10.77.0.%d", 11+i) }
 //go:embed node-init.sh
 var nodeInit string
 
-type node struct {
-	name string
-	c    *testcontainers.DockerContainer
-}
-
 // startNodes starts the three nodes one after another, each joining the
 // first, and waits until each is Ready. It writes the kubeconfig of the
 // first node's API server to workDir/kubeconfig.
-func startNodes(ctx context.Context, nw *testcontainers.DockerNetwork) ([]*node, error) {
-	var nodes []*node
+func startNodes(ctx context.Context, nw *testcontainers.DockerNetwork) error {
 	for i := range nodeCount {
 		// Each node needs its own files: a file's reader is read once.
 		files, err := k3sFiles()
 		if err != nil {
-			return nil, err
+			return err
 		}
-		n, err := startNode(ctx, nw, i, files)
+		c, err := startNode(ctx, nw, i, files)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		nodes = append(nodes, n)
 		if i == 0 {
-			if err := writeKubeconfig(ctx, n); err != nil {
-				return nil, err
+			if err := writeKubeconfig(ctx, c); err != nil {
+				return err
 			}
 		}
+		name := nodeName(i)
 		err = poll(ctx, time.Now().Add(5*time.Minute), func(ctx context.Context) error {
-			return nodeReady(ctx, n.name)
+			return nodeReady(ctx, name)
 		})
 		if err != nil {
-			return nil, fmt.Errorf("node %s Ready: %w", n.name, err)
+			return fmt.Errorf("node %s Ready: %w", name, err)
 		}
-		logf("node %s is Ready", n.name)
+		logf("node %s is Ready", name)
 	}
-	return nodes, nil
+	return nil
 }
 
 // k3sFiles are the files of the mounted k3s directory, placed where k3s
@@ -104,7 +98,7 @@ func k3sFiles() ([]testcontainers.ContainerFile, error) {
 // idmapped mounts under /tmp at start, which fail on overlayfs; pods with
 // hostUsers: false need them. The node's data is a volume on the bench's
 // disk.
-func startNode(ctx context.Context, nw *testcontainers.DockerNetwork, i int, files []testcontainers.ContainerFile) (*node, error) {
+func startNode(ctx context.Context, nw *testcontainers.DockerNetwork, i int, files []testcontainers.ContainerFile) (*testcontainers.DockerContainer, error) {
 	join := []string{"--cluster-init"}
 	if i > 0 {
 		join = []string{"--server", "https://" + nodeIP(0) + ":6443"}
@@ -132,15 +126,15 @@ func startNode(ctx context.Context, nw *testcontainers.DockerNetwork, i int, fil
 		return nil, err
 	}
 	logf("node %s started", name)
-	return &node{name: name, c: c}, nil
+	return c, nil
 }
 
-// writeKubeconfig waits for k3s to write its kubeconfig on node n and keeps
-// a copy that reaches n's API server.
-func writeKubeconfig(ctx context.Context, n *node) error {
+// writeKubeconfig waits for k3s to write its kubeconfig on the first node
+// and keeps a copy that reaches its API server.
+func writeKubeconfig(ctx context.Context, c *testcontainers.DockerContainer) error {
 	var config string
 	err := poll(ctx, time.Now().Add(2*time.Minute), func(ctx context.Context) error {
-		r, err := n.c.CopyFileFromContainer(ctx, "/etc/rancher/k3s/k3s.yaml")
+		r, err := c.CopyFileFromContainer(ctx, "/etc/rancher/k3s/k3s.yaml")
 		if err != nil {
 			return err
 		}
@@ -149,7 +143,7 @@ func writeKubeconfig(ctx context.Context, n *node) error {
 			return err
 		}
 		if len(data) == 0 {
-			return fmt.Errorf("the kubeconfig of %s is empty", n.name)
+			return fmt.Errorf("the kubeconfig of %s is empty", nodeName(0))
 		}
 		config = string(data)
 		return nil

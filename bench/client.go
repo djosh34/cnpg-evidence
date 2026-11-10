@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -66,13 +67,26 @@ func startClient(ctx context.Context, nw *testcontainers.DockerNetwork, root *ca
 	return cl, err
 }
 
-// stopWrites makes the client stop writing.
+// stopWrites makes the client stop writing, and returns once every write it
+// started has ended: no write is acknowledged after this.
 func (cl *client) stopWrites(ctx context.Context) error {
 	code, _, err := cl.c.Exec(ctx, []string{"kill", "-USR1", "1"})
 	if err == nil && code != 0 {
 		err = fmt.Errorf("kill -USR1 in the client: exit code %d", code)
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	return poll(ctx, time.Now().Add(30*time.Second), func(ctx context.Context) error {
+		log, err := cl.log(ctx)
+		if err != nil {
+			return err
+		}
+		if _, ok := log.writesStopped(); !ok {
+			return errors.New("the client has not stopped writing yet")
+		}
+		return nil
+	})
 }
 
 // stop stops the client; it ends the reads and writes it has started.

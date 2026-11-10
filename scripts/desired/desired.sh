@@ -17,7 +17,7 @@ source "$here/../lib/common.sh"
 expected_dir=$here/../evidence/violations
 
 usage() {
-  echo "usage: yq -o=json samples/desired.yaml | ${0##*/} [--source evidence|host-check|prove] [--ca client-ca.pem] [--postgres-uid 999]" >&2
+  echo "usage: yq -o=json desired.yaml | ${0##*/} [--source evidence|host-check|prove] [--ca client-ca.pem] [--postgres-uid 999]" >&2
   exit 2
 }
 

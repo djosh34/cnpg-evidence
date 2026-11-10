@@ -5,7 +5,7 @@
 #
 # Unless a def takes arguments only, its input is the desired values: samples/desired.yaml as JSON.
 
-# The release names in samples/values-*.yaml fix these ServiceAccount names;
+# The release names of the operator and plugin charts fix these ServiceAccount names;
 # cert-manager runs in its own namespace.
 def operator_account: "cnpg-cloudnative-pg";
 def plugin_account: "barman-cloud-plugin-barman-cloud";

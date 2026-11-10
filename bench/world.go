@@ -39,7 +39,7 @@ func newWorld(ctx context.Context) (*world, error) {
 		return nil, err
 	}
 	logf("starting k3s")
-	if _, err := startNodes(ctx, nw); err != nil {
+	if err := startNodes(ctx, nw); err != nil {
 		return nil, err
 	}
 	logf("one CoreDNS, metrics-server and Traefik pod per node")

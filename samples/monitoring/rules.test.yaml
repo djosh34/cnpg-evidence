@@ -489,7 +489,7 @@ tests:
           - exp_labels: {severity: critical, namespace: databases, cluster: pg, rule: "1", check: unexpected_role}
             exp_annotations:
               summary: Check unexpected_role of rule 1 fails on databases/pg.
-              description: Run evidence.sh against samples/desired.yaml to see which role, attribute or mapping changed.
+              description: Run evidence.sh against desired.yaml to see which role, attribute or mapping changed.
       - {eval_time: 13m, alertname: CNPGComplianceViolation}
 
   # pg-2 reports three of the four checks, pg-3 none; pg-1 all four.

@@ -205,8 +205,9 @@ func (s *scenario) event(key string, w word, a args) error {
 }
 
 // measure checks a measure over the whole scenario against the line's
-// limit. A scenario's own line sets the limit that always.feature then
-// uses for the same line.
+// limit. For writing, a scenario's own line sets the limit that
+// always.feature then uses; every other limit of always.feature holds for
+// every scenario.
 func (s *scenario) measure(key string, w word, n, after, forN string) error {
 	if n == "" || after != "" || forN != "" {
 		return fmt.Errorf("%s takes only a limit, < N s", key)
@@ -215,9 +216,11 @@ func (s *scenario) measure(key string, w word, n, after, forN string) error {
 	if err != nil {
 		return err
 	}
-	if !s.inAlways {
+	switch own, ok := s.limits[key]; {
+	case !w.scenarioLimit:
+	case !s.inAlways:
 		s.limits[key] = limit
-	} else if own, ok := s.limits[key]; ok {
+	case ok:
 		limit = own
 	}
 	got, err := w.longest(s.ctx, s)
@@ -323,6 +326,10 @@ func (s *scenario) role(name string) (string, error) {
 // state. Its first failing line fails the scenario.
 func (s *scenario) runAlways() error {
 	s.inAlways = true
+	format := "progress"
+	if s.results.dir != "" {
+		format += ",cucumber:" + s.results.path("always.cucumber.json") + ",junit:" + s.results.path("always.junit.xml")
+	}
 	var failed error
 	suite := godog.TestSuite{
 		Name: "always",
@@ -336,7 +343,7 @@ func (s *scenario) runAlways() error {
 			})
 		},
 		Options: &godog.Options{
-			Format: "progress", Output: io.Discard, Strict: true, NoColors: true,
+			Format: format, Output: io.Discard, Strict: true, NoColors: true,
 			Paths: []string{filepath.Join(benchDir, "features", "always.feature")},
 		},
 	}

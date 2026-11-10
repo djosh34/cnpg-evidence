@@ -60,10 +60,7 @@ func makeDisk(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := f.Truncate(diskSize); err != nil {
-		return fmt.Errorf("%w (and closing: %w)", err, f.Close())
-	}
-	if err := f.Close(); err != nil {
+	if err := closeWith(f.Truncate(diskSize), f); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(diskDir, 0o700); err != nil {
