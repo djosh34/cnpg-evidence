@@ -7,7 +7,7 @@ Sample manifests for a CloudNativePG (CNPG) cluster that accepts only certificat
 - k3s with its default flannel, servicelb, local-path provisioner and network policy controller.
 - Hosts with SELinux and rpm.
 - CNPG with the barman-cloud plugin.
-- [`desired.yaml`](desired.yaml) describes the cluster: its name and namespace, the client CA Secret, the rw and read LoadBalancers, the namespaces of the operator and the OTel collectors, the replication certificate and the databases. The sample chart, `evidence.sh` and `desired.sh` read it.
+- [`samples/desired.yaml`](samples/desired.yaml) describes the cluster: its name and namespace, the client CA Secret, the rw and read LoadBalancers, the namespaces of the operator and the OTel collectors, the replication certificate and the databases. The sample chart, `evidence.sh` and `desired.sh` read it.
 
 ## Rules
 
@@ -29,7 +29,7 @@ All three scripts print one JSON document on stdout and logs on stderr. Exit 0 m
 ```bash
 # Anywhere with a cluster-admin kubeconfig (on a k3s server node,
 # KUBECONFIG=/etc/rancher/k3s/k3s.yaml). Rules 1 to 4, 6, 7 and the pod side of 5.
-yq -o=json desired.yaml | bash scripts/evidence/evidence.sh --ca client-ca.pem > evidence.json
+yq -o=json samples/desired.yaml | bash scripts/evidence/evidence.sh --ca client-ca.pem > evidence.json
 
 # On every node, as root. The host side of rule 5, and rule 8.
 bash scripts/host-check/host-check.sh > host-check.json
@@ -37,10 +37,10 @@ bash scripts/host-check/host-check.sh > host-check.json
 # On one node that runs an instance, as root, with a cluster-admin kubeconfig
 # (on a k3s server node, KUBECONFIG=/etc/rancher/k3s/k3s.yaml).
 # Real login and access attempts that must fail.
-yq -o=json desired.yaml | bash scripts/prove/prove.sh > prove.json
+yq -o=json samples/desired.yaml | bash scripts/prove/prove.sh > prove.json
 
 # Anywhere with yq, bash, jq and openssl. The desired documents of the three scripts.
-yq -o=json desired.yaml | bash scripts/desired/desired.sh --ca client-ca.pem > evidence.desired.json
+yq -o=json samples/desired.yaml | bash scripts/desired/desired.sh --ca client-ca.pem > evidence.desired.json
 
 # On any x86_64 Linux host, with no network. A desired and an actual image
 # for each piece of evidence. See docs/report.md for getting the binary.
@@ -51,22 +51,22 @@ cnpg-report --desired evidence.desired.json --out images/ evidence.json
 bash scripts/test.sh
 ```
 
-`client-ca.pem` holds the CAs that may sign client certificates, including the CA of the `issuer` in `samples/chart/values.yaml`: the same certificates as `ca.crt` in the client CA Secret. Each script's doc lists its options, the tools it needs and every key of its output.
+`client-ca.pem` holds the CAs that may sign client certificates, including the CA of the `issuer` in `samples/charts/cnpg-cluster/values.yaml`: the same certificates as `ca.crt` in the client CA Secret. Each script's doc lists its options, the tools it needs and every key of its output.
 
 ## How the scripts fit together
 
-- `evidence.sh` reads the live state through the API server and PostgreSQL, and compares it with `desired.yaml`. It shows rules 1 to 4, 6, 7 and the pod side of rule 5. It only reads.
+- `evidence.sh` reads the live state through the API server and PostgreSQL, and compares it with `samples/desired.yaml`. It shows rules 1 to 4, 6, 7 and the pod side of rule 5. It only reads.
 - `host-check.sh` reads one node: SELinux, accounts with the postgres uid or gid, directory modes, the k3s credentials and secrets encryption, low ports and the network policy controller. It shows the host side of rule 5 and rule 8. It only reads.
 - `prove.sh` tries what rules 1, 2 and 5 forbid: password logins, a certificate login as the wrong role, and socket and data access as the host postgres uid. Each attempt must fail with the expected denial, and one control attempt must succeed.
-- `desired.sh` builds, from `desired.yaml` alone, a document of the same shape as each script's output that holds the desired values. The scripts' own checks stay the verdict.
+- `desired.sh` builds, from `samples/desired.yaml` alone, a document of the same shape as each script's output that holds the desired values. The scripts' own checks stay the verdict.
 - `cnpg-report` draws one desired and one actual document of the same script as PNG images, a desired and an actual image for each piece of evidence. On the actual image, every value or right beyond the desired document is red, and the image says Passed or Failed. It needs no cluster, network or OS library, so the scripts can run on the cluster and the images can be drawn elsewhere from the JSON files.
 
 ## Files
 
 | Path | What it is | Doc |
 |---|---|---|
-| `desired.yaml` | The desired state of the cluster, read by the chart, `evidence.sh` and `desired.sh` | [samples.md](docs/samples.md) |
-| `samples/` | Helm chart rendered from `desired.yaml`, operator, plugin and cert-manager values, RBAC for the operator and the plugin, the Traefik DaemonSet setting for k3s | [samples.md](docs/samples.md) |
+| `samples/desired.yaml` | The desired state of the cluster, read by the chart, `evidence.sh` and `desired.sh` | [samples.md](docs/samples.md) |
+| `samples/` | The bench's mounted directory: k3s settings, the upstream Helm charts with their values charts and RBAC, the cluster chart, the bench's own values and the scenarios | [samples.md](docs/samples.md), [bench.md](docs/bench.md) |
 | `samples/monitoring/` | Alert rules, the Alertmanager route and inhibition rules, and a Grafana dashboard for the cluster | [monitoring.md](docs/monitoring.md) |
 | `docs/sample-differences.md` | Every place where the samples differ from the upstream projects' defaults and examples, and why | [sample-differences.md](docs/sample-differences.md) |
 | `scripts/evidence/evidence.sh` | Who can do what in PostgreSQL and Kubernetes, and every rule the live state breaks | [evidence.md](docs/evidence.md) |
@@ -76,11 +76,13 @@ bash scripts/test.sh
 | `report/` | `cnpg-report`, which draws a desired and an actual image for each piece of evidence: its page, build and tests | [report.md](docs/report.md), [report/README.md](report/README.md) |
 | `scripts/lib/` | Logging and exit helpers shared by the scripts | |
 | `scripts/test.sh` | Runs the `*.test.sh` next to every part of the three scripts | |
+| `bench/` | The bench: one `docker run` builds a three-node k3s cluster from `samples/` inside one container, with the services outside k3s next to it, and runs one scenario of `samples/features/` against it, with an application that reads and writes through `pgfallback` | [bench.md](docs/bench.md) |
 | `live/` | Starts the samples on a three-node k3s cluster in docker and runs scenarios against it: node losses, a replica restart during a primary loss, a rollout, switchovers and a fence, with a writer that checks no acknowledged commit is lost, the evidence scripts, and `pgfallback` from outside the cluster | [live.md](docs/live.md) |
 | `pgfallback/` | Go package for pgx and GORM applications outside the cluster: the rw addresses first, the read port only while no rw address takes a connection | [pgfallback.md](docs/pgfallback.md) |
 | `go.mod` | The Go module `github.com/djosh34/cnpg-evidence`, for the `pgfallback` package; `live/client`, `live/pgfallback` and `report/launcher` are modules of their own | |
 | `.golangci.yml` | golangci-lint settings for the root module, which report every ignored error | |
 | `.github/workflows/ci.yml` | Runs `scripts/test.sh` for each script in its own job, `samples/monitoring/check.sh`, host-check on a k3s node in docker, a build of `live/client` and `live/pgfallback` with the tests of the latter, golangci-lint on the root module, the `pgfallback` tests against PostgreSQL in docker, the page tests and the test of the built `cnpg-report` on every pull request and push to `main`, and as part of `release.yml` | |
+| `.github/workflows/bench.yml` | Builds the bench images of the commit for amd64 and arm64, pushes them to ghcr as `sha-<commit>`, and runs the chosen scenarios on demand, each on an amd64 and an arm64 runner | [bench.md](docs/bench.md) |
 | `.github/workflows/live.yml` | Runs the chosen live scenarios on demand, each as its own job with its own cluster, with or without the writer | [live.md](docs/live.md#run-in-github-actions) |
 | `.github/workflows/release.yml` | On a pushed tag `v*`, checks that the tag's commit passed every live scenario with and without the writer, runs `ci.yml`, pushes the tested `cnpg-report` as the image `ghcr.io/djosh34/cnpg-report:<tag>`, then pulls it, copies the binary out and renders the clean samples, and last, in the job `go-get`, gets `pgfallback` at the tag through proxy.golang.org (`pgfallback/release-check.sh`) | [report.md](docs/report.md#get-the-binary) |
 | `.shellcheckrc` | ShellCheck settings for the scripts | |

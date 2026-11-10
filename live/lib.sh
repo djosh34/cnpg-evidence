@@ -600,7 +600,7 @@ prom_has_every_source() {
 }
 
 # The scrape of docs/monitoring.md, with the CA of the server certificate and
-# one of its dnsNames in desired.yaml; the kubelets with the ServiceAccount's
+# one of its dnsNames in samples/desired.yaml; the kubelets with the ServiceAccount's
 # token and the cluster's CA, which signs their serving certificates on k3s;
 # cert-manager.
 prometheus_config() {

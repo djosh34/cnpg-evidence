@@ -1,0 +1,52 @@
+cert-manager:
+  # Values for the cert-manager chart v1.21.3, release "cert-manager" in
+  # cert-manager. One pod of the controller, the webhook and the CA injector per
+  # node of a three-node cluster. The controller and the CA injector elect a
+  # leader; every webhook pod serves. With a pod on every node, an extra pod
+  # during an update has nowhere to go, so updates replace one pod at a time.
+  crds:
+    enabled: true
+  replicaCount: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - topologyKey: kubernetes.io/hostname
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/instance: cert-manager
+              app.kubernetes.io/component: controller
+  webhook:
+    replicaCount: 3
+    strategy:
+      type: RollingUpdate
+      rollingUpdate:
+        maxSurge: 0
+        maxUnavailable: 1
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/instance: cert-manager
+                app.kubernetes.io/component: webhook
+  cainjector:
+    replicaCount: 3
+    strategy:
+      type: RollingUpdate
+      rollingUpdate:
+        maxSurge: 0
+        maxUnavailable: 1
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/instance: cert-manager
+                app.kubernetes.io/component: cainjector

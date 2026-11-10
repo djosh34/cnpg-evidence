@@ -1,0 +1,17 @@
+plugin-barman-cloud:
+  # Values for the plugin-barman-cloud chart 0.8.1, release "barman-cloud" in cnpg-system.
+  # RBAC comes from templates/rbac.yaml in this values chart.
+  rbac:
+    create: false  # the chart would grant secret create, delete and read in every namespace
+  # One plugin pod per node of a three-node cluster. CNPG reconciles a cluster,
+  # failover included, only while the plugin answers, so no single lost node may
+  # take the plugin with it. The pods elect a leader. The chart always replaces
+  # all pods at once on an update.
+  replicaCount: 3
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - topologyKey: kubernetes.io/hostname
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: plugin-barman-cloud

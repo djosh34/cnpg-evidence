@@ -1,4 +1,4 @@
-Every place where `desired.yaml`, `samples/` and the steps of [samples.md](samples.md) differ from the starting point each upstream project documents, and why. The comparison is with CloudNativePG 1.30.1 (operator chart `cloudnative-pg` 0.29.1), the barman-cloud plugin v0.15.1 (chart `plugin-barman-cloud` 0.8.1), cert-manager v1.21.3, and k3s v1.33.13+k3s2, the version the test cluster runs. "Default" means the chart's `helm show values`, the example manifests in each project's docs, and what CNPG or k3s does when a field is not set.
+Every place where `samples/desired.yaml`, `samples/` and the steps of [samples.md](samples.md) differ from the starting point each upstream project documents, and why. The comparison is with CloudNativePG 1.30.1 (operator chart `cloudnative-pg` 0.29.1), the barman-cloud plugin v0.15.1 (chart `plugin-barman-cloud` 0.8.1), cert-manager v1.21.3, and k3s v1.33.13+k3s2, the version the test cluster runs. "Default" means the chart's `helm show values`, the example manifests in each project's docs, and what CNPG or k3s does when a field is not set.
 
 The last two categories list what only the test cluster in `live/` sets, and the settings that stay at their default although there was a reason to change them.
 
@@ -32,7 +32,7 @@ spec:
       kind: DaemonSet
 ```
 
-[../samples/traefik-config.yaml](../samples/traefik-config.yaml)
+[../samples/k3s/manifests/traefik-config.yaml](../samples/k3s/manifests/traefik-config.yaml)
 
 Every service the cluster relies on runs one pod per node, so a lost node takes no service with it. Traefik serves every Ingress in the cluster. With its one pod on a lost node, every Ingress stops answering until Kubernetes starts the pod on another node, about 5 minutes after the loss. A DaemonSet has a pod on every node and needs no rescheduling.
 
@@ -114,7 +114,7 @@ crds:
   enabled: true
 ```
 
-[../samples/values-cert-manager.yaml](../samples/values-cert-manager.yaml)
+[../samples/charts/cnpg-cert-manager/values.yaml](../samples/charts/cnpg-cert-manager/values.yaml)
 
 The barman-cloud plugin chart creates an `Issuer` and two `Certificate`s, and the sample's chart two more `Certificate`s; none of them can be created before the CRDs exist. With the CRDs in the release, one `helm upgrade --install` gives a working cert-manager, and a chart upgrade brings the CRDs of its version. The chart keeps the CRDs when the release is uninstalled (`crds.keep: true`, the default), so an uninstall does not delete every `Certificate` and `Issuer` with them.
 
@@ -136,7 +136,7 @@ cainjector:
   replicaCount: 3
 ```
 
-[../samples/values-cert-manager.yaml](../samples/values-cert-manager.yaml)
+[../samples/charts/cnpg-cert-manager/values.yaml](../samples/charts/cnpg-cert-manager/values.yaml)
 
 Every service the cluster relies on runs one pod per node. With one pod on a lost node:
 
@@ -161,7 +161,7 @@ affinity:
             app.kubernetes.io/component: controller
 ```
 
-[../samples/values-cert-manager.yaml](../samples/values-cert-manager.yaml)
+[../samples/charts/cnpg-cert-manager/values.yaml](../samples/charts/cnpg-cert-manager/values.yaml)
 
 Three replicas help only if they are on three nodes. Without anti-affinity the scheduler may place two or three of them on one node, and that node's loss takes them all. `webhook.affinity` and `cainjector.affinity` do the same with their own `app.kubernetes.io/component`.
 
@@ -177,7 +177,7 @@ strategy:
     maxUnavailable: 1
 ```
 
-[../samples/values-cert-manager.yaml](../samples/values-cert-manager.yaml)
+[../samples/charts/cnpg-cert-manager/values.yaml](../samples/charts/cnpg-cert-manager/values.yaml)
 
 With three replicas, Kubernetes rounds 25 % surge up to one extra pod and 25 % unavailable down to none. The required anti-affinity leaves the extra pod no node to go to, so it stays Pending, no old pod may stop, and the update never ends. With `maxSurge: 0` and `maxUnavailable: 1`, an update stops one old pod, starts its replacement on the freed node, and moves on.
 
@@ -191,13 +191,13 @@ issuer:
   name: example-ca
 ```
 
-[../samples/chart/values.yaml](../samples/chart/values.yaml)
+[../samples/charts/cnpg-cluster/values.yaml](../samples/charts/cnpg-cluster/values.yaml)
 
 A self-signed issuer gives every certificate its own unrelated signer, so clients cannot check the server against one CA, and CNPG cannot check client certificates against one CA either. The chart instead takes every certificate from one CA issuer whose CA is listed in `caSecret`. The Secret is then the one place that says which CAs the cluster trusts: for client certificates, for the replication certificate and, through the same Secret as the server CA, for the server. The issuer is an input because it is outside the chart's control: it holds the CA key, which the chart never sees. The chart works with an `Issuer` in the cluster's namespace or a `ClusterIssuer`.
 
-## A server certificate from cert-manager with the names in desired.yaml
+## A server certificate from cert-manager with the names in samples/desired.yaml
 
-CNPG creates its own server certificate by default, signed by a CA it generates. CNPG's cert-manager example creates a `Certificate` with every Service name of the cluster in `dnsNames` and no common name. The sample's chart creates `<cluster>-server` with the replication CN as common name, only the `dnsNames` of `desired.yaml`, `server auth` only, and the issuer from `values.yaml`.
+CNPG creates its own server certificate by default, signed by a CA it generates. CNPG's cert-manager example creates a `Certificate` with every Service name of the cluster in `dnsNames` and no common name. The sample's chart creates `<cluster>-server` with the replication CN as common name, only the `dnsNames` of `samples/desired.yaml`, `server auth` only, and the issuer from `values.yaml`.
 
 ```yaml
 spec:
@@ -216,13 +216,13 @@ replication:
   dnsNames: [pg-rw, pg-rw.databases.svc]
 ```
 
-[../samples/chart/templates/certificates.yaml](../samples/chart/templates/certificates.yaml), [../desired.yaml](../desired.yaml)
+[../samples/charts/cnpg-cluster/templates/certificates.yaml](../samples/charts/cnpg-cluster/templates/certificates.yaml), [../samples/desired.yaml](../samples/desired.yaml)
 
-The server certificate serves 5432 to clients and replicas, and 9187 to the metrics scrapers (see [Metrics over TLS](#metrics-over-tls)). A client that checks the name, with `verify-full` or a scraper's `server_name`, uses one of the names in `dnsNames`; the sample's examples use `pg-rw`. Listing only those names keeps one list in `desired.yaml` for both certificates. `server auth` is the only use the certificate has. Both certificates carry the same CN and names, so one CN and one name list in `desired.yaml` describe both.
+The server certificate serves 5432 to clients and replicas, and 9187 to the metrics scrapers (see [Metrics over TLS](#metrics-over-tls)). A client that checks the name, with `verify-full` or a scraper's `server_name`, uses one of the names in `dnsNames`; the sample's examples use `pg-rw`. Listing only those names keeps one list in `samples/desired.yaml` for both certificates. `server auth` is the only use the certificate has. Both certificates carry the same CN and names, so one CN and one name list in `samples/desired.yaml` describe both.
 
 ## A replication certificate from cert-manager with a node's host name as CN
 
-CNPG creates the replication client certificate itself by default, with the CN `streaming_replica`, signed by its own CA. CNPG's cert-manager example also uses the CN `streaming_replica`. The sample's chart creates `<cluster>-replication` from the cert-manager issuer, with the CN and `dnsNames` from `desired.yaml`: the host name of one node.
+CNPG creates the replication client certificate itself by default, with the CN `streaming_replica`, signed by its own CA. CNPG's cert-manager example also uses the CN `streaming_replica`. The sample's chart creates `<cluster>-replication` from the cert-manager issuer, with the CN and `dnsNames` from `samples/desired.yaml`: the host name of one node.
 
 ```yaml
 spec:
@@ -232,7 +232,7 @@ spec:
   usages: [client auth]  # CNPG requires clientAuth on this certificate
 ```
 
-[../samples/chart/templates/certificates.yaml](../samples/chart/templates/certificates.yaml)
+[../samples/charts/cnpg-cluster/templates/certificates.yaml](../samples/charts/cnpg-cluster/templates/certificates.yaml)
 
 With every certificate from one issuer, CNPG holds no CA key of its own: CNPG's own CA would keep its key in a `<cluster>-ca` Secret next to the cluster, and the CA's certificates would be one more set of CAs for clients to trust. The replication certificate is a client certificate like any other: its CN is the host name of one node, in a certificate that the issuer's CA signs. CNPG mounts this one certificate into every instance. Since CNPG maps only the CN `streaming_replica` to the replication role, the chart adds one pg_ident line for this CN (see [pg_ident](#pg_ident-maps-each-client-cn-to-one-role)). CNPG checks that the certificate allows `client auth`.
 
@@ -250,15 +250,15 @@ spec:
   secretName: {{ $c.name }}-server
 ```
 
-[../samples/chart/templates/certificates.yaml](../samples/chart/templates/certificates.yaml)
+[../samples/charts/cnpg-cluster/templates/certificates.yaml](../samples/charts/cnpg-cluster/templates/certificates.yaml)
 
 cert-manager alone creates and renews each Secret, and the chart owns no Secret that cert-manager writes into. The cost is in renewal. CNPG 1.30.1 reacts to a change of a Secret it did not create only when the Secret has the `cnpg.io/reload` label. Without it, a renewed certificate reaches PostgreSQL only at the operator's next reconcile of the cluster, which the renewal itself does not start; any later change of the `Cluster` or its pods does. `CNPGCertificateExpiring` reads the expiry cert-manager reports for the Secret, not the certificate PostgreSQL serves, so it does not see a renewal that PostgreSQL has not loaded yet.
 
 # The CNPG operator
 
-## The chart's RBAC is off; two RBAC files replace it
+## The operator's upstream RBAC is off; the values chart supplies it
 
-The operator chart creates a ClusterRole and a ClusterRoleBinding by default, which give the operator Secrets, ConfigMaps, `pods/exec` and the rest in every namespace, plus `view` and `edit` ClusterRoles for the CNPG resources. The sample turns the chart's RBAC off and applies `rbac-cnpg-operator.yaml`: a small ClusterRole for the cluster-scoped objects, and the chart's namespaced rules in a ClusterRole that RoleBindings grant only in `cnpg-system` and `databases`.
+The operator chart creates a ClusterRole and a ClusterRoleBinding by default, which give the operator Secrets, ConfigMaps, `pods/exec` and the rest in every namespace, plus `view` and `edit` ClusterRoles for the CNPG resources. The sample turns the upstream chart's RBAC off and renders `samples/charts/cnpg-cloudnative-pg/templates/rbac.yaml`: a small ClusterRole for the cluster-scoped objects, and the chart's namespaced rules in a ClusterRole that RoleBindings grant only in `cnpg-system` and `databases`.
 
 ```yaml
 rbac:
@@ -293,7 +293,7 @@ metadata:
 roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: cnpg-operator-namespaced}
 ```
 
-[../samples/values-cnpg-operator.yaml](../samples/values-cnpg-operator.yaml), [../samples/rbac-cnpg-operator.yaml](../samples/rbac-cnpg-operator.yaml)
+[../samples/charts/cnpg-cloudnative-pg/values.yaml](../samples/charts/cnpg-cloudnative-pg/values.yaml), [../samples/charts/cnpg-cloudnative-pg/templates/rbac.yaml](../samples/charts/cnpg-cloudnative-pg/templates/rbac.yaml)
 
 Rule 6: the operator cannot read Secrets outside its own and the cluster's namespaces. The chart's default binding lets it read every Secret in the cluster and exec into every pod. The rules in the file are the chart's 0.29.1 rules, unchanged; only where they apply changes. The `nodes`, webhook configuration and cluster image catalog rules stay cluster-wide because those objects have no namespace. A second database namespace needs one more RoleBinding, and a chart upgrade needs its RBAC compared with the files ([RBAC on chart upgrades](samples.md#rbac-on-chart-upgrades)), since a rule the files lack shows only as `forbidden` in the operator's log.
 
@@ -308,7 +308,7 @@ additionalEnv:
     value: cnpg-system,databases
 ```
 
-[../samples/values-cnpg-operator.yaml](../samples/values-cnpg-operator.yaml)
+[../samples/charts/cnpg-cloudnative-pg/values.yaml](../samples/charts/cnpg-cloudnative-pg/values.yaml)
 
 The RBAC files grant the namespaced rules only in these two namespaces. An operator that watched every namespace would fail to list Secrets, pods and its own resources in the others and log `forbidden` errors without end. With `WATCH_NAMESPACE` it only starts caches where it has rights. A new database namespace goes into this list and gets its RoleBindings; changing the list restarts the operator.
 
@@ -320,7 +320,7 @@ The chart runs one operator pod by default. The sample runs three.
 replicaCount: 3
 ```
 
-[../samples/values-cnpg-operator.yaml](../samples/values-cnpg-operator.yaml)
+[../samples/charts/cnpg-cloudnative-pg/values.yaml](../samples/charts/cnpg-cloudnative-pg/values.yaml)
 
 The operator promotes a replica when the primary is lost. With its only pod on the lost node, no failover happens until Kubernetes starts the pod on another node, about 5 minutes after the loss. With three pods, one per node, the pods elect a leader; when the leader's node is lost, another pod takes over the lease within about 20 s, and failover goes on.
 
@@ -338,7 +338,7 @@ affinity:
             app.kubernetes.io/name: cloudnative-pg
 ```
 
-[../samples/values-cnpg-operator.yaml](../samples/values-cnpg-operator.yaml)
+[../samples/charts/cnpg-cloudnative-pg/values.yaml](../samples/charts/cnpg-cloudnative-pg/values.yaml)
 
 Three replicas help only if they are on three nodes. Without anti-affinity, two operator pods can share a node, and its loss takes the leader and the standby with it.
 
@@ -355,7 +355,7 @@ updateStrategy:
     maxUnavailable: 1
 ```
 
-[../samples/values-cnpg-operator.yaml](../samples/values-cnpg-operator.yaml)
+[../samples/charts/cnpg-cloudnative-pg/values.yaml](../samples/charts/cnpg-cloudnative-pg/values.yaml)
 
 With three replicas and the default, Kubernetes starts one extra pod and stops none first. The required anti-affinity leaves that pod no node, so it stays Pending and the update never ends. With `maxSurge: 0` an update replaces one pod at a time on its own node.
 
@@ -363,7 +363,7 @@ With three replicas and the default, Kubernetes starts one extra pod and stops n
 
 ## The chart's RBAC is off; Secrets are cut to read
 
-The plugin chart creates one ClusterRole and binds it cluster-wide by default. It allows `create`, `delete`, `get`, `list` and `watch` on Secrets in every namespace, along with object stores, backups, roles and role bindings. The sample turns the chart's RBAC off and applies `rbac-barman-cloud.yaml`: `list` and `watch` cluster-wide on object stores, roles and role bindings, and the chart's other rules bound only in `databases`, with Secrets cut to `get`, `list` and `watch`.
+The plugin chart creates one ClusterRole and binds it cluster-wide by default. It allows `create`, `delete`, `get`, `list` and `watch` on Secrets in every namespace, along with object stores, backups, roles and role bindings. The sample turns the upstream chart's RBAC off and renders `samples/charts/cnpg-plugin-barman-cloud/templates/rbac.yaml`: `list` and `watch` cluster-wide on object stores, roles and role bindings, and the chart's other rules bound only in `databases`, with Secrets cut to `get`, `list` and `watch`.
 
 ```yaml
 rbac:
@@ -393,7 +393,7 @@ rules:
     verbs: [get, list, watch]
 ```
 
-[../samples/values-barman-cloud.yaml](../samples/values-barman-cloud.yaml), [../samples/rbac-barman-cloud.yaml](../samples/rbac-barman-cloud.yaml)
+[../samples/charts/cnpg-plugin-barman-cloud/values.yaml](../samples/charts/cnpg-plugin-barman-cloud/values.yaml), [../samples/charts/cnpg-plugin-barman-cloud/templates/rbac.yaml](../samples/charts/cnpg-plugin-barman-cloud/templates/rbac.yaml)
 
 Rule 6: the plugin cannot read Secrets outside the operator's and the cluster's namespaces. The chart's default would let it read, create and delete every Secret in the cluster. The plugin's caches watch object stores, roles and role bindings at cluster scope, so those three keep cluster-wide `list` and `watch`, which give no Secret. The plugin creates a Role for each instance that lets it read its object store Secret, and Kubernetes lets a subject grant only rights it holds itself, so the plugin needs `get` on Secrets in `databases` and no more. The chart still renders its leader-election Role in `cnpg-system`, with rights only for leader election there.
 
@@ -405,7 +405,7 @@ The chart runs one plugin pod by default. The sample runs three.
 replicaCount: 3
 ```
 
-[../samples/values-barman-cloud.yaml](../samples/values-barman-cloud.yaml)
+[../samples/charts/cnpg-plugin-barman-cloud/values.yaml](../samples/charts/cnpg-plugin-barman-cloud/values.yaml)
 
 CNPG reconciles a cluster, failover included, only while the barman-cloud plugin answers: a plugin call that fails ends the reconcile. With the only plugin pod on the lost primary node, the cluster has no primary until Kubernetes starts the pod on another node, about 5 minutes after the loss, and CNPG's retries back off further. With three pods, one per node, the pods elect a leader, and a lost leader's lease passes to another pod within about 20 s; a primary node loss then fails over in about a minute.
 
@@ -423,7 +423,7 @@ affinity:
             app.kubernetes.io/name: plugin-barman-cloud
 ```
 
-[../samples/values-barman-cloud.yaml](../samples/values-barman-cloud.yaml)
+[../samples/charts/cnpg-plugin-barman-cloud/values.yaml](../samples/charts/cnpg-plugin-barman-cloud/values.yaml)
 
 Without it two plugin pods can share a node, and its loss takes both, with the delay above.
 
@@ -444,7 +444,7 @@ The plugin's ObjectStore example passes no extra arguments to barman-cloud, whic
   readTimeout: 5  # --read-timeout of every WAL archive and restore call
 ```
 
-[../samples/chart/templates/objectstore.yaml](../samples/chart/templates/objectstore.yaml), [../samples/chart/values.yaml](../samples/chart/values.yaml)
+[../samples/charts/cnpg-cluster/templates/objectstore.yaml](../samples/charts/cnpg-cluster/templates/objectstore.yaml), [../samples/charts/cnpg-cluster/values.yaml](../samples/charts/cnpg-cluster/values.yaml)
 
 Commits and reads never wait for the store, but a failover, a switchover and a starting replica do: a promotion looks up the timeline history and the last WAL file in the store, a starting replica asks the store first for each WAL file it replays, and the old primary in a switchover tries to archive once more before it stops. With barman-cloud's defaults, a store that accepts connections and never answers holds each call for about 5 minutes: a 60 s read timeout and 5 attempts. With this setting and the one attempt below, such a call ends after about 5 s. Against a working store 1 s away, 5 s never failed; 2 s did, so 5 s is the shortest safe value found.
 
@@ -466,7 +466,7 @@ barman-cloud uses the AWS SDK's retries, 5 attempts per call by default; the plu
   maxAttempts: 1  # AWS_MAX_ATTEMPTS in the plugin's sidecar
 ```
 
-[../samples/chart/templates/objectstore.yaml](../samples/chart/templates/objectstore.yaml), [../samples/chart/values.yaml](../samples/chart/values.yaml)
+[../samples/charts/cnpg-cluster/templates/objectstore.yaml](../samples/charts/cnpg-cluster/templates/objectstore.yaml), [../samples/charts/cnpg-cluster/values.yaml](../samples/charts/cnpg-cluster/values.yaml)
 
 Each attempt waits out the read timeout again, so 5 attempts of 5 s would still cost about 25 s per call, and a promotion makes several calls. A failed archive or restore is not lost: PostgreSQL calls the archive command again for a WAL file until it succeeds, and a replica asks for the next WAL file again. So retrying inside one call only makes a broken store slower to give up on. With one attempt, a call ends at its first failure.
 
@@ -495,7 +495,7 @@ CNPG 1.30.1 runs `ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie` when `im
   imageName: registry.access.redhat.com/hi/postgresql:18.6@sha256:d6cfb70eb81d7843ead5e516b40ceaff10166f9449cb57ac8bbee33688cb26d3
 ```
 
-[../samples/chart/values.yaml](../samples/chart/values.yaml)
+[../samples/charts/cnpg-cluster/values.yaml](../samples/charts/cnpg-cluster/values.yaml)
 
 Hummingbird is a minimal image that pulls without a login. It has bash, coreutils and `psql`, and no `openssl`; the scripts in `scripts/` run only `psql` in it, always as `-U postgres`, so they work with this image and with any image that has `psql`. A tag can be pushed again with other content; a digest cannot. With the digest, every instance runs the same image, and a new image reaches the cluster only through a change of the chart's values, which rolls the instances one at a time.
 
@@ -513,7 +513,7 @@ CNPG runs PostgreSQL as uid and gid 26 by default, the ids of `postgres` in CNPG
   postgresGID: {{ $c.postgresGID }}
 ```
 
-[../samples/chart/values.yaml](../samples/chart/values.yaml), [../samples/chart/templates/cluster.yaml](../samples/chart/templates/cluster.yaml)
+[../samples/charts/cnpg-cluster/values.yaml](../samples/charts/cnpg-cluster/values.yaml), [../samples/charts/cnpg-cluster/templates/cluster.yaml](../samples/charts/cnpg-cluster/templates/cluster.yaml)
 
 CNPG writes the name of the uid PostgreSQL runs as into pg_ident, in its fixed line `local <user> postgres`. In the Hummingbird image, uid 26 is named `postgres_fedora`, so with CNPG's default the line names `postgres_fedora`, and the compliance metric and `evidence.sh` find wrong pg_ident lines. The ids are set when the cluster is created, since the data directory is owned by them. `host-check.sh` and `prove.sh` take the same ids with `--postgres-uid` and `--postgres-gid`.
 
@@ -527,7 +527,7 @@ CNPG's instance pods share the host's uids by default. The chart adds `hostUsers
     cnpg.io/podPatch: '[{"op":"add","path":"/spec/hostUsers","value":false}]'
 ```
 
-[../samples/chart/templates/cluster.yaml](../samples/chart/templates/cluster.yaml)
+[../samples/charts/cnpg-cluster/templates/cluster.yaml](../samples/charts/cnpg-cluster/templates/cluster.yaml)
 
 Rule 5: a host user with the postgres uid cannot reach the socket or the data of an instance. Without a user namespace, uid 999 in the pod is uid 999 on the host, and a host account with that uid owns PostgreSQL's files and socket. With `hostUsers: false`, uid 999 in the pod maps to another uid on the host, from a range Kubernetes gives the pod, and a host user with uid 999 is nobody inside the pod. The `Cluster` has no field for `hostUsers`, so the chart uses the podPatch annotation. It applies only to new pods, so pods that already run need a rolling restart. The node's kernel needs idmapped mounts on tmpfs.
 
@@ -541,7 +541,7 @@ CNPG's examples use `storage.size: 1Gi`. The sample uses 50Gi.
   storageSize: 50Gi
 ```
 
-[../samples/chart/values.yaml](../samples/chart/values.yaml)
+[../samples/charts/cnpg-cluster/values.yaml](../samples/charts/cnpg-cluster/values.yaml)
 
 Every instance keeps up to `walKeepSize`, 30GB, of WAL in `pg_wal` on its data volume (see [wal_keep_size](#wal_keep_size-is-30gb)). The volume must hold that plus the data; 1Gi would fill with WAL. On `local-path` the size is not enforced, so the volume shares the node's disk, which `CNPGDataDiskFull` watches.
 
@@ -557,7 +557,7 @@ PostgreSQL's WAL files are 16 MB by default, and CNPG passes no `--wal-segsize` 
   walSegmentSize: 1
 ```
 
-[../samples/chart/templates/cluster.yaml](../samples/chart/templates/cluster.yaml), [../samples/chart/values.yaml](../samples/chart/values.yaml)
+[../samples/charts/cnpg-cluster/templates/cluster.yaml](../samples/charts/cnpg-cluster/templates/cluster.yaml), [../samples/charts/cnpg-cluster/values.yaml](../samples/charts/cnpg-cluster/values.yaml)
 
 PostgreSQL switches to a new WAL file at least every 5 minutes (CNPG's `archive_timeout`), and a switched file keeps its full size. A quiet cluster then writes 288 MiB of WAL a day instead of 4.5 GiB, so `wal_keep_size` holds months of a quiet cluster's WAL instead of days, and the store grows more slowly. The costs: each file is one call to the store, so the archive keeps up only while the primary writes less than about 2.5 MB/s, and initdb sets `max_wal_size` to 64 MB, so a primary under load makes a checkpoint every 64 MB of WAL. The size is fixed when a cluster is created; a restore keeps the size of its backup.
 
@@ -573,7 +573,7 @@ CNPG sets `wal_keep_size` to 512MB by default. The sample sets 30GB.
   walKeepSize: 30GB
 ```
 
-[../samples/chart/templates/cluster.yaml](../samples/chart/templates/cluster.yaml), [../samples/chart/values.yaml](../samples/chart/values.yaml)
+[../samples/charts/cnpg-cluster/templates/cluster.yaml](../samples/charts/cnpg-cluster/templates/cluster.yaml), [../samples/charts/cnpg-cluster/values.yaml](../samples/charts/cnpg-cluster/values.yaml)
 
 Without replication slots (below), `wal_keep_size` is what the primary keeps for a replica that was down. A replica whose WAL is still in the primary's `pg_wal` catches up from the primary alone; one that is further behind needs the object store. A quiet cluster writes about 288 MiB of WAL a day, so 30GB is about three months; writes add their own WAL. With the store refusing connections, a replica that was down while 1.2 GB of WAL was written caught up from the primary alone, about 40 s after its node started. With 512MB it would need the store for that. Every instance keeps this much, so the data volume must hold it.
 
@@ -590,7 +590,7 @@ CNPG creates a replication slot on the primary for each replica by default (`rep
       enabled: false
 ```
 
-[../samples/chart/templates/cluster.yaml](../samples/chart/templates/cluster.yaml)
+[../samples/charts/cnpg-cluster/templates/cluster.yaml](../samples/charts/cnpg-cluster/templates/cluster.yaml)
 
 A slot keeps WAL on the primary for its replica until the replica returns, without a limit. An instance that stays away, a lost node that is not replaced for days, fills the primary's disk, and PostgreSQL stops. Capping slots with `max_slot_wal_keep_size` instead invalidates the slot when the cap is reached, and the replica then needs a person. Without slots, the primary keeps `wal_keep_size` of WAL, and an instance that is further behind reads the rest from the object store by itself. PostgreSQL removes a WAL file only after it is archived, so the store and the primary's `pg_wal` always overlap, and the replica can always catch up while nothing deletes WAL from the store.
 
@@ -604,7 +604,7 @@ CNPG's pod anti-affinity between instances is `preferred` by default. The sample
     podAntiAffinityType: required
 ```
 
-[../samples/chart/templates/cluster.yaml](../samples/chart/templates/cluster.yaml)
+[../samples/charts/cnpg-cluster/templates/cluster.yaml](../samples/charts/cnpg-cluster/templates/cluster.yaml)
 
 Every commit waits for one other instance to confirm it. With `preferred`, the scheduler may put two instances on one node when another node is missing or full, and a commit's two copies can then be on one node, which a single node loss takes both of. The read LoadBalancer also forwards each node's read port only to the instance on that node, which assumes one instance per node. With `required`, an instance that has no free node stays Pending instead.
 
@@ -619,7 +619,7 @@ CNPG runs without synchronous replication by default. The sample makes every com
       dataDurability: required  # and stops while no other instance can confirm it
 ```
 
-[../samples/chart/templates/cluster.yaml](../samples/chart/templates/cluster.yaml)
+[../samples/charts/cnpg-cluster/templates/cluster.yaml](../samples/charts/cnpg-cluster/templates/cluster.yaml)
 
 With asynchronous replication, a commit is acknowledged once the primary has it. When the primary's node is lost, a replica that missed the last commits can be promoted, and those acknowledged commits are gone. With `any 1`, a commit returns only once one of the two replicas has it, so a promotion can pick a replica that holds every acknowledged commit. One copy, not two, keeps writes going when one replica is down. When no other instance can confirm, writes stop instead of going on with one copy. A commit whose wait for the standby was cancelled may still be committed, so a client treats a cancelled COMMIT as unknown.
 
@@ -633,7 +633,7 @@ PostgreSQL's default `synchronous_commit` is `on`: the commit waits until the st
       synchronous_commit: remote_apply
 ```
 
-[../samples/chart/templates/cluster.yaml](../samples/chart/templates/cluster.yaml)
+[../samples/charts/cnpg-cluster/templates/cluster.yaml](../samples/charts/cnpg-cluster/templates/cluster.yaml)
 
 Reads also go to replicas, through the read port. With `on`, a client can commit, then read on the replica that confirmed the commit, and not see its own write yet. With `remote_apply`, the commit returns only once that replica has applied it, so a read there right after the commit sees it. The other replica can still be behind; `CNPGReplicaLag` watches it.
 
@@ -645,7 +645,7 @@ CNPG promotes the most advanced ready replica by default, without checking that 
       failoverQuorum: true  # promotes only a replica that holds every confirmed commit
 ```
 
-[../samples/chart/templates/cluster.yaml](../samples/chart/templates/cluster.yaml)
+[../samples/charts/cnpg-cluster/templates/cluster.yaml](../samples/charts/cnpg-cluster/templates/cluster.yaml)
 
 With `any 1`, either replica may have confirmed a commit. Without the quorum, CNPG could promote a replica that is ready but did not receive the last confirmed commits, and they would be lost. With the quorum, CNPG promotes a replica only when it can tell that the replica holds every confirmed commit. With one confirming copy and two replicas, it needs both replicas ready to decide. A replica that restarts while the primary's node is down is ready again once it has replayed its own WAL, so the quorum then sees both replicas and promotes, some seconds later than otherwise.
 
@@ -657,7 +657,7 @@ CNPG gives a stopping instance's smart shutdown 180 s by default (`smartShutdown
   smartShutdownTimeout: 0
 ```
 
-[../samples/chart/templates/cluster.yaml](../samples/chart/templates/cluster.yaml)
+[../samples/charts/cnpg-cluster/templates/cluster.yaml](../samples/charts/cnpg-cluster/templates/cluster.yaml)
 
 A smart shutdown waits for every session to close, and a connection pool never closes its sessions by itself. A primary that stops, in a rollout or a switchover, would then hold writes for up to 180 s before the fast shutdown. With 0, it ends open sessions at once. A rollout for a parameter that needs a restart then stops writes for about 6 s, and a switchover for about 11 s, also with a pooled session open. A commit that is still waiting for its standby then ends with the warning that it committed locally but might not have been replicated; it stays committed.
 
@@ -679,7 +679,7 @@ stringData:
   password: ""
 ```
 
-[../samples/chart/templates/cluster.yaml](../samples/chart/templates/cluster.yaml), [../samples/chart/templates/bootstrap-secret.yaml](../samples/chart/templates/bootstrap-secret.yaml)
+[../samples/charts/cnpg-cluster/templates/cluster.yaml](../samples/charts/cnpg-cluster/templates/cluster.yaml), [../samples/charts/cnpg-cluster/templates/bootstrap-secret.yaml](../samples/charts/cnpg-cluster/templates/bootstrap-secret.yaml)
 
 Rule 4: there is no `app` role or database. The `app` role logs in with a password, which rule 2 forbids, and its Secret holds that password in the cluster's namespace. Each application gets its own role and database instead (see [Databases](#one-database-object-per-database)). `initdb` reads the username from the named Secret; the empty password leaves `postgres` with no password, since CNPG writes it onto `postgres` and PostgreSQL stores an empty password as none. A restore gets the same fields, so a restored cluster creates no `app` either.
 
@@ -694,7 +694,7 @@ CNPG's `initdb` runs no `postInitSQL` by default. The sample's runs three statem
         - GRANT EXECUTE ON FUNCTION pg_ident_file_mappings() TO cnpg_metrics_exporter
 ```
 
-[../samples/chart/templates/cluster.yaml](../samples/chart/templates/cluster.yaml)
+[../samples/charts/cnpg-cluster/templates/cluster.yaml](../samples/charts/cnpg-cluster/templates/cluster.yaml)
 
 The compliance query reads `pg_ident_file_mappings`, which only superusers may read by default, and runs as `cnpg_metrics_exporter`. The two grants let it read that view and nothing else. CNPG creates `cnpg_metrics_exporter` only after `postInitSQL`, so the chart creates the role first, as CNPG would, with no password; CNPG then keeps it and adds `pg_monitor`. Without the grants the query fails and `CNPGMetricsMissing` fires. `evidence.sh` expects exactly these grants: `postgres` and `cnpg_metrics_exporter`, no other role.
 
@@ -714,7 +714,7 @@ CNPG generates its own CA, server certificate and replication certificate by def
 caSecret: client-ca
 ```
 
-[../samples/chart/templates/cluster.yaml](../samples/chart/templates/cluster.yaml), [../desired.yaml](../desired.yaml)
+[../samples/charts/cnpg-cluster/templates/cluster.yaml](../samples/charts/cnpg-cluster/templates/cluster.yaml), [../samples/desired.yaml](../samples/desired.yaml)
 
 Rule 1: a client logs in only with a certificate signed by the client CA. With CNPG's own CA, the CA's key sits in a `<cluster>-ca` Secret in the cluster's namespace, and every certificate that key signed is a valid client certificate. With all four Secrets given, CNPG generates no CA and holds no CA key. The client CA Secret holds only `ca.crt`, made by hand from the CAs that may sign client certificates, so the list of trusted CAs is written down in one place and changes only by hand. The issuer's CA is in it too, since it signs the server and replication certificates. Using the same Secret as the server CA lets clients and replicas check the server against the CAs they already trust, and lets `evidence.sh --ca` compare one file.
 
@@ -732,7 +732,7 @@ CNPG's `pg_hba.conf` ends with `host all all all scram-sha-256`, so any role can
       - host all all all reject
 ```
 
-[../samples/chart/templates/cluster.yaml](../samples/chart/templates/cluster.yaml)
+[../samples/charts/cnpg-cluster/templates/cluster.yaml](../samples/charts/cnpg-cluster/templates/cluster.yaml)
 
 Rules 1 and 2: a client logs in only with a certificate signed by the client CA, its role reaches exactly one database, and no password login works, with or without TLS. `pg_hba.conf` uses the first line that matches. CNPG's fixed lines come first: `local all all peer` and the certificate lines of `streaming_replica` and the pooler. Then each `hostssl` line lets one role into one database with a certificate. The `reject` line ends every other TCP connection before CNPG's `scram-sha-256` line is reached. `hostssl` with `cert` also needs TLS, and CNPG allows only TLS 1.3 by default.
 
@@ -763,7 +763,7 @@ databases:
     clientCNs: [billing-app.test, billing-report.test]
 ```
 
-[../samples/chart/templates/cluster.yaml](../samples/chart/templates/cluster.yaml), [../desired.yaml](../desired.yaml)
+[../samples/charts/cnpg-cluster/templates/cluster.yaml](../samples/charts/cnpg-cluster/templates/cluster.yaml), [../samples/desired.yaml](../samples/desired.yaml)
 
 With `cert` alone, a client logs in only as the role named like its certificate's CN. A map lets the CN differ from the role, and with exact CNs a certificate maps to one role and nothing else: no regular expressions, so no other CN matches by accident. Several CNs may map to one role, as `billing` shows. The replication certificate's CN is a node's host name, not `streaming_replica`, so the chart adds it to CNPG's `cnpg_streaming_replica` map, and only that CN. The compliance query counts any line that differs from these.
 
@@ -783,13 +783,13 @@ CNPG manages no roles besides its own by default. The sample declares one role p
         disablePassword: true  # PASSWORD NULL
 ```
 
-[../samples/chart/templates/cluster.yaml](../samples/chart/templates/cluster.yaml)
+[../samples/charts/cnpg-cluster/templates/cluster.yaml](../samples/charts/cnpg-cluster/templates/cluster.yaml)
 
 Rule 3: no application role can create roles or has any other special attribute. Rule 2: no password login works. `disablePassword` sets the password to NULL, so the role has no password at all, even if a pg_hba line allowed one. The attributes that equal CNPG's defaults are written out, so the template shows every attribute the role has. CNPG does not undo a change made in PostgreSQL itself right away; the compliance query and `evidence.sh` find it.
 
 ## One Database object per database
 
-CNPG's default bootstrap makes the one database `app`. The sample creates each database from `desired.yaml` as a CNPG `Database` object, owned by its role.
+CNPG's default bootstrap makes the one database `app`. The sample creates each database from `samples/desired.yaml` as a CNPG `Database` object, owned by its role.
 
 ```yaml
 apiVersion: postgresql.cnpg.io/v1
@@ -805,9 +805,9 @@ spec:
   ensure: present
 ```
 
-[../samples/chart/templates/databases.yaml](../samples/chart/templates/databases.yaml)
+[../samples/charts/cnpg-cluster/templates/databases.yaml](../samples/charts/cnpg-cluster/templates/databases.yaml)
 
-Each role reaches exactly one database, its own. A new database is one more entry in `desired.yaml` and a `helm upgrade`, with no SQL by hand.
+Each role reaches exactly one database, its own. A new database is one more entry in `samples/desired.yaml` and a `helm upgrade`, with no SQL by hand.
 
 ## The rw LoadBalancer, without NodePorts
 
@@ -824,7 +824,7 @@ CNPG creates only the ClusterIP Services `<cluster>-rw`, `-ro` and `-r` by defau
               allocateLoadBalancerNodePorts: false
 ```
 
-[../samples/chart/templates/cluster.yaml](../samples/chart/templates/cluster.yaml)
+[../samples/charts/cnpg-cluster/templates/cluster.yaml](../samples/charts/cnpg-cluster/templates/cluster.yaml)
 
 Clients outside the cluster reach the primary on 5432 of every node: k3s servicelb opens the LoadBalancer's port on every node and forwards it to the primary. A LoadBalancer also gets a NodePort by default, a second, random high port on every node that leads to the same primary. With `allocateLoadBalancerNodePorts: false`, PostgreSQL is reached on the nodes only through the LoadBalancer's own port, and the NetworkPolicy has one port to admit.
 
@@ -854,7 +854,7 @@ readLoadBalancer:
   port: 5433
 ```
 
-[../samples/chart/templates/cluster.yaml](../samples/chart/templates/cluster.yaml), [../desired.yaml](../desired.yaml)
+[../samples/charts/cnpg-cluster/templates/cluster.yaml](../samples/charts/cnpg-cluster/templates/cluster.yaml), [../samples/desired.yaml](../samples/desired.yaml)
 
 While no rw address takes a connection, a client outside the cluster can still read. With traffic policy Local, a node forwards the read port only to the instance on that node, primary or replica, and only while that instance is ready. A node without a ready instance refuses the port, so a client moves on to the next node at once instead of waiting for a dead instance. Connections keep the client's address. When the primary's node is lost, reads keep working on the replicas' nodes without waiting for a failover. The port is named `postgres` because CNPG adds 5432 to the Service when no port has that name. The read LoadBalancer still has a `healthCheckNodePort`, which Kubernetes gives every LoadBalancer with traffic policy Local; it answers over HTTP and does not lead to PostgreSQL. `pgfallback` is the client side: rw first, the read port only while no rw address takes a connection.
 
@@ -868,7 +868,7 @@ CNPG's metrics exporter answers over plain HTTP on 9187 by default. The sample t
       enabled: true  # metrics on 9187 over TLS with the server certificate
 ```
 
-[../samples/chart/templates/cluster.yaml](../samples/chart/templates/cluster.yaml)
+[../samples/charts/cnpg-cluster/templates/cluster.yaml](../samples/charts/cnpg-cluster/templates/cluster.yaml)
 
 Rule 1: the metrics port answers only over TLS. The exporter then uses the server certificate, so scrapers check it with the CA in `caSecret` and one of the `dnsNames` as `server_name`. The metrics include role names, database names and replication state.
 
@@ -887,7 +887,7 @@ CNPG runs only its default queries by default, from the operator's `cnpg-default
     cnpg.io/reload: ""  # the instances load a changed query without a restart
 ```
 
-[../samples/chart/templates/cluster.yaml](../samples/chart/templates/cluster.yaml), [../samples/chart/templates/queries.yaml](../samples/chart/templates/queries.yaml)
+[../samples/charts/cnpg-cluster/templates/cluster.yaml](../samples/charts/cnpg-cluster/templates/cluster.yaml), [../samples/charts/cnpg-cluster/templates/queries.yaml](../samples/charts/cnpg-cluster/templates/queries.yaml)
 
 The three queries:
 
@@ -907,7 +907,7 @@ CNPG caches query results for 30 s by default (`metricsQueriesTTL`). The sample 
     metricsQueriesTTL: 0s
 ```
 
-[../samples/chart/templates/cluster.yaml](../samples/chart/templates/cluster.yaml)
+[../samples/charts/cnpg-cluster/templates/cluster.yaml](../samples/charts/cnpg-cluster/templates/cluster.yaml)
 
 `CNPGWritesBlocked` fires when sessions wait for a standby at every scrape for 10 s. With the 30 s cache, a commit that waited a moment would be reported as waiting for 30 s, and the alert would fire for a wait that was long over. A role change would also show only up to 30 s late. With 0s, each scrape, every 5 s, runs the queries.
 
@@ -940,7 +940,7 @@ network:
   otelNamespace: otel
 ```
 
-[../samples/chart/templates/networkpolicy.yaml](../samples/chart/templates/networkpolicy.yaml), [../desired.yaml](../desired.yaml)
+[../samples/charts/cnpg-cluster/templates/networkpolicy.yaml](../samples/charts/cnpg-cluster/templates/networkpolicy.yaml), [../samples/desired.yaml](../samples/desired.yaml)
 
 Without a policy, every pod in the cluster can reach 5432, the instance status API on 8000 and the metrics on 9187. With it, other pods in the cluster reach none of them, apart from the operator on 8000 and the OTel collectors on 9187. Clients come from outside the cluster, so 5432 stays open to every address that is not a pod. The policy reads every node's `spec.podCIDR` with `lookup`, so it needs a cluster to render and a `helm upgrade` when a node is added. Under flannel, a connection that entered through another node arrives from that node's `flannel.1` address, the network address of its pod range, so each of those is admitted as a `/32`. Connections through the rw LoadBalancer that enter on another node arrive from its svclb pods. The podSelector is the cluster label rather than `podRole`, so the bootstrap and join Job pods are covered too. k3s enforces it with its network policy controller, which `host-check.sh` checks.
 
@@ -1194,7 +1194,7 @@ k3s in a container needs to manage cgroups, mounts and iptables as on a host, an
 
 ## k3s restarts itself inside the node container
 
-`live/node-init.sh` is the first process of each node container. It runs `k3s server` and starts it again 5 s after it exits.
+`bench/node-init.sh` is the first process of each node container. It runs `k3s server` and starts it again 5 s after it exits.
 
 ```sh
 while true; do
@@ -1205,7 +1205,7 @@ while true; do
 done
 ```
 
-[../live/node-init.sh](../live/node-init.sh)
+[../bench/node-init.sh](../bench/node-init.sh)
 
 k3s's systemd unit does the same (`Restart=always`, `KillMode=process`), so a node's pods keep running while k3s is down. As a container's first process, a k3s exit would stop every pod on the node. k3s exits, for example, when it loses a leader lease because two of three nodes are gone. The script also moves itself out of the root cgroup so containerd can create cgroups below it.
 
@@ -1346,7 +1346,7 @@ k3s marks a lost node unreachable after 50 s, the Kubernetes default (`node-moni
   primaryUpdateMethod: restart
 ```
 
-[../samples/chart/templates/cluster.yaml](../samples/chart/templates/cluster.yaml)
+[../samples/charts/cnpg-cluster/templates/cluster.yaml](../samples/charts/cnpg-cluster/templates/cluster.yaml)
 
 A rollout that changes the pods, or a parameter that needs a restart, restarts the replicas one at a time, then the primary, which stays primary: for a parameter, PostgreSQL restarts inside the running pod; for a change of the pods, CNPG recreates the pod. For a parameter that needs a restart, writes stop for about 6 s while PostgreSQL restarts, also with a pooled session open. A rollout that changes the pods stops them until the primary's new pod accepts connections.
 
@@ -1395,7 +1395,7 @@ PostgreSQL's `wal_compression` compresses full-page images inside WAL records. I
   enableSuperuserAccess: false
 ```
 
-[../samples/chart/templates/cluster.yaml](../samples/chart/templates/cluster.yaml)
+[../samples/charts/cnpg-cluster/templates/cluster.yaml](../samples/charts/cnpg-cluster/templates/cluster.yaml)
 
 With it on, `postgres` gets a password and its Secret `<cluster>-superuser` sits in the namespace, which rule 2 forbids. Superuser access stays local, as `postgres` over `kubectl exec`.
 
@@ -1409,6 +1409,6 @@ config:
   clusterWide: true
 ```
 
-[../samples/values-cnpg-operator.yaml](../samples/values-cnpg-operator.yaml)
+[../samples/charts/cnpg-cloudnative-pg/values.yaml](../samples/charts/cnpg-cloudnative-pg/values.yaml)
 
 With `false`, the chart writes `WATCH_NAMESPACE` as its own namespace only and renders namespaced RBAC there. The sample needs two namespaces, so it keeps `true`, turns the chart's RBAC off and sets `WATCH_NAMESPACE` itself (see [The operator watches only cnpg-system and databases](#the-operator-watches-only-cnpg-system-and-databases)).

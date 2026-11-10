@@ -9,11 +9,11 @@ Every run leaves failed logins in PostgreSQL's log; run it by hand, not on a sch
 As root on the node given by `--node`, with a cluster-admin kubeconfig (on a k3s server node, `KUBECONFIG=/etc/rancher/k3s/k3s.yaml`), `kubectl`, `jq`, `psql`, `setpriv`, `pgrep` and `python3`. The desired state comes on stdin as JSON, as for `evidence.sh`:
 
 ```bash
-yq -o=json desired.yaml | bash scripts/prove/prove.sh
-yq -o=json desired.yaml | bash scripts/prove/prove.sh --node node-a --node-root '' --postgres-uid 999 --postgres-gid 999
+yq -o=json samples/desired.yaml | bash scripts/prove/prove.sh
+yq -o=json samples/desired.yaml | bash scripts/prove/prove.sh --node node-a --node-root '' --postgres-uid 999 --postgres-gid 999
 ```
 
-From [`desired.yaml`](../desired.yaml) it takes `cluster.namespace`, `cluster.name` and the rw LoadBalancer `rwLoadBalancer.name`.
+From [`samples/desired.yaml`](../samples/desired.yaml) it takes `cluster.namespace`, `cluster.name` and the rw LoadBalancer `rwLoadBalancer.name`.
 
 It runs nothing in the instance pods: `psql` is the node's own, the logins go through the rw LoadBalancer, and the uid attempts use the node's view of the pods' processes and volumes.
 

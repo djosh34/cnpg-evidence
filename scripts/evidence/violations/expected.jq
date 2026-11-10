@@ -3,7 +3,7 @@
 # the checks and the desired document cannot disagree. Include it with
 # `include "expected";`, run as jq -L scripts/evidence/violations.
 #
-# Unless a def takes arguments only, its input is the desired values: desired.yaml as JSON.
+# Unless a def takes arguments only, its input is the desired values: samples/desired.yaml as JSON.
 
 # The release names in samples/values-*.yaml fix these ServiceAccount names;
 # cert-manager runs in its own namespace.
@@ -31,7 +31,7 @@ def values_needed:
 
 # The roles that hold each special right. CNPG's own roles: postgres is the
 # superuser, streaming_replica replicates and reads files for pg_rewind,
-# cnpg_metrics_exporter reads pg_ident for the compliance query of samples/chart.
+# cnpg_metrics_exporter reads pg_ident for the compliance query of samples/charts/cnpg-cluster.
 def role_rights:
   {
     superusers: ["postgres"],
@@ -68,7 +68,7 @@ def certificate_lines:
 
 # pg_hba and pg_ident as the pg_hba_file_rules and pg_ident_file_mappings
 # views show them, in matching order: CNPG 1.30's fixed lines around the
-# lines of samples/chart.
+# lines of samples/charts/cnpg-cluster.
 def expected_pg_hba:
   [
     "local all cnpg_metrics_exporter peer map=cnpg_metrics_exporter",

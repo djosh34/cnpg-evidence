@@ -55,7 +55,7 @@ refused "values without cluster.name and the operator namespace" 'del(.cluster.n
 refused "instances that are not a number" '.cluster.instances = "3"'
 refused "a database without clientCNs" '.databases = [{name: "orders", role: "orders"}]'
 errors=$(bash "$here/evidence.sh" --ca <(echo "$ca") </dev/null 2>&1 >/dev/null) || true
-same_text "empty stdin says so" "evidence.sh: error: stdin is empty: pipe in desired.yaml as JSON" "$errors"
+same_text "empty stdin says so" "evidence.sh: error: stdin is empty: pipe in samples/desired.yaml as JSON" "$errors"
 if bash "$here/evidence.sh" --ca <(echo "$ca") <<<"$values" 2>&1 >/dev/null | grep -q "the desired state needs"; then
   fail "complete values pass the check"
 else

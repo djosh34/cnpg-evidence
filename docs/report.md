@@ -44,22 +44,22 @@ To build it from source instead, see [Building](../report/README.md#building).
 
 ## Desired and actual documents
 
-Every script prints an actual document (`"kind": "actual"`), the values it found on the cluster or node. [`desired.sh`](desired.md) builds the desired document (`"kind": "desired"`) of the same shape from `desired.yaml` alone. A pair of images comes from one desired and one actual document of the same script. The actual documents, as in the [README](../README.md#run):
+Every script prints an actual document (`"kind": "actual"`), the values it found on the cluster or node. [`desired.sh`](desired.md) builds the desired document (`"kind": "desired"`) of the same shape from `samples/desired.yaml` alone. A pair of images comes from one desired and one actual document of the same script. The actual documents, as in the [README](../README.md#run):
 
 ```bash
-yq -o=json desired.yaml | bash scripts/evidence/evidence.sh --ca client-ca.pem > evidence.json
+yq -o=json samples/desired.yaml | bash scripts/evidence/evidence.sh --ca client-ca.pem > evidence.json
 bash scripts/host-check/host-check.sh > host-check.json
-yq -o=json desired.yaml | bash scripts/prove/prove.sh > prove.json
+yq -o=json samples/desired.yaml | bash scripts/prove/prove.sh > prove.json
 ```
 
 `host-check.sh` runs on every node, so give each node's file its own name when you gather them, such as `node-a.json` and `node-b.json` below.
 
-Their desired documents, anywhere with yq, bash, jq and openssl, from the same `desired.yaml` and `client-ca.pem` that `evidence.sh` and `prove.sh` read. If `prove.sh` ran with `--postgres-uid`, give `desired.sh` the same value.
+Their desired documents, anywhere with yq, bash, jq and openssl, from the same `samples/desired.yaml` and `client-ca.pem` that `evidence.sh` and `prove.sh` read. If `prove.sh` ran with `--postgres-uid`, give `desired.sh` the same value.
 
 ```bash
-yq -o=json desired.yaml | bash scripts/desired/desired.sh --ca client-ca.pem > evidence.desired.json
-yq -o=json desired.yaml | bash scripts/desired/desired.sh --source host-check > host-check.desired.json
-yq -o=json desired.yaml | bash scripts/desired/desired.sh --source prove > prove.desired.json
+yq -o=json samples/desired.yaml | bash scripts/desired/desired.sh --ca client-ca.pem > evidence.desired.json
+yq -o=json samples/desired.yaml | bash scripts/desired/desired.sh --source host-check > host-check.desired.json
+yq -o=json samples/desired.yaml | bash scripts/desired/desired.sh --source prove > prove.desired.json
 ```
 
 Both documents are plain files, so the scripts can run in one place and `cnpg-report` in another. It reads only the files named in the call.

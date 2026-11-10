@@ -2,7 +2,7 @@
 # Runs login and host-uid probes, then combines their JSON records.
 #
 # Usage, with the desired state on stdin:
-#   yq -o=json desired.yaml | prove.sh [--node NAME] [--node-root DIR] [--postgres-uid UID] [--postgres-gid GID]
+#   yq -o=json samples/desired.yaml | prove.sh [--node NAME] [--node-root DIR] [--postgres-uid UID] [--postgres-gid GID]
 #
 # Exit: 0 all probes match, 1 a probe differs, 2 usage or collection error.
 set -euo pipefail
@@ -18,7 +18,7 @@ postgres_uid=999
 postgres_gid=999
 
 usage() {
-  echo "usage: yq -o=json desired.yaml | ${0##*/} [--node NAME] [--node-root DIR] [--postgres-uid 999] [--postgres-gid 999]" >&2
+  echo "usage: yq -o=json samples/desired.yaml | ${0##*/} [--node NAME] [--node-root DIR] [--postgres-uid 999] [--postgres-gid 999]" >&2
   exit 2
 }
 
@@ -40,7 +40,7 @@ for command in jq kubectl psql setpriv pgrep python3; do
 done
 
 values=$(jq -c .) || die "the desired state on stdin is not JSON"
-[[ -n $values ]] || die "stdin is empty: pipe in desired.yaml as JSON"
+[[ -n $values ]] || die "stdin is empty: pipe in samples/desired.yaml as JSON"
 expected() { jq -r -L "$here/../evidence/violations" "include \"expected\"; $1" <<<"$values"; }
 [[ $(expected valid_values) == true ]] || die "$(expected values_needed)"
 namespace=$(jq -r .cluster.namespace <<<"$values")

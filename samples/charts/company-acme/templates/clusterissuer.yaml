@@ -1,0 +1,28 @@
+{{- $eab := lookup "v1" "Secret" .Release.Namespace .Values.eabSecret }}
+{{- if not $eab }}
+{{- fail (printf "the Secret %s with the EAB key (keyID and secret) is missing in %s" .Values.eabSecret .Release.Namespace) }}
+{{- end }}
+# Issues certificates from the company CA for the approved names only. The
+# CA checks each name with http-01 on port 80 of that name.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ .Values.name }}
+spec:
+  acme:
+    server: {{ .Values.server }}
+    {{- with .Values.caSecret }}
+    {{- $ca := lookup "v1" "Secret" $.Release.Namespace . }}
+    caBundle: {{ required (printf "the Secret %s with ca.crt is missing" .) (dig "data" "ca.crt" "" $ca) }}
+    {{- end }}
+    privateKeySecretRef:
+      name: {{ .Values.name }}-account
+    externalAccountBinding:
+      keyID: {{ dig "data" "keyID" "" $eab | b64dec }}
+      keySecretRef:
+        name: {{ .Values.eabSecret }}
+        key: secret
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: {{ .Values.ingressClassName }}

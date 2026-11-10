@@ -1,0 +1,13 @@
+# The bench's values for the release pg, on top of desired.yaml. The company
+# CA approves only the node names, and the store has a certificate of that CA.
+issuer:
+  kind: ClusterIssuer
+  name: company-acme
+replication:
+  commonName: k3s-1.example.test
+  dnsNames: [k3s-1.example.test, k3s-2.example.test, k3s-3.example.test]
+objectStore:
+  endpointURL: https://s3.example.test
+  endpointCA:
+    name: s3-ca
+    key: ca.crt

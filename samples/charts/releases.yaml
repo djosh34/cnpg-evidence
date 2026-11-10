@@ -1,0 +1,20 @@
+# The releases the bench installs, top to bottom, each with
+# helm upgrade --install --wait. chart is a directory next to this file.
+# values are more values files of this mounted directory; the bench adds
+# values/<name>.yaml after them when it exists.
+- name: cert-manager
+  namespace: cert-manager
+  chart: cnpg-cert-manager
+- name: company-acme
+  namespace: cert-manager
+  chart: company-acme
+- name: cnpg
+  namespace: cnpg-system
+  chart: cnpg-cloudnative-pg
+- name: barman-cloud
+  namespace: cnpg-system
+  chart: cnpg-plugin-barman-cloud
+- name: pg
+  namespace: databases
+  chart: cnpg-cluster
+  values: [desired.yaml]

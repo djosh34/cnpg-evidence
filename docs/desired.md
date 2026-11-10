@@ -1,6 +1,6 @@
 # desired.sh
 
-`scripts/desired/desired.sh` builds the desired document of `evidence.sh`, `host-check.sh` or `prove.sh` from [`desired.yaml`](../desired.yaml) alone. A desired document has the shape of the script's actual output, so the two can be compared. It needs no cluster, host or network access.
+`scripts/desired/desired.sh` builds the desired document of `evidence.sh`, `host-check.sh` or `prove.sh` from [`samples/desired.yaml`](../samples/desired.yaml) alone. A desired document has the shape of the script's actual output, so the two can be compared. It needs no cluster, host or network access.
 
 `cnpg-report` compares a desired with an actual document, as [report.md](report.md#the-comparison) describes. A difference is not a failed check: the actual document's `status`, `ok` and `violations` are the verdict, and each image takes its verdict from them.
 
@@ -9,12 +9,12 @@
 Anywhere with bash, `jq` and `openssl`:
 
 ```bash
-yq -o=json desired.yaml | bash scripts/desired/desired.sh --ca client-ca.pem > evidence.desired.json
-yq -o=json desired.yaml | bash scripts/desired/desired.sh --source host-check > host-check.desired.json
-yq -o=json desired.yaml | bash scripts/desired/desired.sh --source prove > prove.desired.json
+yq -o=json samples/desired.yaml | bash scripts/desired/desired.sh --ca client-ca.pem > evidence.desired.json
+yq -o=json samples/desired.yaml | bash scripts/desired/desired.sh --source host-check > host-check.desired.json
+yq -o=json samples/desired.yaml | bash scripts/desired/desired.sh --source prove > prove.desired.json
 ```
 
-- stdin: the desired values from `desired.yaml` as JSON, as for `evidence.sh`. They must have every key `evidence.sh` needs, for every source.
+- stdin: the desired values from `samples/desired.yaml` as JSON, as for `evidence.sh`. They must have every key `evidence.sh` needs, for every source.
 - `--source`: `evidence` (default), `host-check` or `prove`.
 - `--ca`: for `evidence` only, and needed there: the same CA certificates as `evidence.sh --ca`.
 - `--postgres-uid`: for `prove` only, PostgreSQL's uid, as `prove.sh --postgres-uid`. Default 999.
@@ -25,7 +25,7 @@ yq -o=json desired.yaml | bash scripts/desired/desired.sh --source prove > prove
 
 - **evidence:** every expected value that `evidence.sh` checks against is in `scripts/evidence/violations/expected.jq`: the fixed CNPG roles and their rights, the databases, the pg_hba and pg_ident lines and the certificate logins they give, the TLS minimum, the allowed Kubernetes subjects and the Secret namespaces of the operator and the plugin. The violation sections and `desired.sh` both read this file, so the checks and the desired document cannot disagree.
 - **host-check:** each check with the value it has when it passes, as in the table in [host-check.md](host-check.md#checks). `checks.test.sh` checks that the list has every check of `host-check.sh` in its order.
-- **prove:** each probe with the text `prove.sh` writes for it and the value it has when it passes. The application login is the first database of `desired.yaml`, whose pg_hba line the sample chart writes first. The login and uid tests check that the names, texts and values match.
+- **prove:** each probe with the text `prove.sh` writes for it and the value it has when it passes. The application login is the first database of `samples/desired.yaml`, whose pg_hba line the sample chart writes first. The login and uid tests check that the names, texts and values match.
 
 ## Output
 

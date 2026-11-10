@@ -41,7 +41,7 @@ sslmode=verify-full sslrootcert=ca.crt sslcert=orders-app.crt sslkey=orders-app.
 ```
 
 - **TLS on every host is required,** with `sslmode` `require`, `verify-ca` or `verify-full`. Use `verify-full`: it checks that the server certificate names the host that was dialled. Each read address is checked under its own host name.
-- **`verify-full` needs the node names in `replication.dnsNames`** in `desired.yaml`, since the server certificate names only those (see [Install](samples.md#install)). The certificate has no IP addresses, so list the nodes by name.
+- **`verify-full` needs the node names in `replication.dnsNames`** in `samples/desired.yaml`, since the server certificate names only those (see [Install](samples.md#install)). The certificate has no IP addresses, so list the nodes by name.
 - **`connect_timeout` is required.** Use `connect_timeout=2` (see [A node that is down](#a-node-that-is-down)).
 - **`target_session_attrs` must be unset or `any`.** Any other value makes pgx check each server's role, which turns away a replica on a read address or prefers one to rw.
 
@@ -49,7 +49,7 @@ sslmode=verify-full sslrootcert=ca.crt sslcert=orders-app.crt sslkey=orders-app.
 
 ## Set up
 
-Each example lists the three nodes on the read port 5433 of the example `desired.yaml`. `TestDocExamples` in `pgfallback/` checks that each block below is in `pgfallback/example_test.go`, where it compiles.
+Each example lists the three nodes on the read port 5433 of the example `samples/desired.yaml`. `TestDocExamples` in `pgfallback/` checks that each block below is in `pgfallback/example_test.go`, where it compiles.
 
 ### pgx
 

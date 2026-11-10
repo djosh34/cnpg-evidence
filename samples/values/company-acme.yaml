@@ -1,0 +1,4 @@
+# The bench's values for the release company-acme: the ACME server that the
+# bench runs, whose CA is new on every run.
+server: https://acme.example.test/v1/pki/acme/directory
+caSecret: company-ca

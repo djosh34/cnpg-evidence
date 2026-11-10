@@ -31,8 +31,8 @@ wal_keep_size_is() {
   done
 }
 
-timeout 300 helm upgrade "$CLUSTER" "$REPO/samples/chart" --namespace "$NS" \
-  -f "$REPO/desired.yaml" -f "$LIVE_DIR/values.yaml" --set cluster.walKeepSize="$KEEP" >/dev/null
+timeout 300 helm upgrade "$CLUSTER" "$REPO/samples/charts/cnpg-cluster" --namespace "$NS" \
+  -f "$REPO/samples/desired.yaml" -f "$LIVE_DIR/values.yaml" --set cluster.walKeepSize="$KEEP" >/dev/null
 wait_for 300 "wal_keep_size $KEEP on every instance" wal_keep_size_is "$KEEP"
 wait_for 600 "three ready instances, two streaming replicas" settled
 # The replica whose node stops first, and the node that never stops.

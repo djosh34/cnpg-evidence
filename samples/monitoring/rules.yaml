@@ -211,7 +211,7 @@ groups:
           severity: critical
         annotations:
           summary: Check {{ $labels.check }} of rule {{ $labels.rule }} fails on {{ $labels.namespace }}/{{ $labels.cluster }}.
-          description: Run evidence.sh against desired.yaml to see which role, attribute or mapping changed.
+          description: Run evidence.sh against samples/desired.yaml to see which role, attribute or mapping changed.
 
       # An instance that answers but reports fewer than the four checks of the
       # compliance query. An instance that reports nothing is CNPGReplicaDown.

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Who can do what to one CNPG cluster, compared with desired.yaml: every
+# Who can do what to one CNPG cluster, compared with samples/desired.yaml: every
 # difference is a violation. It only reads: kubectl get, one kubectl create of
 # SubjectAccessReviews, which the API server answers and does not store,
 # kubectl exec psql as postgres in READ ONLY transactions, and a local openssl
 # handshake with the metrics port through kubectl port-forward.
 #
 # Usage, with the desired state on stdin:
-#   yq -o=json desired.yaml | scripts/evidence/evidence.sh --ca client-ca.pem
+#   yq -o=json samples/desired.yaml | scripts/evidence/evidence.sh --ca client-ca.pem
 #
 # Prints one JSON document. Exit 0 when violations is empty, 1 when not,
 # 2 on any error, with nothing on stdout.
@@ -21,7 +21,7 @@ source "$here/../lib/common.sh"
 expected() { jq -r -L "$here/violations" "include \"expected\"; $1" <<<"$values"; }
 
 usage() {
-  echo "usage: yq -o=json desired.yaml | ${0##*/} --ca client-ca.pem" >&2
+  echo "usage: yq -o=json samples/desired.yaml | ${0##*/} --ca client-ca.pem" >&2
   exit 2
 }
 
@@ -34,7 +34,7 @@ for tool in kubectl jq openssl timeout base64; do
 done
 
 values=$(jq -c .) || die "the desired state on stdin is not JSON"
-[[ -n $values ]] || die "stdin is empty: pipe in desired.yaml as JSON"
+[[ -n $values ]] || die "stdin is empty: pipe in samples/desired.yaml as JSON"
 [[ $(expected valid_values) == true ]] || die "$(expected values_needed)"
 operator_account=$(expected operator_account) || exit 2
 plugin_account=$(expected plugin_account) || exit 2

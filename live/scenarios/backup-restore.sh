@@ -42,8 +42,8 @@ wait_for 120 "WAL file $wal archived" archived "$p" "$wal"
 ARCHIVED=$(now_ms)
 
 log "restoring into the cluster $RESTORED"
-timeout 300 helm install "$RESTORED" "$REPO/samples/chart" --namespace "$NS" \
-  -f "$REPO/desired.yaml" -f "$LIVE_DIR/values.yaml" \
+timeout 300 helm install "$RESTORED" "$REPO/samples/charts/cnpg-cluster" --namespace "$NS" \
+  -f "$REPO/samples/desired.yaml" -f "$LIVE_DIR/values.yaml" \
   --set cluster.name="$RESTORED" --set recovery.enabled=true --set recovery.sourceCluster="$CLUSTER" \
   --set rwLoadBalancer.name="$RESTORED-rw-lb" --set readLoadBalancer=null >/dev/null
 CLUSTER=$RESTORED

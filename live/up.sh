@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Starts three k3s nodes in docker and installs the samples on them: an S3
 # store (versitygw), cert-manager with a self-signed CA Issuer, the CNPG
-# operator and the barman-cloud plugin from samples/values-*.yaml, and
-# samples/chart as release pg in databases with desired.yaml and
-# live/values.yaml. Every service runs one pod on every node, as
-# docs/samples.md says, and the script checks that it does. Only
-# local-path-provisioner runs one pod.
+# operator and the barman-cloud plugin from samples/charts/cnpg-*, and
+# samples/charts/cnpg-cluster as release pg in databases, with
+# samples/desired.yaml and live/values.yaml. Every service runs one pod on
+# every node, as docs/samples.md says, and the script checks that it does.
+# Only local-path-provisioner runs one pod.
 #
 # Also builds live/client and installs kubectl cnpg into $LIVE_WORK/bin,
 # writes a client certificate for orders-app.test into $LIVE_WORK/certs, and
@@ -22,9 +22,6 @@ shopt -s inherit_errexit
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 S3_IMAGE=versity/versitygw:v1.10.0@sha256:89cad13cc981986ee284cbafea4613f9533ce6fd5f37a2c96c4c4fb8adb3a316
-CERT_MANAGER_VERSION=v1.21.3
-CNPG_CHART_VERSION=0.29.1          # CloudNativePG 1.30.1
-BARMAN_PLUGIN_CHART_VERSION=0.8.1  # barman-cloud plugin v0.15.1
 CNPG_PLUGIN_VERSION=1.30.1         # kubectl cnpg
 declare -A CNPG_PLUGIN_SHA256=(
   [x86_64]=784bc46f176b24a150d5de84d0691f10ff613b59456af86b1a4868e1bacb9953
@@ -53,7 +50,7 @@ install_tools() {
 
 # /tmp is a tmpfs because containerd tests idmapped mounts under /tmp at
 # start, and they fail on docker's overlayfs. The HelmChartConfig turns k3s's
-# Traefik into a DaemonSet. live/node-init.sh runs k3s and starts it again
+# Traefik into a DaemonSet. bench/node-init.sh runs k3s and starts it again
 # when it exits, so pods outlive k3s as under systemd.
 start_node() {
   local i=$1
@@ -68,8 +65,8 @@ start_node() {
     --ulimit nproc=65535 --ulimit nofile=65535:65535 \
     -e K3S_TOKEN="$K3S_TOKEN" \
     -v "$name:/var/lib/rancher/k3s" \
-    -v "$SAMPLES/traefik-config.yaml:/var/lib/rancher/k3s/server/manifests/traefik-config.yaml:ro" \
-    -v "$LIVE_DIR/node-init.sh:/node-init.sh:ro" --entrypoint /bin/sh \
+    -v "$SAMPLES/k3s/manifests/traefik-config.yaml:/var/lib/rancher/k3s/server/manifests/traefik-config.yaml:ro" \
+    -v "$REPO/bench/node-init.sh:/node-init.sh:ro" --entrypoint /bin/sh \
     "$K3S_IMAGE" /node-init.sh "${join[@]}" \
     --node-ip "$ip" --tls-san "$ip" \
     --kube-proxy-arg conntrack-max-per-core=0 >/dev/null
@@ -171,7 +168,7 @@ helm_install() {
 }
 
 # A self-signed CA behind the Issuer example-ca, the issuer of
-# samples/chart/values.yaml. Its certificate is also the client CA.
+# samples/charts/cnpg-cluster/values.yaml. Its certificate is also the client CA.
 apply_issuer() {
   k apply -f - >/dev/null <<YAML
 apiVersion: cert-manager.io/v1
@@ -224,8 +221,8 @@ apply_chart_inputs() {
 }
 
 install_chart() {
-  timeout 300 helm upgrade --install pg "$SAMPLES/chart" --namespace "$NS" \
-    -f "$REPO/desired.yaml" -f "$LIVE_DIR/values.yaml" >/dev/null
+  timeout 300 helm upgrade --install pg "$SAMPLES/charts/cnpg-cluster" --namespace "$NS" \
+    -f "$SAMPLES/desired.yaml" -f "$LIVE_DIR/values.yaml" >/dev/null
 }
 
 # The certificate of orders-app.test, which logs in as orders.
@@ -302,23 +299,22 @@ main() {
     timeout 330 kubectl rollout status "$d" -n kube-system --timeout=300s >/dev/null ||
       fail "$d not rolled out after 300s"
   done
-  log "installing cert-manager $CERT_MANAGER_VERSION"
-  wait_for 900 "cert-manager installed" helm_install cert-manager cert-manager \
-    --repo https://charts.jetstack.io --version "$CERT_MANAGER_VERSION" \
-    --namespace cert-manager --create-namespace -f "$SAMPLES/values-cert-manager.yaml"
+  log "installing cert-manager"
+  helm dependency build --skip-refresh "$SAMPLES/charts/cnpg-cert-manager"
+  wait_for 900 "cert-manager installed" helm_install cert-manager "$SAMPLES/charts/cnpg-cert-manager" \
+    --namespace cert-manager --create-namespace
   k create namespace cnpg-system >/dev/null
   k create namespace "$NS" >/dev/null
   wait_for 300 "the Issuer applied" apply_issuer
   wait_for 120 "Issuer example-ca Ready" issuer_ready
-  log "installing the CNPG operator chart $CNPG_CHART_VERSION and the plugin chart $BARMAN_PLUGIN_CHART_VERSION"
-  k apply -f "$SAMPLES/rbac-cnpg-operator.yaml" -f "$SAMPLES/rbac-barman-cloud.yaml" >/dev/null
-  wait_for 900 "the CNPG operator installed" helm_install cnpg cloudnative-pg \
-    --repo https://cloudnative-pg.github.io/charts --version "$CNPG_CHART_VERSION" \
-    --namespace cnpg-system -f "$SAMPLES/values-cnpg-operator.yaml"
-  wait_for 900 "the barman-cloud plugin installed" helm_install barman-cloud plugin-barman-cloud \
-    --repo https://cloudnative-pg.github.io/charts --version "$BARMAN_PLUGIN_CHART_VERSION" \
-    --namespace cnpg-system -f "$SAMPLES/values-barman-cloud.yaml"
-  log "installing samples/chart as release pg in $NS"
+  log "installing the CNPG operator and the barman-cloud plugin"
+  helm dependency build --skip-refresh "$SAMPLES/charts/cnpg-cloudnative-pg"
+  wait_for 900 "the CNPG operator installed" helm_install cnpg "$SAMPLES/charts/cnpg-cloudnative-pg" \
+    --namespace cnpg-system
+  helm dependency build --skip-refresh "$SAMPLES/charts/cnpg-plugin-barman-cloud"
+  wait_for 900 "the barman-cloud plugin installed" helm_install barman-cloud "$SAMPLES/charts/cnpg-plugin-barman-cloud" \
+    --namespace cnpg-system
+  log "installing samples/charts/cnpg-cluster as release pg in $NS"
   apply_chart_inputs
   wait_for 300 "the samples chart installed" install_chart
   timeout 930 kubectl wait --for=condition=Ready "cluster/$CLUSTER" -n "$NS" --timeout=900s >/dev/null ||
