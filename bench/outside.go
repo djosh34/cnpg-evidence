@@ -310,14 +310,20 @@ func startACME(ctx context.Context, nw *testcontainers.DockerNetwork, root *ca) 
 	if err != nil {
 		return nil, err
 	}
-	bao := &openbao{http: &http.Client{Timeout: 10 * time.Second}}
+	// Init can take longer than 10 s, and a second init fails, so it runs
+	// once, after OpenBao answers.
+	bao := &openbao{http: &http.Client{Timeout: 2 * time.Minute}}
+	err = poll(ctx, time.Now().Add(60*time.Second), func(ctx context.Context) error {
+		return bao.call(ctx, http.MethodGet, "sys/init", nil, nil)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("OpenBao answering: %w", err)
+	}
 	var init struct {
 		Keys  []string `json:"keys_base64"`
 		Token string   `json:"root_token"`
 	}
-	err = poll(ctx, time.Now().Add(60*time.Second), func(ctx context.Context) error {
-		return bao.call(ctx, http.MethodPut, "sys/init", map[string]any{"secret_shares": 1, "secret_threshold": 1}, &init)
-	})
+	err = bao.call(ctx, http.MethodPut, "sys/init", map[string]any{"secret_shares": 1, "secret_threshold": 1}, &init)
 	if err != nil {
 		return nil, fmt.Errorf("OpenBao init: %w", err)
 	}

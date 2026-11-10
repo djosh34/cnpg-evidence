@@ -115,22 +115,30 @@ func run() error {
 	if err := obtainCertificate(*name, *directory, *caFile); err != nil {
 		return fmt.Errorf("certificate of %s: %w", *name, err)
 	}
-	pool, err := newPool(ctx, strings.Split(*hosts, ","))
+	// Reads and writes each have their own pool, so writes that wait for a
+	// standby to confirm their commit cannot take every connection from the
+	// reads.
+	readPool, err := newPool(ctx, strings.Split(*hosts, ","))
 	if err != nil {
 		return err
 	}
-	defer pool.Close()
-	if err := ensureTable(ctx, pool); err != nil {
+	defer readPool.Close()
+	writePool, err := newPool(ctx, strings.Split(*hosts, ","))
+	if err != nil {
+		return err
+	}
+	defer writePool.Close()
+	if err := ensureTable(ctx, writePool); err != nil {
 		return err
 	}
 
 	stopWrites := make(chan os.Signal, 1)
 	signal.Notify(stopWrites, syscall.SIGUSR1)
 	var loops sync.WaitGroup
-	loops.Go(func() { every250ms(ctx, nil, func() { read(pool) }) })
+	loops.Go(func() { every250ms(ctx, nil, func() { read(readPool) }) })
 	if *writes {
 		loops.Go(func() {
-			if every250ms(ctx, stopWrites, func() { write(pool) }) {
+			if every250ms(ctx, stopWrites, func() { write(writePool) }) {
 				now := time.Now()
 				logLine(now, now, "writes", "stopped", "")
 			}
@@ -217,8 +225,9 @@ func newPool(ctx context.Context, hosts []string) (*pgxpool.Pool, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Enough for every attempt of the last 10 s while connects wait.
-	config.MaxConns = 20
+	// Enough for every attempt of the last 10 s, 0.25 s apart, while connects
+	// or commits wait.
+	config.MaxConns = 40
 	dialer := &net.Dialer{Timeout: dialTimeout}
 	config.ConnConfig.DialFunc = dialer.DialContext
 	if err := pgfallback.Pool(config, reads...); err != nil {
