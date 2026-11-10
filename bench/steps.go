@@ -25,7 +25,7 @@ import (
 //	<thing> has|have been <word> since the <event>
 //	<thing> starts|stops|runs|passes
 //	N s pass [after the <event>]
-//	<ALERT> fired|may fire|fires|resolves|has not fired for <role> [< N s [after the <event>]]
+//	<ALERT> fired|may fire|fires|resolves|has not fired for <role>|the cluster [< N s [after the <event>]]
 //	Alertmanager gets|sends|mutes <ALERT> for <role> [< N s [after the <event>]]
 //	no writes
 //
@@ -222,12 +222,9 @@ func (s *scenario) alert(name, verb, who, n, after string) error {
 	if s.kind == messages.PickleStepType_ACTION {
 		return errors.New("an alert check in a When line")
 	}
-	pod, err := s.role(who)
+	pod, err := s.alertPod(who)
 	if err != nil {
 		return err
-	}
-	if pod == anotherInstance {
-		return errors.New("an alert names one instance")
 	}
 	key := alertKey(name, pod)
 	var check func(context.Context) error
@@ -256,6 +253,19 @@ func (s *scenario) alert(name, verb, who, n, after string) error {
 		return err
 	}
 	return poll(s.ctx, deadline, check)
+}
+
+// alertPod is the pod an alert line names: an instance by its role, or ""
+// for "the cluster", an alert of the whole cluster such as CNPGDatabaseDown.
+func (s *scenario) alertPod(who string) (string, error) {
+	if who == "the cluster" {
+		return "", nil
+	}
+	pod, err := s.role(who)
+	if err == nil && pod == anotherInstance {
+		err = errors.New("an alert names one instance, or the cluster")
+	}
+	return pod, err
 }
 
 // alertIs checks that key fires now, or fired in the scenario, or not.

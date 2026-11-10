@@ -164,7 +164,9 @@ func TestFeaturesUseTheVocabulary(t *testing.T) {
 						switch name {
 						case "is", "verb", "since":
 							_, _, err = s.lookup(m[1], m[2])
-						case "alert", "alertmanager":
+						case "alert":
+							_, err = s.alertPod(m[3])
+						case "alertmanager":
 							_, err = s.role(m[3])
 						}
 						if err != nil {

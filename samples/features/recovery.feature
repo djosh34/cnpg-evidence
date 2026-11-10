@@ -24,11 +24,12 @@ Feature: Recovery
   Scenario: A replica catches up from the WAL the primary keeps, without the store
     1229 MB of WAL is more than CNPG's default wal_keep_size of 512 MB. The
     timing table gives how far behind replica 1 was when its pod turned
-    ready.
+    ready. The WAL's large commits wait for replica 2, the one standby left.
 
     When replica 1's node is killed
     And 1229 MB of WAL is written on the primary
-    And 360 s pass after the kill
+    Then CNPGWritesBlocked may fire for the primary
+    When 360 s pass after the kill
     And the store is stopped
     And the node starts
     Then replica 1 is caught up < 600 s
@@ -38,8 +39,10 @@ Feature: Recovery
   @rejoin-from-archive
   Scenario: A replica, then the old primary, rejoin with WAL from the store
     With wal_keep_size 64MB, an instance that was down while 256 MB were
-    written must read WAL from the store. Replica 1 is behind while it does;
-    the new primary's commits wait until the other replica streams from it.
+    written must read WAL from the store. Replica 1 is behind while it does.
+    While an instance is down, the commits of the WAL written wait for the
+    one standby left, and the new primary's until the other replica streams
+    from it.
 
     When wal_keep_size is set to 64MB
     Then wal_keep_size is 64MB on every instance < 300 s
@@ -47,6 +50,7 @@ Feature: Recovery
     When replica 1's node is killed
     And 256 MB of WAL is written on the primary
     Then the WAL replica 1 needs is gone from the primary < 120 s
+    And CNPGWritesBlocked may fire for the primary
     When the node starts
     Then the cluster is healthy < 600 s
     When the primary's node is killed

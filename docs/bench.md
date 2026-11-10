@@ -92,7 +92,7 @@ Most lines are `<thing> is <word>`. The bench cuts a line into thing, word and l
 | `Alertmanager sends / mutes <ALERT> for <role> < N s` | Waits up to N s until the bench got a notification of it firing, or Alertmanager holds it suppressed. |
 | `no writes` | The client does not write in this scenario. |
 
-An event comes only in a Given or When line, a check only in a Given or Then line. Roles: **the primary**, **replica 1** and **replica 2**, named when the cluster is ready; **the new primary**, the instance that became primary last; **another instance**, any instance but the primary; **a replica**, an instance other than the one that became primary last.
+An alert line names an instance by its role, or `the cluster` for an alert of the whole cluster, such as `CNPGDatabaseDown`. An event comes only in a Given or When line, a check only in a Given or Then line. Roles: **the primary**, **replica 1** and **replica 2**, named when the cluster is ready; **the new primary**, the instance that became primary last; **another instance**, any instance but the primary; **a replica**, an instance other than the one that became primary last.
 
 | Line | Means |
 |---|---|
