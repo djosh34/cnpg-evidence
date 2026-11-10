@@ -130,3 +130,13 @@ A stopped node does not refuse a connection, so pgx waits `connect_timeout` on e
 - **A node listed first that is down** adds `connect_timeout` to each new connection: 2 s with `connect_timeout=2`. Listed after an address that answers, it costs nothing.
 - **After a lost primary node,** every rw address times out until Kubernetes marks the lost pod not ready, 47 to 67 s after the loss in tests: the remaining nodes still forward 5432 to it. In that time a new connection waits `connect_timeout` on each of the three rw addresses before it tries the read addresses, and once more when the lost node's read address comes first: 6 to 8 s with `connect_timeout=2`. A read connection handed out after an idle spell of more than 2 s is replaced by such a new connection, so in that window the first query after each pause pays this again. A context deadline on a query that opens a new connection must allow for that.
 - **The attempts at rw** run in the background and wait the same `connect_timeout` per rw address. They cost the application nothing, but the switch back to rw takes that much longer when the first rw address does not answer.
+
+### A short dial timeout
+
+The time a new connection waits is spent in the TCP connect: a lost node, or a lost primary behind a node's rw port, never answers it, while a server on the nodes' network answers in milliseconds. A dialer with its own short timeout, inside `connect_timeout`, which still bounds TLS and the startup, makes a new connection pass the rw addresses quickly:
+
+```go
+cfg.ConnConfig.DialFunc = (&net.Dialer{Timeout: 500 * time.Millisecond}).DialContext
+```
+
+With 500 ms and three nodes, a new connection after a lost primary node reaches a read address after 1.5 s, or 2 s when the lost node's read address comes first, instead of 6 to 8 s. The attempts at rw use the same dialer. The [bench's client](bench.md#the-client) uses it. Choose the timeout from the network between the application and the nodes: a connect that takes longer than it, for example after a lost packet, moves on to the next address.

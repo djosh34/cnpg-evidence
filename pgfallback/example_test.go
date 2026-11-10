@@ -4,10 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"log"
+	"net"
 	"os"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -62,6 +64,28 @@ func connectGORM(dsn string) (*gorm.DB, error) {
 
 func ExamplePool() {
 	pool, err := connectPool(context.Background(), exampleDSN)
+	if err != nil {
+		log.Print(err)
+		return
+	}
+	defer pool.Close()
+}
+
+// A pool whose TCP connects give up after 500 ms (docs/pgfallback.md, A
+// short dial timeout).
+func ExamplePool_dialTimeout() {
+	cfg, err := pgxpool.ParseConfig(exampleDSN)
+	if err != nil {
+		log.Print(err)
+		return
+	}
+	cfg.ConnConfig.DialFunc = (&net.Dialer{Timeout: 500 * time.Millisecond}).DialContext
+	err = pgfallback.Pool(cfg, "node1.example.com:5433", "node2.example.com:5433", "node3.example.com:5433")
+	if err != nil {
+		log.Print(err)
+		return
+	}
+	pool, err := pgxpool.NewWithConfig(context.Background(), cfg)
 	if err != nil {
 		log.Print(err)
 		return

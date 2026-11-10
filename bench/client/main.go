@@ -59,6 +59,12 @@ const (
 	readPort = "5433"
 	// connect_timeout of the connection string, per address.
 	connectTimeout = 2
+	// How long a TCP connect may take, within connect_timeout. A server on
+	// the nodes' network answers in milliseconds; a lost node, or a lost
+	// primary behind a node's rw port, never does. So a new connection
+	// passes the three rw addresses in 1.5 s, not 6 s, before it tries a
+	// read address.
+	dialTimeout = 500 * time.Millisecond
 	// The time one read or write may take, connecting included. A new
 	// connection can wait connect_timeout on each rw address before it
 	// tries a read address.
@@ -213,6 +219,8 @@ func newPool(ctx context.Context, hosts []string) (*pgxpool.Pool, error) {
 	}
 	// Enough for every attempt of the last 10 s while connects wait.
 	config.MaxConns = 20
+	dialer := &net.Dialer{Timeout: dialTimeout}
+	config.ConnConfig.DialFunc = dialer.DialContext
 	if err := pgfallback.Pool(config, reads...); err != nil {
 		return nil, err
 	}
