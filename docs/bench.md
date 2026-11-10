@@ -80,7 +80,7 @@ Most lines are `<thing> is <word>`. The bench cuts a line into thing, word and l
 |---|---|
 | `<thing> is <word>` | An event: does it. A state: checks it now. A measure: checks it over the whole scenario. |
 | `<thing> is <word> < N s` | A state: waits up to N s from the line above. A measure: its limit. |
-| `<thing> is <word> < N s after the <event>` | A state: waits until N s after that event. `writing is healthy`: waits until N s after that event for an acknowledged write that the client sent after it. |
+| `<thing> is <word> < N s after the <event>` | A state: waits until N s after that event. `writing is healthy`: waits until N s after that event for a write that the client sent after it, acknowledged by the current primary. An event's time is when the bench has done it. |
 | `<thing> is <word> for N s` | A state: checks it for N s. |
 | `<thing> has been <word> since the <event>` | Checks the whole time from that event to now. |
 | `<thing> starts / stops / runs / passes` | The same lookup. |

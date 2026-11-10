@@ -468,11 +468,20 @@ func writingDown(ctx context.Context, s *scenario, _ args, from time.Time) error
 	return nil
 }
 
-// writingBack: the client got a write acknowledged that it sent after the
-// event.
+// writingBack: the cluster's current primary acknowledged a write that the
+// client sent after the event. After a promote, the old primary can still
+// acknowledge writes for a moment; those do not count.
 func writingBack(ctx context.Context, s *scenario, from time.Time) error {
 	if !s.writes {
 		return errors.New("the scenario has no writes")
+	}
+	primary, err := clusterField(ctx, "currentPrimary")
+	if err != nil {
+		return err
+	}
+	ip, err := kubectl(ctx, "get", "pod", primary, "-n", namespace, "-o", "jsonpath={.status.podIP}")
+	if err != nil {
+		return err
 	}
 	log, err := s.clientLog(ctx)
 	if err != nil {
@@ -480,14 +489,16 @@ func writingBack(ctx context.Context, s *scenario, from time.Time) error {
 	}
 	var first time.Time
 	for _, line := range log.lines {
-		if line.what == "write" && line.result == "ok" && !line.start.Before(from) && (first.IsZero() || line.end.Before(first)) {
+		_, server, _ := strings.Cut(line.detail, " ")
+		if line.what == "write" && line.result == "ok" && server == ip && !line.start.Before(from) &&
+			(first.IsZero() || line.end.Before(first)) {
 			first = line.end
 		}
 	}
 	if first.IsZero() {
-		return errors.New("no write sent after the event is acknowledged yet")
+		return fmt.Errorf("no write sent after the event is acknowledged by %s yet", primary)
 	}
-	s.detail = "first write acknowledged " + seconds(first.Sub(from)) + " after the event"
+	s.detail = fmt.Sprintf("first write acknowledged by %s %s after the event", primary, seconds(first.Sub(from)))
 	return nil
 }
 

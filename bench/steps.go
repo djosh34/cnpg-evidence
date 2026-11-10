@@ -346,16 +346,18 @@ func (s *scenario) noWrites() error {
 	return nil
 }
 
+// event does an event. Its time, for "after the <event>" and "since the
+// <event>", is when the bench has done it: a kill, for one, first looks up
+// the nodes.
 func (s *scenario) event(key string, w word, a args) error {
 	if s.kind == messages.PickleStepType_OUTCOME {
 		return fmt.Errorf("an event in a Then line: %s", key)
 	}
-	at := time.Now()
 	if err := w.event(s.ctx, s, a); err != nil {
 		return err
 	}
 	if w.mark != "" {
-		s.marks[w.mark], s.last = at, w.mark
+		s.marks[w.mark], s.last = time.Now(), w.mark
 	}
 	return nil
 }
