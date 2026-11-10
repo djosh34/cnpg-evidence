@@ -182,6 +182,42 @@ tests:
               summary: Instance pg-3 of databases/pg does not stream from the primary or reports no metrics.
       - {eval_time: 11m, alertname: CNPGDatabaseDown}
 
+  # The primary's node is lost with the collector that scraped it, which
+  # sends no stale marker: pg-1's last samples stay for the lookback, 5 min.
+  # pg-2 is promoted a minute later. pg-1 counts as down from its newest
+  # sample's falling more than 30 s behind the others', at 3m: the alert fires
+  # 5 min later, not 5 min after the lookback.
+  - name: primary's collector lost with its node
+    interval: 1m
+    input_series:
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-1"}', values: '1 1 1 _x12'}
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-2"}', values: '1x15'}
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-3"}', values: '1x15'}
+      - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-1"}', values: '0 0 0 _x12'}
+      - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-2"}', values: '1 1 1 0x12'}
+      - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-3"}', values: '1x15'}
+      - {series: 'cnpg_pg_stat_replication_backend_start{namespace="databases",cluster="pg",pod="pg-1",application_name="pg-2",usename="streaming_replica"}', values: '1000 1000 1000 _x12'}
+      - {series: 'cnpg_pg_stat_replication_backend_start{namespace="databases",cluster="pg",pod="pg-1",application_name="pg-3",usename="streaming_replica"}', values: '1000 1000 1000 _x12'}
+      - {series: 'cnpg_pg_stat_replication_backend_start{namespace="databases",cluster="pg",pod="pg-2",application_name="pg-3",usename="streaming_replica"}', values: '_ _ _ 2000x12'}
+    promql_expr_test:
+      - expr: cnpg_sample:primary
+        eval_time: 4m
+        exp_samples:
+          - {labels: 'cnpg_sample:primary{namespace="databases",cluster="pg",pod="pg-2"}', value: 0}
+      - expr: cnpg_sample:replica_streaming
+        eval_time: 4m
+        exp_samples:
+          - {labels: 'cnpg_sample:replica_streaming{namespace="databases",cluster="pg",pod="pg-3"}', value: 1}
+    alert_rule_test:
+      - {eval_time: 7m30s, alertname: CNPGReplicaDown}
+      - eval_time: 8m30s
+        alertname: CNPGReplicaDown
+        exp_alerts:
+          - exp_labels: {severity: critical, namespace: databases, cluster: pg, pod: pg-1}
+            exp_annotations:
+              summary: Instance pg-1 of databases/pg does not stream from the primary or reports no metrics.
+      - {eval_time: 12m, alertname: CNPGDatabaseDown}
+
   # A replica streams but its exporter stops answering.
   - name: replica metrics stop
     interval: 1m
@@ -354,6 +390,7 @@ tests:
   - name: WAL archiving fails
     interval: 1m
     input_series:
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-1"}', values: '1x20'}
       - {series: 'barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace="databases",cluster="pg",pod="pg-1"}', values: '100x20'}
       - {series: 'barman_cloud_cloudnative_pg_io_last_failed_backup_timestamp{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x20'}
       - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x20'}
