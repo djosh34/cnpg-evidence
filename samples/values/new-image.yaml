@@ -1,0 +1,5 @@
+# Not a release's values: the rollout scenario changes the release pg to this
+# instance image, a later build of the same PostgreSQL 18.6 as the chart's,
+# pinned by digest.
+cluster:
+  imageName: registry.access.redhat.com/hi/postgresql:18.6-1793756462@sha256:a448becd1c47f4c525c7d7123fb8fc735c718d1e75f113ca7a933afadddd2e83

@@ -105,6 +105,26 @@ func TestLookup(t *testing.T) {
 	if _, _, err := s.lookup("the new primary", "primary"); err == nil {
 		t.Error("the new primary before any change: no error")
 	}
+	key, a, err = s.lookup("1229 MB of WAL", "written on the primary")
+	if err != nil || key != "<n> MB of WAL | written on <role>" || len(a.ns) != 1 || a.ns[0] != 1229 || a.pods[0] != "pg-1" {
+		t.Errorf("1229 MB of WAL is written on the primary: got %q %v %v %v", key, a.ns, a.pods, err)
+	}
+	key, a, err = s.lookup("wal_keep_size", "set to 64MB")
+	if err != nil || key != "wal_keep_size | set to <n>MB" || a.ns[0] != 64 {
+		t.Errorf("wal_keep_size is set to 64MB: got %q %v %v", key, a.ns, err)
+	}
+}
+
+func TestNewPrimary(t *testing.T) {
+	s := &scenario{roles: map[string]string{"the primary": "pg-1", "replica 1": "pg-2", "replica 2": "pg-3", "a replica": "pg-2"}}
+	s.newPrimary("pg-2")
+	if s.roles["the new primary"] != "pg-2" || s.roles["a replica"] != "pg-1" {
+		t.Errorf("after pg-2 became primary: %v", s.roles)
+	}
+	s.newPrimary("pg-1")
+	if s.roles["the new primary"] != "pg-1" || s.roles["a replica"] != "pg-2" {
+		t.Errorf("after pg-1 became primary: %v", s.roles)
+	}
 }
 
 // Every line of the feature files in samples/features binds to exactly one
@@ -121,7 +141,7 @@ func TestFeaturesUseTheVocabulary(t *testing.T) {
 		t.Fatalf("no feature files: %v", err)
 	}
 	s := &scenario{roles: map[string]string{
-		"the primary": "pg-1", "replica 1": "pg-2", "replica 2": "pg-3", "the new primary": "pg-2",
+		"the primary": "pg-1", "replica 1": "pg-2", "replica 2": "pg-3", "the new primary": "pg-2", "a replica": "pg-1",
 	}}
 	id := 0
 	newID := func() string { id++; return strconv.Itoa(id) }

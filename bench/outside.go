@@ -200,6 +200,39 @@ func createBucket(ctx context.Context, client *http.Client) error {
 	return nil
 }
 
+// The store breaks in one of two ways. Stopped, it refuses connections: its
+// address belongs to a container that listens on no port. Paused, it takes
+// connections and never answers.
+const storeGone = "s3-gone"
+
+func stopStore(ctx context.Context, nw *testcontainers.DockerNetwork) error {
+	if _, err := command(ctx, nil, "docker", "stop", "-t", "0", "s3"); err != nil {
+		return err
+	}
+	_, err := command(ctx, nil, "docker", "run", "-d", "--name", storeGone, "--network", nw.Name, "--ip", s3IP,
+		"--entrypoint", "/bin/sleep", k3sImage, "86400")
+	return err
+}
+
+func pauseStore(ctx context.Context) error {
+	_, err := command(ctx, nil, "docker", "pause", "s3")
+	return err
+}
+
+// restoreStore brings back a store that stopStore stopped or pauseStore
+// paused.
+func restoreStore(ctx context.Context, stopped bool) error {
+	if !stopped {
+		_, err := command(ctx, nil, "docker", "unpause", "s3")
+		return err
+	}
+	if _, err := command(ctx, nil, "docker", "rm", "-f", storeGone); err != nil {
+		return err
+	}
+	_, err := command(ctx, nil, "docker", "start", "s3")
+	return err
+}
+
 func sha256Hex(s string) string {
 	sum := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(sum[:])

@@ -170,27 +170,28 @@ func nodeReady(ctx context.Context, name string) error {
 	return nil
 }
 
-// killNode stops the node container of pod at once, as docker stop -t 0
-// does, as a lost VM. It returns the node.
-func killNode(ctx context.Context, pod string) (string, error) {
-	node, err := kubectl(ctx, "get", "pod", pod, "-n", namespace, "-o", "jsonpath={.spec.nodeName}")
-	if err != nil {
-		return "", err
-	}
-	if _, err := command(ctx, nil, "docker", "stop", "-t", "0", node); err != nil {
-		return "", err
-	}
-	logf("node %s stopped", node)
-	return node, nil
+// nodeOf is the node an instance runs on.
+func nodeOf(ctx context.Context, pod string) (string, error) {
+	return kubectl(ctx, "get", "pod", pod, "-n", namespace, "-o", "jsonpath={.spec.nodeName}")
 }
 
-// restartNode starts a node container that killNode stopped. k3s and the
-// pods of the node start again.
-func restartNode(ctx context.Context, node string) error {
-	if _, err := command(ctx, nil, "docker", "start", node); err != nil {
+// stopNodes stops node containers at once, as docker stop -t 0 does, as lost
+// VMs.
+func stopNodes(ctx context.Context, nodes ...string) error {
+	if _, err := command(ctx, nil, "docker", append([]string{"stop", "-t", "0"}, nodes...)...); err != nil {
 		return err
 	}
-	logf("node %s started", node)
+	logf("node %s stopped", strings.Join(nodes, " and "))
+	return nil
+}
+
+// restartNodes starts node containers that stopNodes stopped. k3s and the
+// pods of each node start again.
+func restartNodes(ctx context.Context, nodes ...string) error {
+	if _, err := command(ctx, nil, "docker", append([]string{"start"}, nodes...)...); err != nil {
+		return err
+	}
+	logf("node %s started", strings.Join(nodes, " and "))
 	return nil
 }
 

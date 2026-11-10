@@ -34,6 +34,7 @@ func runScenario(name string, res *results) int {
 			s := &scenario{
 				results: res, writes: true,
 				marks: map[string]time.Time{}, limits: map[string]int{}, alerts: map[string]bool{},
+				needs: map[string]walNeed{}, switched: map[string]string{}, restarts: map[string]int{},
 			}
 			sc.Before(func(ctx context.Context, sn *godog.Scenario) (context.Context, error) {
 				ran++

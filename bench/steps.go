@@ -31,7 +31,10 @@ import (
 //
 // "< N s" counts from the line above, "< N s after the <event>" from that
 // event, "for N s" watches the state for the next N s, and "since the
-// <event>" checks the whole time from that event to now.
+// <event>" checks the whole time from that event to now. A measure such as
+// "writing is healthy" takes "< N s" as its limit over the whole scenario,
+// and "< N s after the <event>" as the time by which it is back after that
+// event.
 const (
 	within    = ` < (\d+) s(?: after the (\w+))?`
 	isLine    = `^(.+?) (?:is|are) (.+?)(?:` + within + `| for (\d+) s)?$`
@@ -71,7 +74,14 @@ type scenario struct {
 	clientEnded time.Time
 	writes      bool // false after "Given no writes"
 
-	down []string // the nodes killed and not started again
+	down     []string // the nodes killed and not started again
+	downPods []string // the instances on them
+
+	needs    map[string]walNeed // what each instance that was down needs of the WAL written meanwhile
+	switched map[string]string  // the WAL file each instance switched away from last
+	restarts map[string]int     // the restart count of an instance's postgres container before it was killed
+	ident    string             // the pg_ident lines every instance had at the first line about them
+	store    string             // how the store is broken: stopped, paused, or "" when it is not
 
 	started time.Time       // when the scenario started, after the monitoring was ready
 	alerts  map[string]bool // the alerts the scenario names, "<alertname> <pod>": true when they must fire, false when they may
@@ -163,6 +173,8 @@ func (s *scenario) is(thing, word, n, after, forN string) error {
 		return s.event(key, w, a)
 	case s.kind == messages.PickleStepType_ACTION:
 		return fmt.Errorf("a check in a When line: %s", key)
+	case w.longest != nil && after != "":
+		return s.measureBack(key, w, n, after)
 	case w.longest != nil:
 		return s.measure(key, w, n, after, forN)
 	}
@@ -378,6 +390,20 @@ func (s *scenario) measure(key string, w word, n, after, forN string) error {
 	return nil
 }
 
+// measureBack waits until the measure is back after the event, by N s after
+// it.
+func (s *scenario) measureBack(key string, w word, n, after string) error {
+	if w.back == nil {
+		return fmt.Errorf("%s takes no \"after the <event>\"", key)
+	}
+	deadline, err := s.deadline(n, after)
+	if err != nil {
+		return err
+	}
+	from := s.marks[after]
+	return poll(s.ctx, deadline, func(ctx context.Context) error { return w.back(ctx, s, from) })
+}
+
 func (s *scenario) holdsFor(n string, check func(context.Context) error) error {
 	secs, err := strconv.Atoi(n)
 	if err != nil {
@@ -416,18 +442,21 @@ func (s *scenario) deadline(n, after string) (time.Time, error) {
 }
 
 // The roles a line can name. "another instance" is any instance but the
-// primary; "the new primary" is the instance that became primary last.
-var roleNames = []string{"the new primary", "the primary", "replica 1", "replica 2", "another instance"}
+// primary; "the new primary" is the instance that became primary last; "a
+// replica" is an instance other than the one that became primary last.
+var roleNames = []string{"the new primary", "the primary", "replica 1", "replica 2", "another instance", "a replica"}
 
 const anotherInstance = ""
 
-// args are what lookup took out of a line: the pods of its roles, in order.
+// args are what lookup took out of a line: the pods of its roles and its
+// numbers, in order.
 type args struct {
 	pods []string
+	ns   []int
 }
 
 // lookup turns thing and word into a vocabulary key, replacing each role
-// with <role> and keeping its pod.
+// with <role> and keeping its pod, and each number with <n>.
 func (s *scenario) lookup(thing, word string) (string, args, error) {
 	var a args
 	key := ""
@@ -446,6 +475,16 @@ next:
 				continue next
 			}
 		}
+		if digits := leadingDigits(text[i:]); digits != "" {
+			n, err := strconv.Atoi(digits)
+			if err != nil {
+				return "", a, err
+			}
+			a.ns = append(a.ns, n)
+			key += "<n>"
+			i += len(digits)
+			continue
+		}
 		key += text[i : i+1]
 		i++
 	}
@@ -453,6 +492,26 @@ next:
 		return "", a, fmt.Errorf("not in the vocabulary: %q", key)
 	}
 	return key, a, nil
+}
+
+func leadingDigits(text string) string {
+	end := 0
+	for end < len(text) && text[end] >= '0' && text[end] <= '9' {
+		end++
+	}
+	return text[:end]
+}
+
+// newPrimary names the instance that became primary: the new primary, and a
+// replica one of the others.
+func (s *scenario) newPrimary(pod string) {
+	s.roles["the new primary"] = pod
+	for _, role := range []string{"the primary", "replica 1", "replica 2"} {
+		if other := s.roles[role]; other != pod {
+			s.roles["a replica"] = other
+			return
+		}
+	}
 }
 
 func (s *scenario) role(name string) (string, error) {

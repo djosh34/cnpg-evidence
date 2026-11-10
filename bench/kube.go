@@ -15,10 +15,12 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 )
 
-// The cluster the chart makes, as samples/desired.yaml names it.
+// The cluster the chart makes, as samples/desired.yaml names it, and its
+// release in charts/releases.yaml.
 const (
-	namespace   = "databases"
-	clusterName = "pg"
+	namespace      = "databases"
+	clusterName    = "pg"
+	clusterRelease = "pg"
 )
 
 var kubeconfig = workDir + "/kubeconfig"
@@ -52,12 +54,17 @@ func psql(ctx context.Context, pod, db, sql string) (string, error) {
 }
 
 func clusterField(ctx context.Context, field string) (string, error) {
-	return kubectl(ctx, "get", "cluster", clusterName, "-n", namespace, "-o", "jsonpath={.status."+field+"}")
+	return fieldOf(ctx, clusterName, field)
 }
 
-// instances are the instance pods of the cluster, by name.
-func instances(ctx context.Context) ([]string, error) {
-	out, err := kubectl(ctx, "get", "pods", "-n", namespace, "-l", "cnpg.io/cluster="+clusterName+",cnpg.io/podRole=instance",
+// fieldOf is a field of the status of a cluster.
+func fieldOf(ctx context.Context, cluster, field string) (string, error) {
+	return kubectl(ctx, "get", "cluster", cluster, "-n", namespace, "-o", "jsonpath={.status."+field+"}")
+}
+
+// instances are the instance pods of a cluster, by name.
+func instances(ctx context.Context, cluster string) ([]string, error) {
+	out, err := kubectl(ctx, "get", "pods", "-n", namespace, "-l", "cnpg.io/cluster="+cluster+",cnpg.io/podRole=instance",
 		"-o", "jsonpath={.items[*].metadata.name}")
 	if err != nil {
 		return nil, err
@@ -67,24 +74,24 @@ func instances(ctx context.Context) ([]string, error) {
 	return pods, nil
 }
 
-// healthy: three ready instances, the phase healthy, and two replicas
-// streaming from the primary.
-func healthy(ctx context.Context) error {
-	ready, err := clusterField(ctx, "readyInstances")
+// healthy: the cluster has three ready instances, the phase healthy, and two
+// replicas streaming from the primary.
+func healthy(ctx context.Context, cluster string) error {
+	ready, err := fieldOf(ctx, cluster, "readyInstances")
 	if err != nil {
 		return err
 	}
 	if ready != "3" {
 		return fmt.Errorf("ready instances: %q", ready)
 	}
-	phase, err := clusterField(ctx, "phase")
+	phase, err := fieldOf(ctx, cluster, "phase")
 	if err != nil {
 		return err
 	}
 	if phase != "Cluster in healthy state" {
 		return fmt.Errorf("phase: %q", phase)
 	}
-	primary, err := clusterField(ctx, "currentPrimary")
+	primary, err := fieldOf(ctx, cluster, "currentPrimary")
 	if err != nil {
 		return err
 	}
