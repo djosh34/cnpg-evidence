@@ -21,3 +21,4 @@ Feature: Failover
     Then the cluster is healthy < 600 s
     And the primary is still primary
     And CNPGReplicaDown fired for replica 1
+    And CNPGReplicaDown resolves for replica 1 < 120 s

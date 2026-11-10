@@ -1,6 +1,6 @@
 # Samples
 
-What is in `samples/`, how to install it, and how to keep it right. The committed upstream charts are cert-manager v1.21.3, `cloudnative-pg` 0.29.1 and `plugin-barman-cloud` 0.8.1. Each has a values chart with local dependencies.
+What is in `samples/`, how to install it, and how to keep it right. The committed upstream charts are cert-manager v1.21.3, `cloudnative-pg` 0.29.1, `plugin-barman-cloud` 0.8.1 and `opentelemetry-collector` 0.177.0. Each has a values chart with local dependencies.
 
 ## Files
 
@@ -91,7 +91,7 @@ Pods with `hostUsers: false` need a kernel with idmapped mounts on tmpfs.
    kubectl get pods -n databases -l cnpg.io/cluster=<cluster>,cnpg.io/podRole=instance \
      -o custom-columns=NAME:.metadata.name,HOSTUSERS:.spec.hostUsers
    ```
-8. Point the OTel collectors at `https://<pod address>:9187/metrics`, with the CA of the server certificate as `ca_file` and one of its `dnsNames` as `server_name`. Add the labels that [monitoring.md](monitoring.md#scrape-targets-and-labels) lists, which its alert rules need.
+8. Point the OTel collectors at `https://<pod address>:9187/metrics`, with the CA of the server certificate as `ca_file` and one of its `dnsNames` as `server_name`. Add the labels that [monitoring.md](monitoring.md#scrape-targets-and-labels) lists, which its alert rules need. [`samples/charts/cnpg-opentelemetry-collector`](../samples/charts/cnpg-opentelemetry-collector) does this, with the bench's names to replace (see [Collectors](monitoring.md#collectors)): `helm dependency build --skip-refresh samples/charts/cnpg-opentelemetry-collector`, then `helm upgrade --install otel samples/charts/cnpg-opentelemetry-collector -n otel` once the Secret `company-ca` with `ca.crt` is in `otel`.
    Run the collectors without `hostNetwork`, in the OTel namespace.
    If a collector does use `hostNetwork`, run it with `securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}`; otherwise it can bind a port below 1024 on its node.
 

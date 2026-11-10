@@ -46,6 +46,8 @@ const (
 	// Grafana's data source, which the dashboard's data source variable picks.
 	grafanaSource   = "prometheus"
 	grafanaPassword = "example-password"
+	// Grafana's API, as its admin: Go sends the user in the URL as basic auth.
+	grafanaURL = "http://admin:" + grafanaPassword + "@" + grafanaIP + ":3000"
 )
 
 // The upstream OTel service: OTLP over gRPC with mTLS, the client
@@ -203,7 +205,7 @@ func startMonitoring(ctx context.Context, nw *testcontainers.DockerNetwork, root
 			m.get(ctx, "http://"+otelIP+":13133/", nil),
 			m.get(ctx, "http://"+prometheusIP+":9090/-/ready", nil),
 			m.get(ctx, "http://"+alertmanagerIP+":9093/-/ready", nil),
-			m.get(ctx, "http://"+grafanaIP+":3000/api/health", nil),
+			m.get(ctx, grafanaURL+"/api/health", nil),
 		)
 	})
 	if err != nil {
@@ -294,9 +296,6 @@ func (m *monitoring) get(ctx context.Context, url string, out any) error {
 	if err != nil {
 		return err
 	}
-	if strings.Contains(url, ":3000/") {
-		req.SetBasicAuth("admin", grafanaPassword)
-	}
 	return m.do(req, out)
 }
 
@@ -329,7 +328,7 @@ type series struct {
 func (m *monitoring) query(ctx context.Context, promql string, grafana bool) ([]series, error) {
 	base := "http://" + prometheusIP + ":9090"
 	if grafana {
-		base = "http://" + grafanaIP + ":3000/api/datasources/proxy/uid/" + grafanaSource
+		base = grafanaURL + "/api/datasources/proxy/uid/" + grafanaSource
 	}
 	var resp struct {
 		Status string `json:"status"`
@@ -445,7 +444,7 @@ func (m *monitoring) dashboardHasData(ctx context.Context) error {
 			Panels []panel `json:"panels"`
 		} `json:"dashboard"`
 	}
-	if err := m.get(ctx, "http://"+grafanaIP+":3000/api/dashboards/uid/"+m.dashboard, &resp); err != nil {
+	if err := m.get(ctx, grafanaURL+"/api/dashboards/uid/"+m.dashboard, &resp); err != nil {
 		return err
 	}
 	var panels []panel
@@ -528,13 +527,15 @@ func (m *monitoring) none(ctx context.Context, promql string) error {
 }
 
 // history is when each alert was pending and firing since from, as
-// Prometheus recorded it, for the state of a failed run.
+// Prometheus recorded it, for the state of a failed run: one span per run of
+// samples, as "15:04:05 to 15:06:20".
 func (m *monitoring) history(ctx context.Context, from time.Time) string {
+	const step = 15
 	q := url.Values{}
 	q.Set("query", "ALERTS")
 	q.Set("start", strconv.FormatInt(from.Unix(), 10))
 	q.Set("end", strconv.FormatInt(time.Now().Unix(), 10))
-	q.Set("step", "15")
+	q.Set("step", strconv.Itoa(step))
 	var resp struct {
 		Data struct {
 			Result []struct {
@@ -546,15 +547,27 @@ func (m *monitoring) history(ctx context.Context, from time.Time) string {
 	if err := m.get(ctx, "http://"+prometheusIP+":9090/api/v1/query_range?"+q.Encode(), &resp); err != nil {
 		return "The alerts: " + err.Error() + "\n"
 	}
+	clock := func(t float64) string { return time.Unix(int64(t), 0).UTC().Format(time.TimeOnly) }
 	out := "The alerts since the cluster was built, from Prometheus (UTC):\n"
 	for _, r := range resp.Data.Result {
-		times := make([]string, 0, 2)
-		for _, i := range []int{0, len(r.Values) - 1} {
-			if t, ok := r.Values[i][0].(float64); ok {
-				times = append(times, time.Unix(int64(t), 0).UTC().Format(time.TimeOnly))
+		var spans []string
+		var first, last float64
+		for i, v := range r.Values {
+			t, ok := v[0].(float64)
+			if !ok {
+				continue
 			}
+			if i > 0 && t-last > step {
+				spans = append(spans, clock(first)+" to "+clock(last))
+				first = t
+			}
+			if i == 0 {
+				first = t
+			}
+			last = t
 		}
-		out += fmt.Sprintf("  %s %s: %s\n", alertKey(r.Metric["alertname"], r.Metric["pod"]), r.Metric["alertstate"], strings.Join(times, " to "))
+		spans = append(spans, clock(first)+" to "+clock(last))
+		out += fmt.Sprintf("  %s %s: %s\n", alertKey(r.Metric["alertname"], r.Metric["pod"]), r.Metric["alertstate"], strings.Join(spans, ", "))
 	}
 	return out
 }

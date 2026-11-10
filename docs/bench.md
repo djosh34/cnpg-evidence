@@ -47,7 +47,7 @@ bash bench/host.sh
 | `k3s/config.yaml` | The k3s server settings of every node. |
 | `k3s/manifests/` | Manifests k3s applies on every server, such as the Traefik settings. |
 | `charts/<upstream>/` | An upstream chart, as `helm pull --untar` gives it. Never edited. |
-| `charts/cnpg-<upstream>/` | Its values chart: a dependency on `file://../<upstream>`, the values, and the RBAC that replaces the chart's. |
+| `charts/cnpg-<upstream>/` | Its values chart: a dependency on `file://../<upstream>`, the values, and what the upstream chart does not make: the RBAC that replaces the chart's, or the collectors' client certificate. |
 | `charts/cnpg-cluster/`, `charts/company-acme/` | Charts of this repository: the CNPG cluster, and the ClusterIssuer of the company CA. |
 | `charts/releases.yaml` | The releases in install order. |
 | `desired.yaml` | The cluster's values, which `evidence.sh` also compares against. |

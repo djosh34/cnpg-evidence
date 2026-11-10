@@ -3,10 +3,10 @@
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: {{ .Values.client.secretName }}
+  name: otel-client
   namespace: {{ .Release.Namespace }}
 spec:
-  secretName: {{ .Values.client.secretName }}
+  secretName: otel-client
   commonName: {{ first .Values.client.dnsNames }}
   dnsNames: {{ toJson .Values.client.dnsNames }}
   usages: [client auth]

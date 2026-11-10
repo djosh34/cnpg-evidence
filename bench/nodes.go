@@ -171,9 +171,8 @@ func nodeReady(ctx context.Context, name string) error {
 }
 
 // killNode stops the node container of pod at once, as docker stop -t 0
-// does, as a lost VM. The bench's kubeconfig then points at the API server
-// of a node that still runs. It returns the node.
-func killNode(ctx context.Context, pod string, down []string) (string, error) {
+// does, as a lost VM. It returns the node.
+func killNode(ctx context.Context, pod string) (string, error) {
 	node, err := kubectl(ctx, "get", "pod", pod, "-n", namespace, "-o", "jsonpath={.spec.nodeName}")
 	if err != nil {
 		return "", err
@@ -182,7 +181,7 @@ func killNode(ctx context.Context, pod string, down []string) (string, error) {
 		return "", err
 	}
 	logf("node %s stopped", node)
-	return node, useAPIOutside(append(down, node))
+	return node, nil
 }
 
 // restartNode starts a node container that killNode stopped. k3s and the
@@ -195,9 +194,9 @@ func restartNode(ctx context.Context, node string) error {
 	return nil
 }
 
-// useAPIOutside points the bench's kubeconfig at the API server of the
+// useRunningAPI points the bench's kubeconfig at the API server of the
 // first node that is not down.
-func useAPIOutside(down []string) error {
+func useRunningAPI(down []string) error {
 	for i := range nodeCount {
 		if slices.Contains(down, nodeName(i)) {
 			continue

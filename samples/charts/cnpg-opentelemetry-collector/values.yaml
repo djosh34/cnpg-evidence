@@ -10,10 +10,15 @@
 # name. A collector lost with its node leaves its last samples with the
 # evaluator; rules.yaml counts an instance whose newest sample is 30 s behind
 # the others' as reporting nothing.
+#
+# The names below are the bench's: the upstream URL otel.example.test, the
+# node names k3s-<n>.example.test, which the company CA issues and the
+# instances' server certificate names, and the ClusterIssuer company-acme.
+# Replace them with a cluster's own.
 
-# The collectors' client certificate (templates/certificate.yaml).
+# The collectors' client certificate, in the Secret otel-client
+# (templates/certificate.yaml).
 client:
-  secretName: otel-client
   dnsNames: [k3s-1.example.test, k3s-2.example.test, k3s-3.example.test]
   issuer:
     kind: ClusterIssuer

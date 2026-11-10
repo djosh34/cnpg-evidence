@@ -133,7 +133,7 @@ A stopped node does not refuse a connection, so pgx waits `connect_timeout` on e
 
 ### A short dial timeout
 
-The time a new connection waits is spent in the TCP connect: a lost node, or a lost primary behind a node's rw port, never answers it, while a server on the nodes' network answers in milliseconds. A dialer with its own short timeout, inside `connect_timeout`, which still bounds TLS and the startup, makes a new connection pass the rw addresses quickly:
+The time a new connection waits is spent in the TCP connect: a lost node, or a lost primary behind a node's rw port, never answers it, while a server on the nodes' network answers in milliseconds. A dialer with its own short timeout, inside `connect_timeout`, which still bounds TLS and the startup, makes a new connection pass the rw addresses quickly. Set it before `pgfallback.Pool`, which copies the config for its attempts at rw:
 
 ```go
 cfg.ConnConfig.DialFunc = (&net.Dialer{Timeout: 500 * time.Millisecond}).DialContext

@@ -71,16 +71,18 @@ func promote(ctx context.Context, s *scenario, a args) error {
 	return nil
 }
 
-// killNodeOf: the node of the instance stops at once, as a lost VM.
+// killNodeOf: the node of the instance stops at once, as a lost VM. The
+// bench then uses the API server of a node that runs.
 func killNodeOf(ctx context.Context, s *scenario, a args) error {
 	if a.pods[0] == anotherInstance {
 		return errors.New("kill the node of a named instance")
 	}
-	node, err := killNode(ctx, a.pods[0], s.down)
-	if err == nil {
-		s.down = append(s.down, node)
+	node, err := killNode(ctx, a.pods[0])
+	if err != nil {
+		return err
 	}
-	return err
+	s.down = append(s.down, node)
+	return useRunningAPI(s.down)
 }
 
 // startKilled: the killed node starts again.
@@ -135,10 +137,16 @@ func dashboardHealthy(ctx context.Context, s *scenario, _ args) error {
 }
 
 // The two query metrics the exporter checks read: the chart's cn_mapping
-// check and CNPG's in_recovery.
-var queryMetrics = []string{
-	`cnpg_compliance_violations{namespace="` + namespace + `", check="cn_mapping"}`,
-	`cnpg_pg_replication_in_recovery{namespace="` + namespace + `"}`,
+// check and CNPG's in_recovery, of every instance, or of one pod.
+func queryMetrics(pod string) []string {
+	selector := fmt.Sprintf(`namespace=%q`, namespace)
+	if pod != "" {
+		selector += fmt.Sprintf(`, pod=%q`, pod)
+	}
+	return []string{
+		`cnpg_compliance_violations{` + selector + `, check="cn_mapping"}`,
+		`cnpg_pg_replication_in_recovery{` + selector + `}`,
+	}
 }
 
 // exportersAnswer: every instance's exporter answered with both query
@@ -148,7 +156,7 @@ func exportersAnswer(ctx context.Context, s *scenario, _ args) error {
 	if err != nil {
 		return err
 	}
-	for _, metric := range queryMetrics {
+	for _, metric := range queryMetrics("") {
 		fresh, err := s.w.mon.pods(ctx, "time() - timestamp("+metric+") < 30")
 		if err != nil {
 			return err
@@ -178,8 +186,7 @@ func exportersKept(ctx context.Context, s *scenario, a args, from time.Time) err
 		if err := s.w.mon.none(ctx, silent); err != nil {
 			return fmt.Errorf("the exporter of %s did not answer for 60 s or longer: %w", pod, err)
 		}
-		for _, metric := range queryMetrics {
-			metric = strings.Replace(metric, "{", fmt.Sprintf("{pod=%q, ", pod), 1)
+		for _, metric := range queryMetrics(pod) {
 			without := fmt.Sprintf(`max_over_time((sum(count_over_time(%s[15s])) > 0 unless on () sum(count_over_time(%s[15s])))[%ds:5s])`,
 				up, metric, window)
 			if err := s.w.mon.none(ctx, without); err != nil {
