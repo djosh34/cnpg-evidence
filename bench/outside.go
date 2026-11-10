@@ -71,7 +71,8 @@ func newNetwork(ctx context.Context) (*testcontainers.DockerNetwork, error) {
 }
 
 // on puts a container on the bench network at ip, with the DNS container as
-// its resolver and name as its host name.
+// its resolver and name as its host name. The DNS container itself keeps
+// docker's resolver, to which it forwards every other name.
 func on(nw *testcontainers.DockerNetwork, ip, name string) func(*testcontainers.ContainerRequest) {
 	return func(req *testcontainers.ContainerRequest) {
 		req.Networks = []string{nw.Name}
@@ -80,7 +81,9 @@ func on(nw *testcontainers.DockerNetwork, ip, name string) func(*testcontainers.
 		}
 		hostConfig := req.HostConfigModifier
 		req.HostConfigModifier = func(hc *container.HostConfig) {
-			hc.DNS = []netip.Addr{netip.MustParseAddr(dnsIP)}
+			if ip != dnsIP {
+				hc.DNS = []netip.Addr{netip.MustParseAddr(dnsIP)}
+			}
 			if hostConfig != nil {
 				hostConfig(hc)
 			}
