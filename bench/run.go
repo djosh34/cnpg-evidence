@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -123,6 +124,7 @@ var stateCommands = [][]string{
 	{"docker", "logs", "--tail", "30", "k3s-1"},
 	{"docker", "logs", "--tail", "30", "k3s-2"},
 	{"docker", "logs", "--tail", "30", "k3s-3"},
+	{"docker", "exec", "k3s-1", "ls", "-la", "/run", "/run/flannel"},
 	{"kubectl", "get", "nodes", "-o", "wide"},
 	{"kubectl", "get", "pods", "-A", "-o", "wide"},
 	{"kubectl", "get", "clusters,backups,certificates,certificaterequests,orders,challenges", "-A"},
@@ -136,12 +138,15 @@ func dumpState(ctx context.Context) string {
 	state := "State of the cluster:\n"
 	for _, c := range stateCommands {
 		ctx, cancel := context.WithTimeout(ctx, time.Minute)
-		out, err := command(ctx, nil, c[0], c[1:]...)
+		cmd := exec.CommandContext(ctx, c[0], c[1:]...)
+		cmd.Env = append(os.Environ(), "KUBECONFIG="+kubeconfig)
+		// docker logs prints the container's stderr on its own stderr.
+		out, err := cmd.CombinedOutput()
 		cancel()
+		state += fmt.Sprintf("\n$ %s\n%s", strings.Join(c, " "), out)
 		if err != nil {
-			out = err.Error()
+			state += err.Error() + "\n"
 		}
-		state += fmt.Sprintf("\n$ %s\n%s\n", strings.Join(c, " "), out)
 	}
 	return state
 }
