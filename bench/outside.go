@@ -130,6 +130,7 @@ func startStore(ctx context.Context, nw *testcontainers.DockerNetwork, root *ca)
 		Entrypoint: []string{"/usr/local/bin/versitygw"},
 		Cmd: []string{"--access", s3Access, "--secret", s3Secret, "--port", ":443",
 			"--cert", "/tls/tls.crt", "--key", "/tls/tls.key", "posix", "/data"},
+		Mounts: testcontainers.ContainerMounts{testcontainers.VolumeMount("s3", "/data")},
 		Files: []testcontainers.ContainerFile{
 			file("/tls/tls.crt", string(cert)),
 			file("/tls/tls.key", string(key)),

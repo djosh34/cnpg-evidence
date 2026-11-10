@@ -116,6 +116,10 @@ func (s *scenario) table(name string) string {
 // What the state dump of a failed scenario shows.
 var stateCommands = [][]string{
 	{"docker", "ps", "-a"},
+	{"docker", "logs", "--tail", "30", "dns"},
+	{"docker", "logs", "--tail", "30", "acme"},
+	{"docker", "logs", "--tail", "30", "s3"},
+	{"docker", "logs", "--tail", "30", "client"},
 	{"kubectl", "get", "nodes", "-o", "wide"},
 	{"kubectl", "get", "pods", "-A", "-o", "wide"},
 	{"kubectl", "get", "clusters,backups,certificates,certificaterequests,orders,challenges", "-A"},
