@@ -78,6 +78,9 @@ func (s *scenario) beforeStep(ctx context.Context, st *godog.Step) (context.Cont
 	s.kind, s.stepStart, s.detail = st.Type, time.Now(), ""
 	logf("%s %s", keyword(st.Type), st.Text)
 	if st.Type == messages.PickleStepType_ACTION && s.cl == nil {
+		if s.w == nil {
+			return ctx, errors.New("the cluster did not start")
+		}
 		logf("starting the client, writes %t", s.writes)
 		cl, err := s.w.startClient(ctx, s.writes)
 		s.cl = cl

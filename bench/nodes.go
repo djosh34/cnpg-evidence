@@ -42,12 +42,13 @@ type node struct {
 // first, and waits until each is Ready. It writes the kubeconfig of the
 // first node's API server to workDir/kubeconfig.
 func startNodes(ctx context.Context, nw *testcontainers.DockerNetwork) ([]*node, error) {
-	files, err := k3sFiles()
-	if err != nil {
-		return nil, err
-	}
 	var nodes []*node
 	for i := range nodeCount {
+		// Each node needs its own files: a file's reader is read once.
+		files, err := k3sFiles()
+		if err != nil {
+			return nil, err
+		}
 		n, err := startNode(ctx, nw, i, files)
 		if err != nil {
 			return nil, err
