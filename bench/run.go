@@ -98,6 +98,9 @@ func (s *scenario) tearDown(sn *godog.Scenario, err error) error {
 	table := s.table(sn.Name)
 	say(os.Stdout, "\n%s\n", table)
 	state := dumpState(s.ctx)
+	if s.w != nil {
+		state += "\n" + s.w.mon.history(s.ctx, s.w.built)
+	}
 	if err != nil {
 		say(os.Stdout, "\n%s", state)
 	}

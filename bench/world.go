@@ -18,6 +18,8 @@ type world struct {
 	root *ca
 	bao  *openbao
 	mon  *monitoring
+
+	built time.Time // when the bench started to build it
 }
 
 func newWorld(ctx context.Context) (*world, error) {
@@ -29,7 +31,7 @@ func newWorld(ctx context.Context) (*world, error) {
 	if err != nil {
 		return nil, err
 	}
-	w := &world{nw: nw, root: root}
+	w := &world{nw: nw, root: root, built: time.Now()}
 	logf("starting the DNS, the company CA, the store and the monitoring")
 	if err := startDNS(ctx, nw); err != nil {
 		return nil, err

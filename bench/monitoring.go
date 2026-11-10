@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -488,8 +489,9 @@ func (m *monitoring) dashboardHasData(ctx context.Context) error {
 }
 
 // everySource: Prometheus has the metrics of every source the rules read:
-// for each instance the four compliance checks and its data disk, and the
-// chart's two certificates.
+// for each instance the four compliance checks and its data disk, the
+// chart's two certificates and a backup the plugin reports; and no alert
+// fires.
 func (m *monitoring) everySource(ctx context.Context) error {
 	wants := []struct {
 		promql string
@@ -498,6 +500,8 @@ func (m *monitoring) everySource(ctx context.Context) error {
 		{`count by (pod) (cnpg_compliance_violations{cluster="` + clusterName + `"}) == 4`, nodeCount},
 		{`cnpg_sample:data_disk_used_ratio{cluster="` + clusterName + `"}`, nodeCount},
 		{`cnpg_sample:certificate_expiration_timestamp_seconds{cluster="` + clusterName + `"}`, 2},
+		{`max(barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{cluster="` + clusterName + `"}) > 0`, 1},
+		{`ALERTS{alertstate="firing"}`, 0},
 	}
 	for _, want := range wants {
 		result, err := m.query(ctx, want.promql, false)
@@ -521,4 +525,36 @@ func (m *monitoring) none(ctx context.Context, promql string) error {
 		return fmt.Errorf("%s has %d results", promql, len(result))
 	}
 	return nil
+}
+
+// history is when each alert was pending and firing since from, as
+// Prometheus recorded it, for the state of a failed run.
+func (m *monitoring) history(ctx context.Context, from time.Time) string {
+	q := url.Values{}
+	q.Set("query", "ALERTS")
+	q.Set("start", strconv.FormatInt(from.Unix(), 10))
+	q.Set("end", strconv.FormatInt(time.Now().Unix(), 10))
+	q.Set("step", "15")
+	var resp struct {
+		Data struct {
+			Result []struct {
+				Metric map[string]string `json:"metric"`
+				Values [][2]any          `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := m.get(ctx, "http://"+prometheusIP+":9090/api/v1/query_range?"+q.Encode(), &resp); err != nil {
+		return "The alerts: " + err.Error() + "\n"
+	}
+	out := "The alerts since the cluster was built, from Prometheus (UTC):\n"
+	for _, r := range resp.Data.Result {
+		times := make([]string, 0, 2)
+		for _, i := range []int{0, len(r.Values) - 1} {
+			if t, ok := r.Values[i][0].(float64); ok {
+				times = append(times, time.Unix(int64(t), 0).UTC().Format(time.TimeOnly))
+			}
+		}
+		out += fmt.Sprintf("  %s %s: %s\n", alertKey(r.Metric["alertname"], r.Metric["pod"]), r.Metric["alertstate"], strings.Join(times, " to "))
+	}
+	return out
 }
