@@ -1,0 +1,153 @@
+# Values for the opentelemetry-collector chart 0.177.0, release "otel" in
+# otel, the namespace the cluster chart admits to the metrics port 9187.
+#
+# Two collectors, both sending OTLP over gRPC with mTLS to one upstream URL
+# outside the cluster, which hands the metrics to the rule evaluator:
+#   - agent, a DaemonSet: one collector per node, scraping what runs on its
+#     node: the CNPG exporters every 5 s, the kubelet and its cAdvisor.
+#   - cluster, a Deployment: cert-manager.
+# The scrapes add the labels docs/monitoring.md lists and keep every metric
+# name. A collector lost with its node leaves its last samples with the
+# evaluator; rules.yaml counts an instance whose newest sample is 30 s behind
+# the others' as reporting nothing.
+
+# The collectors' client certificate (templates/certificate.yaml).
+client:
+  secretName: otel-client
+  dnsNames: [k3s-1.example.test, k3s-2.example.test, k3s-3.example.test]
+  issuer:
+    kind: ClusterIssuer
+    name: company-acme
+
+agent:
+  fullnameOverride: otel  # the DaemonSet is otel-agent
+  mode: daemonset
+  image: &image
+    repository: otel/opentelemetry-collector-contrib
+    digest: sha256:7f22d2a6748110ffb6a59bc0df448bccbf501cdb667d610ede4c61d3863d5849  # 0.163.2
+  command: &command
+    name: otelcol-contrib
+  service: &service
+    enabled: false
+  # The collector sends; it opens no port but its health check.
+  ports: &ports
+    otlp: {enabled: false}
+    otlp-http: {enabled: false}
+    jaeger-compact: {enabled: false}
+    jaeger-thrift: {enabled: false}
+    jaeger-grpc: {enabled: false}
+    zipkin: {enabled: false}
+  clusterRole:
+    create: true
+    rules:
+      - apiGroups: [""]
+        resources: [pods, nodes]
+        verbs: [get, list, watch]
+      - apiGroups: [""]
+        resources: [nodes/metrics]
+        verbs: [get]
+  # The client certificate, and the company CA from the Secret company-ca.
+  extraVolumes: &volumes
+    - name: client
+      secret: {secretName: otel-client}
+    - name: company-ca
+      secret: {secretName: company-ca}
+  extraVolumeMounts: &mounts
+    - {name: client, mountPath: /etc/otel/client, readOnly: true}
+    - {name: company-ca, mountPath: /etc/otel/company-ca, readOnly: true}
+  alternateConfig:
+    extensions: &extensions
+      health_check:
+        endpoint: ${env:MY_POD_IP}:13133
+    receivers:
+      prometheus:
+        config:
+          scrape_configs:
+            # Every 5 s: CNPGWritesBlocked must see a wait of 10 s. The
+            # server certificate names the nodes.
+            - job_name: cnpg
+              scrape_interval: 5s
+              scrape_timeout: 5s
+              scheme: https
+              tls_config:
+                ca_file: /etc/otel/company-ca/ca.crt
+                server_name: k3s-1.example.test
+              kubernetes_sd_configs:
+                - role: pod
+                  namespaces: {names: [databases]}
+                  selectors:
+                    - {role: pod, field: "spec.nodeName=${env:OTEL_K8S_NODE_NAME}"}
+              relabel_configs:
+                - {source_labels: [__meta_kubernetes_pod_label_cnpg_io_podRole], regex: instance, action: keep}
+                - {source_labels: [__meta_kubernetes_pod_container_port_number], regex: "9187", action: keep}
+                - {source_labels: [__meta_kubernetes_namespace], target_label: namespace}
+                - {source_labels: [__meta_kubernetes_pod_name], target_label: pod}
+                - {source_labels: [__meta_kubernetes_pod_label_cnpg_io_cluster], target_label: cluster}
+                - {source_labels: [__meta_kubernetes_pod_node_name], target_label: node}
+            # The kubelet signs its serving certificate with the cluster's CA.
+            - job_name: kubelet
+              scrape_interval: 15s
+              scheme: https
+              authorization: {credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token}
+              tls_config: {ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt}
+              kubernetes_sd_configs: &node
+                - role: node
+                  selectors:
+                    - {role: node, field: "metadata.name=${env:OTEL_K8S_NODE_NAME}"}
+              relabel_configs: &nodeLabel
+                - {source_labels: [__meta_kubernetes_node_name], target_label: node}
+            - job_name: cadvisor
+              scrape_interval: 15s
+              scheme: https
+              metrics_path: /metrics/cadvisor
+              authorization: {credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token}
+              tls_config: {ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt}
+              kubernetes_sd_configs: *node
+              relabel_configs: *nodeLabel
+    exporters: &exporters
+      otlp_grpc:
+        endpoint: otel.example.test:4317
+        tls:
+          ca_file: /etc/otel/company-ca/ca.crt
+          cert_file: /etc/otel/client/tls.crt
+          key_file: /etc/otel/client/tls.key
+    service: &pipeline
+      extensions: [health_check]
+      pipelines:
+        metrics:
+          receivers: [prometheus]
+          exporters: [otlp_grpc]
+
+cluster:
+  fullnameOverride: otel-cluster
+  mode: deployment
+  replicaCount: 1
+  image: *image
+  command: *command
+  service: *service
+  ports: *ports
+  clusterRole:
+    create: true
+    rules:
+      - apiGroups: [""]
+        resources: [pods]
+        verbs: [get, list, watch]
+  extraVolumes: *volumes
+  extraVolumeMounts: *mounts
+  alternateConfig:
+    extensions: *extensions
+    receivers:
+      prometheus:
+        config:
+          scrape_configs:
+            # cert-manager names each Certificate by its own namespace and name.
+            - job_name: cert-manager
+              scrape_interval: 15s
+              honor_labels: true
+              kubernetes_sd_configs:
+                - role: pod
+                  namespaces: {names: [cert-manager]}
+              relabel_configs:
+                - {source_labels: [__meta_kubernetes_pod_container_port_number], regex: "9402", action: keep}
+    exporters: *exporters
+    service: *pipeline

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -17,7 +18,9 @@ import (
 //     for later lines, as in "after the promote";
 //   - a state, which the bench checks in a Given or Then line: now, waiting
 //     up to the line's limit, or for the line's time;
-//   - a measure over the whole scenario, whose line gives the limit.
+//   - a measure over the whole scenario, whose line gives the limit;
+//   - a check of the time since an event, in "has been ... since the
+//     <event>".
 //
 // A line whose thing and word are not here fails the run.
 type word struct {
@@ -25,19 +28,29 @@ type word struct {
 	event   func(context.Context, *scenario, args) error
 	state   func(context.Context, *scenario, args) error
 	longest func(context.Context, *scenario) (time.Duration, error)
+	since   func(context.Context, *scenario, args, time.Time) error
 	// A measure whose limit in always.feature a scenario's own line sets.
 	scenarioLimit bool
 }
 
 var vocabulary = map[string]word{
 	// Events.
-	"<role> | promoted": {mark: "promote", event: promote},
-	"writing | stops":   {event: stopWriting},
+	"<role> | promoted":      {mark: "promote", event: promote},
+	"writing | stops":        {event: stopWriting},
+	"<role>'s node | killed": {mark: "kill", event: killNodeOf},
+	"the node | starts":      {mark: "start", event: startKilled},
 
 	// States.
 	"the cluster | healthy":        {state: clusterHealthy},
 	"<role> | primary":             {state: rolePrimary},
+	"<role> | still primary":       {state: rolePrimary},
 	"no acknowledged write | lost": {state: noneLost},
+	"the alerts | healthy":         {state: alertsHealthy},
+	"the dashboard | healthy":      {state: dashboardHealthy},
+	"the exporters | healthy":      {state: exportersAnswer},
+
+	// Since an event.
+	"the exporters of <role> and <role> | healthy": {since: exportersKept},
 
 	// Measures, on the client: the longest time without a successful read,
 	// and without an acknowledged write while the client writes.
@@ -55,6 +68,125 @@ func promote(ctx context.Context, s *scenario, a args) error {
 		return err
 	}
 	s.roles["the new primary"] = pod
+	return nil
+}
+
+// killNodeOf: the node of the instance stops at once, as a lost VM.
+func killNodeOf(ctx context.Context, s *scenario, a args) error {
+	if a.pods[0] == anotherInstance {
+		return errors.New("kill the node of a named instance")
+	}
+	node, err := killNode(ctx, a.pods[0], s.down)
+	if err == nil {
+		s.down = append(s.down, node)
+	}
+	return err
+}
+
+// startKilled: the killed node starts again.
+func startKilled(ctx context.Context, s *scenario, _ args) error {
+	if len(s.down) != 1 {
+		return fmt.Errorf("the node starts: %d nodes are down", len(s.down))
+	}
+	if err := restartNode(ctx, s.down[0]); err != nil {
+		return err
+	}
+	s.down = nil
+	return nil
+}
+
+// alertsHealthy: no alert fires, every alert the scenario says fired or
+// fires fired, and no other did but those it says may fire.
+func alertsHealthy(ctx context.Context, s *scenario, _ args) error {
+	firing, err := s.w.mon.firing(ctx)
+	if err != nil {
+		return err
+	}
+	if len(firing) > 0 {
+		return fmt.Errorf("still firing: %s", strings.Join(slices.Sorted(maps.Keys(firing)), ", "))
+	}
+	fired, err := s.w.mon.fired(ctx, s.started)
+	if err != nil {
+		return err
+	}
+	var missing, other []string
+	for key, must := range s.alerts {
+		if must && !fired[key] {
+			missing = append(missing, key)
+		}
+	}
+	for key := range fired {
+		if _, named := s.alerts[key]; !named {
+			other = append(other, key)
+		}
+	}
+	slices.Sort(missing)
+	slices.Sort(other)
+	if len(missing) > 0 || len(other) > 0 {
+		return fmt.Errorf("did not fire: %v; fired, not named by the scenario: %v", missing, other)
+	}
+	s.detail = "fired: " + strings.Join(slices.Sorted(maps.Keys(fired)), ", ")
+	return nil
+}
+
+// dashboardHealthy: every panel of the dashboard has data in Grafana.
+func dashboardHealthy(ctx context.Context, s *scenario, _ args) error {
+	return s.w.mon.dashboardHasData(ctx)
+}
+
+// The two query metrics the exporter checks read: the chart's cn_mapping
+// check and CNPG's in_recovery.
+var queryMetrics = []string{
+	`cnpg_compliance_violations{namespace="` + namespace + `", check="cn_mapping"}`,
+	`cnpg_pg_replication_in_recovery{namespace="` + namespace + `"}`,
+}
+
+// exportersAnswer: every instance's exporter answered with both query
+// metrics in the last 30 s.
+func exportersAnswer(ctx context.Context, s *scenario, _ args) error {
+	pods, err := instances(ctx)
+	if err != nil {
+		return err
+	}
+	for _, metric := range queryMetrics {
+		fresh, err := s.w.mon.pods(ctx, "time() - timestamp("+metric+") < 30")
+		if err != nil {
+			return err
+		}
+		for _, pod := range pods {
+			if !fresh[pod] {
+				return fmt.Errorf("the exporter of %s did not answer with %s in the last 30 s", pod, metric)
+			}
+		}
+	}
+	return nil
+}
+
+// exportersKept: the exporters of the instances kept their query metrics
+// from the event to now: in every 15 s in which one answered, at least one
+// answer had both, and none went 60 s without answering. A change of the
+// Cluster gives each exporter new, empty query results, so one answer
+// right after one can lack them.
+func exportersKept(ctx context.Context, s *scenario, a args, from time.Time) error {
+	window := int(time.Since(from).Seconds())
+	for _, pod := range a.pods {
+		if pod == anotherInstance {
+			return errors.New("name the instances")
+		}
+		up := fmt.Sprintf(`cnpg_collector_up{namespace=%q, pod=%q}`, namespace, pod)
+		silent := fmt.Sprintf(`min_over_time((sum(count_over_time(%s[60s])) or vector(0))[%ds:5s]) == 0`, up, window)
+		if err := s.w.mon.none(ctx, silent); err != nil {
+			return fmt.Errorf("the exporter of %s did not answer for 60 s or longer: %w", pod, err)
+		}
+		for _, metric := range queryMetrics {
+			metric = strings.Replace(metric, "{", fmt.Sprintf("{pod=%q, ", pod), 1)
+			without := fmt.Sprintf(`max_over_time((sum(count_over_time(%s[15s])) > 0 unless on () sum(count_over_time(%s[15s])))[%ds:5s])`,
+				up, metric, window)
+			if err := s.w.mon.none(ctx, without); err != nil {
+				return fmt.Errorf("the exporter of %s answered for 15 s or longer without %s: %w", pod, metric, err)
+			}
+		}
+	}
 	return nil
 }
 

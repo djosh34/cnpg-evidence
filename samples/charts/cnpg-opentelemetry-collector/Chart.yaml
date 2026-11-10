@@ -1,0 +1,16 @@
+apiVersion: v2
+name: cnpg-opentelemetry-collector
+description: The OTel collectors inside the cluster, a DaemonSet agent and a Deployment, sending OTLP with mTLS to one upstream URL.
+type: application
+version: 0.1.0
+dependencies:
+  # One collector per node, for what runs on its node.
+  - name: opentelemetry-collector
+    alias: agent
+    version: 0.177.0
+    repository: file://../opentelemetry-collector
+  # One collector for the cluster's own services.
+  - name: opentelemetry-collector
+    alias: cluster
+    version: 0.177.0
+    repository: file://../opentelemetry-collector

@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -20,17 +22,24 @@ import (
 // files.
 //
 //	<thing> is|are <word> [< N s [after the <event>] | for N s]
+//	<thing> has|have been <word> since the <event>
 //	<thing> starts|stops|runs|passes
 //	N s pass [after the <event>]
+//	<ALERT> fired|may fire|fires|resolves|has not fired for <role> [< N s [after the <event>]]
+//	Alertmanager gets|sends|mutes <ALERT> for <role> [< N s [after the <event>]]
 //	no writes
 //
 // "< N s" counts from the line above, "< N s after the <event>" from that
-// event, and "for N s" watches the state for the next N s.
+// event, "for N s" watches the state for the next N s, and "since the
+// <event>" checks the whole time from that event to now.
 const (
 	within    = ` < (\d+) s(?: after the (\w+))?`
 	isLine    = `^(.+?) (?:is|are) (.+?)(?:` + within + `| for (\d+) s)?$`
+	sinceLine = `^(.+?) (?:has|have) been (.+) since the (\w+)$`
 	verbLine  = `^(.+?) (starts?|stops|runs|passes)$`
 	passLine  = `^(\d+) s pass(?: after the (\w+))?$`
+	alertLine = `^(CNPG\w+) (fired|may fire|fires|resolves|has not fired) for (.+?)(?:` + within + `)?$`
+	amLine    = `^Alertmanager (gets|sends|mutes) (CNPG\w+) for (.+?)(?:` + within + `)?$`
 	quietLine = `^no writes$`
 )
 
@@ -39,8 +48,11 @@ func (s *scenario) bind(sc *godog.ScenarioContext) {
 	sc.StepContext().After(s.afterStep)
 
 	sc.Step(isLine, s.is)
+	sc.Step(sinceLine, s.since)
 	sc.Step(verbLine, s.verb)
 	sc.Step(passLine, s.pass)
+	sc.Step(alertLine, s.alert)
+	sc.Step(amLine, s.alertmanager)
 	sc.Step(quietLine, s.noWrites)
 }
 
@@ -58,6 +70,11 @@ type scenario struct {
 	cl          *client
 	clientEnded time.Time
 	writes      bool // false after "Given no writes"
+
+	down []string // the nodes killed and not started again
+
+	started time.Time       // when the scenario started, after the monitoring was ready
+	alerts  map[string]bool // the alerts the scenario names, "<alertname> <pod>": true when they must fire, false when they may
 
 	limits   map[string]int // the scenario's own limits of the measures
 	inAlways bool           // always.feature runs
@@ -137,6 +154,8 @@ func (s *scenario) is(thing, word, n, after, forN string) error {
 	}
 	w := vocabulary[key]
 	switch {
+	case w.since != nil:
+		return fmt.Errorf("%s takes only \"has been ... since the <event>\"", key)
 	case w.event != nil:
 		if n != "" || forN != "" {
 			return fmt.Errorf("an event takes no limit: %s", key)
@@ -159,6 +178,131 @@ func (s *scenario) is(thing, word, n, after, forN string) error {
 		return poll(s.ctx, deadline, check)
 	}
 	return check(s.ctx)
+}
+
+// since: "<thing> has been <word> since the <event>", a check of the whole
+// time from that event to now.
+func (s *scenario) since(thing, word, event string) error {
+	key, a, err := s.lookup(thing, word)
+	if err != nil {
+		return err
+	}
+	w := vocabulary[key]
+	if w.since == nil {
+		return fmt.Errorf("%s takes no \"since\"", key)
+	}
+	if s.kind == messages.PickleStepType_ACTION {
+		return fmt.Errorf("a check in a When line: %s", key)
+	}
+	from, ok := s.marks[event]
+	if !ok {
+		return fmt.Errorf("no %s yet", event)
+	}
+	return w.since(s.ctx, s, a, from)
+}
+
+// alert: "<ALERT> fires for <role> < N s" and the other alert words. fires
+// and resolves wait up to N s, or check now; fired and has not fired check
+// the whole scenario. fired and fires name an alert that must fire, may fire
+// one that may; always.feature's "the alerts are healthy" fails on any
+// other.
+func (s *scenario) alert(name, verb, who, n, after string) error {
+	if s.kind == messages.PickleStepType_ACTION {
+		return errors.New("an alert check in a When line")
+	}
+	pod, err := s.role(who)
+	if err != nil {
+		return err
+	}
+	if pod == anotherInstance {
+		return errors.New("an alert names one instance")
+	}
+	key := alertKey(name, pod)
+	var check func(context.Context) error
+	switch verb {
+	case "may fire":
+		if !s.alerts[key] {
+			s.alerts[key] = false
+		}
+		return nil
+	case "fires":
+		s.alerts[key] = true
+		check = s.alertIs(key, true, false)
+	case "resolves":
+		check = s.alertIs(key, false, false)
+	case "fired":
+		s.alerts[key] = true
+		check = s.alertIs(key, true, true)
+	case "has not fired":
+		check = s.alertIs(key, false, true)
+	}
+	if n == "" {
+		return check(s.ctx)
+	}
+	deadline, err := s.deadline(n, after)
+	if err != nil {
+		return err
+	}
+	return poll(s.ctx, deadline, check)
+}
+
+// alertIs checks that key fires now, or fired in the scenario, or not.
+func (s *scenario) alertIs(key string, want, inScenario bool) func(context.Context) error {
+	return func(ctx context.Context) error {
+		alerts, err := s.w.mon.firing(ctx)
+		what := "fires"
+		if inScenario {
+			alerts, err = s.w.mon.fired(ctx, s.started)
+			what = "fired in the scenario"
+		}
+		if err != nil {
+			return err
+		}
+		if alerts[key] != want {
+			return fmt.Errorf("%s %s: %t; the alerts: %s", key, what, alerts[key], strings.Join(slices.Sorted(maps.Keys(alerts)), ", "))
+		}
+		return nil
+	}
+}
+
+// alertmanager: "Alertmanager gets <ALERT> for <role>" sends Alertmanager
+// that alert as the rule evaluator would; "sends" waits until the receiver
+// got it, "mutes" until Alertmanager holds it suppressed.
+func (s *scenario) alertmanager(verb, name, who, n, after string) error {
+	pod, err := s.role(who)
+	if err != nil {
+		return err
+	}
+	if pod == anotherInstance {
+		return errors.New("an alert names one instance")
+	}
+	if verb == "gets" {
+		if s.kind == messages.PickleStepType_OUTCOME || n != "" {
+			return errors.New("gets: an event, with no limit")
+		}
+		return s.w.mon.amSend(s.ctx, name, pod)
+	}
+	if s.kind == messages.PickleStepType_ACTION {
+		return errors.New("an Alertmanager check in a When line")
+	}
+	check := func(ctx context.Context) error { return s.w.mon.sent(name, pod, s.started) }
+	if verb == "mutes" {
+		check = func(ctx context.Context) error {
+			state, err := s.w.mon.amState(ctx, name, pod)
+			if err == nil && state != "suppressed" {
+				err = fmt.Errorf("the state of %s for %s in Alertmanager: %q", name, pod, state)
+			}
+			return err
+		}
+	}
+	if n == "" {
+		return check(s.ctx)
+	}
+	deadline, err := s.deadline(n, after)
+	if err != nil {
+		return err
+	}
+	return poll(s.ctx, deadline, check)
 }
 
 // verb: "<thing> starts", "stops", "runs" or "passes".
