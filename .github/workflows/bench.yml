@@ -1,0 +1,23 @@
+name: bench
+run-name: "bench: ${{ inputs.scenarios }}"
+
+# Runs only on demand. A manual run takes the scenarios to run.
+on:
+  workflow_dispatch:
+    inputs:
+      scenarios:
+        description: Scenarios to run, separated by spaces
+        type: string
+        default: switchover
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Scenarios
+        env:
+          SCENARIOS: ${{ inputs.scenarios }}
+        run: 'echo "Scenarios to run: $SCENARIOS"'
