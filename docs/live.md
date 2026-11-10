@@ -7,8 +7,8 @@ The scripts in `live/` start the samples on a three-node k3s cluster in docker a
 | File | What it is |
 |---|---|
 | [`live/up.sh`](../live/up.sh) | Starts the cluster and installs the samples (see [The cluster](#the-cluster)) |
-| [`live/node-init.sh`](../live/node-init.sh) | The first process of each node container: runs k3s and starts it again when it exits |
-| [`live/values.yaml`](../live/values.yaml) | The chart values on top of `desired.yaml`: the S3 store's address, and the node names in the server certificate's `dnsNames` |
+| [`bench/node-init.sh`](../bench/node-init.sh) | The first process of each node container: runs k3s and starts it again when it exits |
+| [`live/values.yaml`](../live/values.yaml) | The chart values on top of `samples/desired.yaml`: the S3 store's address, and the node names in the server certificate's `dnsNames` |
 | [`live/lib.sh`](../live/lib.sh) | Functions the scenarios share: bounded waits, the cluster's state, the client, the monitoring stack, the checks and the summary |
 | [`live/client/`](../live/client) | The writer and the read probes, a small Go program (see [The writer and the read probes](#the-writer-and-the-read-probes)) |
 | [`live/scenarios.txt`](../live/scenarios.txt) | The list of scenarios |
@@ -26,11 +26,11 @@ The scripts in `live/` start the samples on a three-node k3s cluster in docker a
 
 `live/up.sh` takes about 8 minutes on a runner. It starts:
 
-- Three k3s servers with embedded etcd, as the docker containers `k3s-1` to `k3s-3` on the docker network `live` (`10.77.0.0/24`, nodes at `.11` to `.13`). The k3s image is pinned by digest. In each container `live/node-init.sh` runs k3s and starts it again 5 s after it exits, as k3s's systemd unit does, so the node's pods keep running while k3s is down. k3s exits, for example, on the last node when two of three are gone.
+- Three k3s servers with embedded etcd, as the docker containers `k3s-1` to `k3s-3` on the docker network `live` (`10.77.0.0/24`, nodes at `.11` to `.13`). The k3s image is pinned by digest. In each container `bench/node-init.sh` runs k3s and starts it again 5 s after it exits, as k3s's systemd unit does, so the node's pods keep running while k3s is down. k3s exits, for example, on the last node when two of three are gone.
 - An S3 store, versitygw in the container `s3` at `10.77.0.20`, with the bucket `example-bucket`. Inside the cluster it is `s3.s3.svc:9000`. A scenario breaks it in one of two ways: it refuses connections (the container stops, and the container `s3-refuse` with nothing listening takes its address), or it accepts them and never answers (the container is paused).
-- cert-manager from `samples/values-cert-manager.yaml`, and in `databases` a self-signed CA behind the Issuer `example-ca`, the issuer that `samples/chart/values.yaml` names. Its certificate is also the client CA in the Secret `client-ca`.
-- The CNPG operator and the barman-cloud plugin from `samples/values-cnpg-operator.yaml`, `samples/values-barman-cloud.yaml` and both RBAC files.
-- `samples/chart` as release `pg` in `databases`, with `desired.yaml` and `live/values.yaml`. The instances run the chart's default image, the Hummingbird PostgreSQL image pinned by digest, as uid and gid 999.
+- cert-manager from `samples/charts/cnpg-cert-manager`, and in `databases` a self-signed CA behind the Issuer `example-ca`, the issuer that `samples/charts/cnpg-cluster/values.yaml` names. Its certificate is also the client CA in the Secret `client-ca`.
+- The CNPG operator and the barman-cloud plugin from `samples/charts/cnpg-cloudnative-pg` and `samples/charts/cnpg-plugin-barman-cloud`, which include their RBAC.
+- `samples/charts/cnpg-cluster` as release `pg` in `databases`, with `samples/desired.yaml` and `live/values.yaml`. The instances run the chart's default image, the Hummingbird PostgreSQL image pinned by digest, as uid and gid 999.
 - One pod of every service on every node, as [samples.md](samples.md#one-copy-of-every-service-per-node) says. `up.sh` checks that CoreDNS, Traefik, metrics-server, the cert-manager controller, webhook and CA injector, the operator and the plugin each run one ready pod on each of the three nodes, and that local-path-provisioner runs one.
 
 It also builds `live/client`, installs `kubectl cnpg` 1.30.1 (pinned by checksum) into `$LIVE_WORK/bin`, starts a first backup to the store, as a cluster with scheduled backups has one, and writes a client certificate for `orders-app.test`, which logs in as `orders`, into `$LIVE_WORK/certs`. `$LIVE_WORK` is `/tmp/live` by default and also holds a kubeconfig for each node's API server and the client's logs. The scripts use only those kubeconfigs, never the caller's `KUBECONFIG`.

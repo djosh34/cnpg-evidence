@@ -4,9 +4,9 @@
 # needs no cluster, host or network access.
 #
 # Usage, with the desired state on stdin:
-#   yq -o=json desired.yaml | scripts/desired/desired.sh --ca client-ca.pem
-#   yq -o=json desired.yaml | scripts/desired/desired.sh --source host-check
-#   yq -o=json desired.yaml | scripts/desired/desired.sh --source prove [--postgres-uid 999]
+#   yq -o=json samples/desired.yaml | scripts/desired/desired.sh --ca client-ca.pem
+#   yq -o=json samples/desired.yaml | scripts/desired/desired.sh --source host-check
+#   yq -o=json samples/desired.yaml | scripts/desired/desired.sh --source prove [--postgres-uid 999]
 #
 # Prints one JSON document. Exit 0, or 2 on any error, with nothing on stdout.
 set -euo pipefail

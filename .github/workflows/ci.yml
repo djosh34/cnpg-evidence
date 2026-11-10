@@ -145,6 +145,57 @@ jobs:
           "$RUNNER_TEMP/golangci-lint" config verify
           "$RUNNER_TEMP/golangci-lint" run ./...
 
+  # The bench and its client (bench/): vet, tests and golangci-lint v2.15.0,
+  # with no nolint comment, and shellcheck on its scripts.
+  bench-go:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: bench/go.mod
+          cache-dependency-path: bench/go.sum
+      - name: golangci-lint v2.15.0
+        run: |
+          set -euo pipefail
+          v=2.15.0
+          cd "$RUNNER_TEMP"
+          curl -fsSLO "https://github.com/golangci/golangci-lint/releases/download/v$v/golangci-lint-$v-linux-amd64.tar.gz"
+          echo "9b7fe6a6bf6334b98decf8d86b11415ea7889afdabdd1959fdce23af2a9ebcea  golangci-lint-$v-linux-amd64.tar.gz" | sha256sum -c -
+          tar -xzf "golangci-lint-$v-linux-amd64.tar.gz"
+          mv "golangci-lint-$v-linux-amd64/golangci-lint" golangci-lint
+          go version
+          ./golangci-lint version
+          shellcheck --version
+      - name: Vet and test
+        working-directory: bench
+        run: |
+          set -euo pipefail
+          go vet ./...
+          go test ./...
+      - name: No nolint in the bench
+        run: |
+          set -euo pipefail
+          status=0
+          grep -rin --include='*.go' nolint bench || status=$?
+          if ((status == 0)); then
+            echo "lint: nolint comments are not allowed" >&2
+            exit 1
+          fi
+          if ((status != 1)); then
+            exit "$status"
+          fi
+      - name: Lint
+        working-directory: bench
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/golangci-lint" config verify
+          "$RUNNER_TEMP/golangci-lint" run ./...
+      - name: shellcheck
+        run: shellcheck bench/host.sh bench/node-init.sh
+
   # pgfallback against PostgreSQL 18 in docker: a primary and three standbys,
   # behind TCP proxies the tests stop and start.
   client:

@@ -1,0 +1,6 @@
+# Only what bench/Dockerfile copies.
+*
+!go.mod
+!go.sum
+!pgfallback/
+!bench/

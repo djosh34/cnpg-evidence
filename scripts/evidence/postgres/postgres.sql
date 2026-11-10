@@ -69,7 +69,7 @@ SELECT json_build_object(
   'can_write_all_data',
     (SELECT coalesce(json_agg(DISTINCT name ORDER BY name), '[]') FROM by_set_or_inheritance WHERE rolname = 'pg_write_all_data'),
   -- Reading the pg_ident_file_mappings view needs both grants: the metrics
-  -- exporter has them, for the compliance query of samples/chart.
+  -- exporter has them, for the compliance query of samples/charts/cnpg-cluster.
   'can_read_ident_view',
     (SELECT coalesce(json_agg(DISTINCT name ORDER BY name), '[]') FROM by_set_or_inheritance
      WHERE has_table_privilege(oid, 'pg_catalog.pg_ident_file_mappings', 'SELECT')),

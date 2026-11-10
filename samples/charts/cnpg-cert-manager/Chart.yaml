@@ -1,0 +1,9 @@
+apiVersion: v2
+name: cnpg-cert-manager
+description: cert-manager with one pod of each service per node.
+type: application
+version: 0.1.0
+dependencies:
+  - name: cert-manager
+    version: v1.21.3
+    repository: file://../cert-manager

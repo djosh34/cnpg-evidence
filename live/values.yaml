@@ -1,4 +1,4 @@
-# The live cluster's values for samples/chart, on top of desired.yaml and the
+# The live cluster's values for samples/charts/cnpg-cluster, on top of samples/desired.yaml and the
 # chart's own values.yaml: the S3 store that live/up.sh starts, and the node
 # names in the server certificate, so a client outside the cluster can check
 # it with verify-full against the node it dials (live/pgfallback.sh).

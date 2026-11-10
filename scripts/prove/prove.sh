@@ -2,7 +2,7 @@
 # Runs login and host-uid probes, then combines their JSON records.
 #
 # Usage, with the desired state on stdin:
-#   yq -o=json desired.yaml | prove.sh [--node NAME] [--node-root DIR] [--postgres-uid UID] [--postgres-gid GID]
+#   yq -o=json samples/desired.yaml | prove.sh [--node NAME] [--node-root DIR] [--postgres-uid UID] [--postgres-gid GID]
 #
 # Exit: 0 all probes match, 1 a probe differs, 2 usage or collection error.
 set -euo pipefail

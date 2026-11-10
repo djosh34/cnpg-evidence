@@ -1,0 +1,13 @@
+# The ClusterIssuer's name. samples/values/pg.yaml names it as the cluster's issuer.
+name: company-acme
+# The ACME directory of the company CA.
+server: https://acme.example.com/v1/pki/acme/directory
+# A Secret in the release's namespace with the EAB key the company CA gave:
+# keyID and secret. Created outside the chart.
+eabSecret: company-acme-eab
+# A Secret in the release's namespace whose ca.crt signs the ACME server's
+# certificate. Empty when the server's certificate is publicly trusted.
+caSecret: ""
+# The http-01 challenges go through this ingress class: k3s's Traefik, on
+# port 80 of every node.
+ingressClassName: traefik

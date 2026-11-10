@@ -1,0 +1,5 @@
+apiVersion: v2
+name: company-acme
+description: The ClusterIssuer of the company CA, by ACME with an EAB key and http-01 through Traefik.
+type: application
+version: 0.1.0
