@@ -59,7 +59,9 @@ func run(scenario string) int {
 	}()
 
 	code := 2
-	if err := startDocker(context.Background()); err != nil {
+	if err := os.MkdirAll(workDir, 0o700); err != nil {
+		say(os.Stderr, "bench: %v\n", err)
+	} else if err := startDocker(context.Background()); err != nil {
 		say(os.Stderr, "bench: %v\n", err)
 	} else {
 		code = runScenario(scenario, results)
