@@ -41,6 +41,10 @@ func run(scenario string) int {
 		say(os.Stderr, "bench: %v\n", err)
 		return 2
 	}
+	if !scenarioTag.MatchString(scenario) {
+		say(os.Stderr, "bench: %q is not a scenario tag\n", scenario)
+		return 2
+	}
 	results, err := newResults(scenario)
 	if err != nil {
 		say(os.Stderr, "bench: results: %v\n", err)

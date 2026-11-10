@@ -23,10 +23,6 @@ var scenarioTag = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 // runScenario runs the one scenario tagged @<name> of the feature files, on
 // its own new cluster, then always.feature. It returns the exit code.
 func runScenario(name string, res *results) int {
-	if !scenarioTag.MatchString(name) {
-		say(os.Stderr, "bench: %q is not a scenario tag\n", name)
-		return 2
-	}
 	format := "progress"
 	if res.dir != "" {
 		format += ",cucumber:" + res.path("cucumber.json") + ",junit:" + res.path("junit.xml")
@@ -163,8 +159,12 @@ func newResults(scenario string) (*results, error) {
 	case err != nil:
 		return nil, err
 	}
-	dir := filepath.Join(resultsMount, scenario+"-"+time.Now().UTC().Format("20060102-150405"))
-	return &results{dir: dir}, os.MkdirAll(dir, 0o755)
+	r := &results{dir: filepath.Join(resultsMount, scenario+"-"+time.Now().UTC().Format("20060102-150405"))}
+	if err := os.MkdirAll(r.dir, 0o755); err != nil {
+		return nil, err
+	}
+	// The owner of /results can then delete what a killed run leaves in it.
+	return r, r.own()
 }
 
 func (r *results) path(name string) string { return filepath.Join(r.dir, name) }
