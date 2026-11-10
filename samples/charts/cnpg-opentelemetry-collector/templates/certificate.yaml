@@ -1,0 +1,15 @@
+# The collectors' client certificate for the upstream URL, from the
+# company CA. The CA issues only approved names, so it names the nodes.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: otel-client
+  namespace: {{ .Release.Namespace }}
+spec:
+  secretName: otel-client
+  commonName: {{ first .Values.client.dnsNames }}
+  dnsNames: {{ toJson .Values.client.dnsNames }}
+  usages: [client auth]
+  issuerRef:
+    kind: {{ .Values.client.issuer.kind }}
+    name: {{ .Values.client.issuer.name }}

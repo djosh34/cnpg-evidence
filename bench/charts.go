@@ -130,6 +130,7 @@ func runSecrets(root *ca, issuerKey eab) []secret {
 		{"cert-manager", "company-ca", ca},
 		{namespace, "client-ca", ca},
 		{namespace, "s3-ca", ca},
+		{"otel", "company-ca", ca},
 		{namespace, "backup-creds", map[string]string{"ACCESS_KEY_ID": s3Access, "ACCESS_SECRET_KEY": s3Secret}},
 	}
 }

@@ -17,6 +17,23 @@ groups:
           namespace: databases
           cluster: pg
 
+      # The instances whose metrics arrive: the newest cnpg_collector_up of
+      # each is at most 30 s older than the newest of its cluster. A collector
+      # lost with its node sends no stale marker, so without this its last
+      # samples would count for the evaluator's whole lookback, 5 min in
+      # Prometheus. The value is the time of the newest sample.
+      - record: cnpg_sample:instance_reports
+        expr: |
+          max by (namespace, cluster, pod) (timestamp(cnpg_collector_up))
+            > on (namespace, cluster) group_left ()
+          max by (namespace, cluster) (timestamp(cnpg_collector_up)) - 30
+
+      # The instance that reports itself as the primary, out of recovery.
+      - record: cnpg_sample:primary
+        expr: |
+          max by (namespace, cluster, pod) (cnpg_pg_replication_in_recovery == 0)
+            and on (namespace, pod) cnpg_sample:instance_reports
+
       # One series per instance in the primary's pg_stat_replication, named by
       # its pod: CNPG sets each replica's application_name to its pod name.
       - record: cnpg_sample:replica_streaming
@@ -24,7 +41,7 @@ groups:
           count by (namespace, cluster, pod) (
             label_replace(
               cnpg_pg_stat_replication_backend_start
-                and on (namespace, pod) cnpg_pg_replication_in_recovery == 0,
+                and on (namespace, pod) cnpg_sample:primary,
               "pod", "$1", "application_name", "(.+)"))
 
       # An instance answers when cnpg_collector_up is 1 and it is not fenced:
@@ -33,14 +50,16 @@ groups:
       # cnpg_pg_replication_in_recovery, may be the primary; CNPGMetricsMissing
       # covers it.
       - record: cnpg_sample:instance_answers
-        expr: max by (namespace, cluster, pod) (cnpg_collector_up == 1 and on (namespace, pod) cnpg_collector_fencing_on == 0)
+        expr: |
+          max by (namespace, cluster, pod) (cnpg_collector_up == 1 and on (namespace, pod) cnpg_collector_fencing_on == 0)
+            and on (namespace, pod) cnpg_sample:instance_reports
 
       - alert: CNPGDatabaseDown
         expr: |
           cnpg_sample:database
             unless on (namespace, cluster)
           (
-            cnpg_pg_replication_in_recovery == 0
+            cnpg_sample:primary
             or
             (cnpg_sample:instance_answers unless on (namespace, pod) cnpg_pg_replication_in_recovery)
           )
@@ -53,22 +72,23 @@ groups:
 
       # An instance seen in the last day, other than the primary, that is not
       # in the primary's pg_stat_replication while a primary reports its
-      # metrics; or an instance seen in the last day whose metrics stopped:
-      # its pod or node is gone, or its scrape fails. The second part also
-      # holds while the exporters report no query metrics, and so no primary.
+      # metrics; or an instance seen in the last day whose metrics stopped
+      # arriving: its pod or node is gone, or its scrape fails. The second
+      # part also holds while the exporters report no query metrics, and so
+      # no primary.
       - alert: CNPGReplicaDown
         expr: |
           (
             (
               max by (namespace, cluster, pod) (max_over_time(cnpg_collector_up[1d]))
-                unless on (namespace, pod) cnpg_pg_replication_in_recovery == 0
+                unless on (namespace, pod) cnpg_sample:primary
                 unless on (namespace, pod) cnpg_sample:replica_streaming
-                and on (namespace, cluster) cnpg_pg_replication_in_recovery == 0
+                and on (namespace, cluster) cnpg_sample:primary
             )
             or
             (
               max by (namespace, cluster, pod) (max_over_time(cnpg_collector_up[1d]))
-                unless on (namespace, pod) cnpg_collector_up
+                unless on (namespace, pod) cnpg_sample:instance_reports
             )
           )
           and on (namespace, cluster) cnpg_sample:database
@@ -106,7 +126,7 @@ groups:
             or
             max by (namespace, cluster) (
               cnpg_pg_stat_archiver_last_failed_time > cnpg_pg_stat_archiver_last_archived_time
-                and on (namespace, pod) cnpg_pg_replication_in_recovery == 0
+                and on (namespace, pod) cnpg_sample:primary
             )
             or
             (cnpg_sample:database unless on (namespace, cluster) barman_cloud_cloudnative_pg_io_last_available_backup_timestamp)

@@ -218,7 +218,7 @@ replication:
 
 [../samples/charts/cnpg-cluster/templates/certificates.yaml](../samples/charts/cnpg-cluster/templates/certificates.yaml), [../samples/desired.yaml](../samples/desired.yaml)
 
-The server certificate serves 5432 to clients and replicas, and 9187 to the metrics scrapers (see [Metrics over TLS](#metrics-over-tls)). A client that checks the name, with `verify-full` or a scraper's `server_name`, uses one of the names in `dnsNames`; the sample's examples use `pg-rw`. Listing only those names keeps one list in `samples/desired.yaml` for both certificates. `server auth` is the only use the certificate has. Both certificates carry the same CN and names, so one CN and one name list in `samples/desired.yaml` describe both.
+The server certificate serves 5432 to clients and replicas, and 9187 to the metrics scrapers (see [Metrics over TLS](#metrics-over-tls)). A client that checks the name, with `verify-full` or a scraper's `server_name`, uses one of the names in `dnsNames`: `pg-rw` with the sample's own names, a node name with a company CA that issues only the node names, as in the bench. Listing only those names keeps one list in `samples/desired.yaml` for both certificates. `server auth` is the only use the certificate has. Both certificates carry the same CN and names, so one CN and one name list in `samples/desired.yaml` describe both.
 
 ## A replication certificate from cert-manager with a node's host name as CN
 
@@ -1138,13 +1138,29 @@ Prometheus scrapes every minute over HTTP by default, and CNPG's `PodMonitor` ex
     scrape_interval: 5s
     scheme: https
     tls_config:
-      ca_file: /etc/cnpg/ca.crt  # the CA of the server certificate
-      server_name: pg-rw         # one of its dnsNames
+      ca_file: /etc/otel/company-ca/ca.crt  # the CA of the server certificate
+      server_name: k3s-1.example.test       # one of its dnsNames
 ```
 
-[monitoring.md](monitoring.md#scrape-targets-and-labels)
+[../samples/charts/cnpg-opentelemetry-collector/values.yaml](../samples/charts/cnpg-opentelemetry-collector/values.yaml), [monitoring.md](monitoring.md#scrape-targets-and-labels)
 
 The metrics port answers only over TLS (see [Metrics over TLS](#metrics-over-tls)). `CNPGWritesBlocked` must see a wait of 10 s, so the scrape runs every 5 s, and with `metricsQueriesTTL: 0s` each scrape runs the queries anew. The `cluster` label comes from the pod label `cnpg.io/cluster` and names the database in every rule; `node` names each instance by its node on the dashboard.
+
+## An instance counts only while its metrics arrive
+
+An OTel collector on each node scrapes the exporters of that node. When the node is lost, its collector goes with it and sends no stale marker, so the rule evaluator keeps the instance's last samples for its lookback, 5 minutes in Prometheus. A lost primary would then still count as the primary for those 5 minutes, and `CNPGReplicaDown` would fire for it after about 10. The rules count an instance only while its newest sample is at most 30 s older than the newest of its cluster.
+
+```yaml
+      - record: cnpg_sample:instance_reports
+        expr: |
+          max by (namespace, cluster, pod) (timestamp(cnpg_collector_up))
+            > on (namespace, cluster) group_left ()
+          max by (namespace, cluster) (timestamp(cnpg_collector_up)) - 30
+```
+
+[../samples/monitoring/rules.yaml](../samples/monitoring/rules.yaml), [monitoring.md](monitoring.md#collectors)
+
+The primary, the replicas streaming from it, the instances that answer and `CNPGReplicaDown`'s missing metrics all read it. Comparing with the cluster's newest sample, not with the evaluator's clock, keeps a slow pipeline from making every instance look lost.
 
 ## A dashboard of the sample instead of CNPG's dashboard
 

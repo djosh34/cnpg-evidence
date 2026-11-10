@@ -31,7 +31,10 @@ func runScenario(name string, res *results) int {
 	suite := godog.TestSuite{
 		Name: "bench",
 		ScenarioInitializer: func(sc *godog.ScenarioContext) {
-			s := &scenario{results: res, writes: true, marks: map[string]time.Time{}, limits: map[string]int{}}
+			s := &scenario{
+				results: res, writes: true,
+				marks: map[string]time.Time{}, limits: map[string]int{}, alerts: map[string]bool{},
+			}
 			sc.Before(func(ctx context.Context, sn *godog.Scenario) (context.Context, error) {
 				ran++
 				s.ctx = ctx
@@ -75,6 +78,7 @@ func (s *scenario) setUp(sn *godog.Scenario) error {
 		return err
 	}
 	logf("the primary is %s, replica 1 %s, replica 2 %s", s.roles["the primary"], s.roles["replica 1"], s.roles["replica 2"])
+	s.started = time.Now()
 	return nil
 }
 
@@ -94,6 +98,9 @@ func (s *scenario) tearDown(sn *godog.Scenario, err error) error {
 	table := s.table(sn.Name)
 	say(os.Stdout, "\n%s\n", table)
 	state := dumpState(s.ctx)
+	if s.w != nil {
+		state += "\n" + s.w.mon.history(s.ctx, s.w.built)
+	}
 	if err != nil {
 		say(os.Stdout, "\n%s", state)
 	}
@@ -116,6 +123,9 @@ var stateCommands = [][]string{
 	{"docker", "logs", "--tail", "30", "acme"},
 	{"docker", "logs", "--tail", "30", "s3"},
 	{"docker", "logs", "--tail", "30", "client"},
+	{"docker", "logs", "--tail", "30", "otel"},
+	{"docker", "logs", "--tail", "30", "prometheus"},
+	{"docker", "logs", "--tail", "30", "alertmanager"},
 	{"docker", "logs", "--tail", "30", "k3s-1"},
 	{"docker", "logs", "--tail", "30", "k3s-2"},
 	{"docker", "logs", "--tail", "30", "k3s-3"},
@@ -126,6 +136,7 @@ var stateCommands = [][]string{
 	{"kubectl", "describe", "cluster", clusterName, "-n", namespace},
 	{"kubectl", "get", "events", "-A", "--sort-by=.lastTimestamp"},
 	{"kubectl", "logs", "-n", "cnpg-system", "-l", "app.kubernetes.io/name=cloudnative-pg", "--tail=100", "--prefix"},
+	{"kubectl", "logs", "-n", "otel", "-l", "app.kubernetes.io/instance=otel", "--tail=20", "--prefix"},
 }
 
 func dumpState(ctx context.Context) string {

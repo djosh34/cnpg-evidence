@@ -108,11 +108,13 @@ func TestLookup(t *testing.T) {
 }
 
 // Every line of the feature files in samples/features binds to exactly one
-// line shape, and every "is" and verb line is in the vocabulary.
+// line shape, every "is", "has been" and verb line is in the vocabulary, and
+// every alert line names a role.
 func TestFeaturesUseTheVocabulary(t *testing.T) {
 	shapes := map[string]*regexp.Regexp{
-		"is": regexp.MustCompile(isLine), "verb": regexp.MustCompile(verbLine),
-		"pass": regexp.MustCompile(passLine), "quiet": regexp.MustCompile(quietLine),
+		"is": regexp.MustCompile(isLine), "since": regexp.MustCompile(sinceLine), "verb": regexp.MustCompile(verbLine),
+		"pass": regexp.MustCompile(passLine), "alert": regexp.MustCompile(alertLine),
+		"alertmanager": regexp.MustCompile(amLine), "quiet": regexp.MustCompile(quietLine),
 	}
 	files, err := filepath.Glob("../samples/features/*.feature")
 	if err != nil || len(files) == 0 {
@@ -138,10 +140,15 @@ func TestFeaturesUseTheVocabulary(t *testing.T) {
 				for name, re := range shapes {
 					if m := re.FindStringSubmatch(step.Text); m != nil {
 						matched = append(matched, name)
-						if name == "is" || name == "verb" {
-							if _, _, err := s.lookup(m[1], m[2]); err != nil {
-								t.Errorf("%s: %q: %v", file, step.Text, err)
-							}
+						var err error
+						switch name {
+						case "is", "verb", "since":
+							_, _, err = s.lookup(m[1], m[2])
+						case "alert", "alertmanager":
+							_, err = s.role(m[3])
+						}
+						if err != nil {
+							t.Errorf("%s: %q: %v", file, step.Text, err)
 						}
 					}
 				}

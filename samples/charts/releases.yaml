@@ -14,6 +14,9 @@
 - name: barman-cloud
   namespace: cnpg-system
   chart: cnpg-plugin-barman-cloud
+- name: otel
+  namespace: otel
+  chart: cnpg-opentelemetry-collector
 - name: pg
   namespace: databases
   chart: cnpg-cluster

@@ -3,10 +3,13 @@ package main
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -165,4 +168,45 @@ func nodeReady(ctx context.Context, name string) error {
 		return fmt.Errorf("node %s Ready: %q", name, status)
 	}
 	return nil
+}
+
+// killNode stops the node container of pod at once, as docker stop -t 0
+// does, as a lost VM. It returns the node.
+func killNode(ctx context.Context, pod string) (string, error) {
+	node, err := kubectl(ctx, "get", "pod", pod, "-n", namespace, "-o", "jsonpath={.spec.nodeName}")
+	if err != nil {
+		return "", err
+	}
+	if _, err := command(ctx, nil, "docker", "stop", "-t", "0", node); err != nil {
+		return "", err
+	}
+	logf("node %s stopped", node)
+	return node, nil
+}
+
+// restartNode starts a node container that killNode stopped. k3s and the
+// pods of the node start again.
+func restartNode(ctx context.Context, node string) error {
+	if _, err := command(ctx, nil, "docker", "start", node); err != nil {
+		return err
+	}
+	logf("node %s started", node)
+	return nil
+}
+
+// useRunningAPI points the bench's kubeconfig at the API server of the
+// first node that is not down.
+func useRunningAPI(down []string) error {
+	for i := range nodeCount {
+		if slices.Contains(down, nodeName(i)) {
+			continue
+		}
+		data, err := os.ReadFile(kubeconfig)
+		if err != nil {
+			return err
+		}
+		server := regexp.MustCompile(`https://[0-9.]+:6443`)
+		return os.WriteFile(kubeconfig, server.ReplaceAll(data, []byte("https://"+nodeIP(i)+":6443")), 0o600)
+	}
+	return errors.New("every node is down")
 }

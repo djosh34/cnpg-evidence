@@ -27,9 +27,11 @@ import (
 // nodes, on one network, at fixed addresses that the DNS container names.
 const (
 	subnet = "10.77.0.0/24"
-	dnsIP  = "10.77.0.2"
-	s3IP   = "10.77.0.20"
-	acmeIP = "10.77.0.30"
+	// The bench's own address on the network.
+	gatewayIP = "10.77.0.1"
+	dnsIP     = "10.77.0.2"
+	s3IP      = "10.77.0.20"
+	acmeIP    = "10.77.0.30"
 
 	s3Name   = "s3.example.test"
 	acmeName = "acme.example.test"
@@ -50,7 +52,12 @@ var acmeDirectory = "https://" + acmeName + "/v1/pki/acme/directory"
 
 // hosts is the DNS container's hosts file: every name of the bench.
 func hosts() string {
-	lines := []string{s3IP + " " + s3Name, acmeIP + " " + acmeName, clientIP + " " + clientName}
+	lines := []string{
+		s3IP + " " + s3Name, acmeIP + " " + acmeName, clientIP + " " + clientName,
+		otelIP + " " + otelName, prometheusIP + " " + prometheusName,
+		alertmanagerIP + " " + alertmanagerName, grafanaIP + " " + grafanaName,
+		gatewayIP + " " + receiverName,
+	}
 	for i := range nodeCount {
 		lines = append(lines, nodeIP(i)+" "+nodeHost(i))
 	}
@@ -67,7 +74,9 @@ const corefile = `.:53 {
 `
 
 func newNetwork(ctx context.Context) (*testcontainers.DockerNetwork, error) {
-	return tcnetwork.New(ctx, tcnetwork.WithIPAM(&network.IPAM{Config: []network.IPAMConfig{{Subnet: netip.MustParsePrefix(subnet)}}}))
+	return tcnetwork.New(ctx, tcnetwork.WithIPAM(&network.IPAM{Config: []network.IPAMConfig{{
+		Subnet: netip.MustParsePrefix(subnet), Gateway: netip.MustParseAddr(gatewayIP),
+	}}}))
 }
 
 // on puts a container on the bench network at ip, with the DNS container as
