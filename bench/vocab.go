@@ -33,7 +33,7 @@ type word struct {
 	state   func(context.Context, *scenario, args) error
 	longest func(context.Context, *scenario) (time.Duration, error)
 	since   func(context.Context, *scenario, args, time.Time) error
-	back    func(context.Context, *scenario, time.Time) error
+	back    func(context.Context, *scenario, time.Time) (time.Time, error)
 	// A measure whose limit in always.feature a scenario's own line sets.
 	scenarioLimit bool
 }
@@ -469,23 +469,23 @@ func writingDown(ctx context.Context, s *scenario, _ args, from time.Time) error
 }
 
 // writingBack: the cluster's current primary acknowledged a write that the
-// client sent after the event. After a promote, the old primary can still
+// client sent after the event, and when. After a promote, the old primary can still
 // acknowledge writes for a moment; those do not count.
-func writingBack(ctx context.Context, s *scenario, from time.Time) error {
+func writingBack(ctx context.Context, s *scenario, from time.Time) (time.Time, error) {
 	if !s.writes {
-		return errors.New("the scenario has no writes")
+		return time.Time{}, errors.New("the scenario has no writes")
 	}
 	primary, err := clusterField(ctx, "currentPrimary")
 	if err != nil {
-		return err
+		return time.Time{}, err
 	}
 	ip, err := kubectl(ctx, "get", "pod", primary, "-n", namespace, "-o", "jsonpath={.status.podIP}")
 	if err != nil {
-		return err
+		return time.Time{}, err
 	}
 	log, err := s.clientLog(ctx)
 	if err != nil {
-		return err
+		return time.Time{}, err
 	}
 	var first time.Time
 	for _, line := range log.lines {
@@ -496,10 +496,10 @@ func writingBack(ctx context.Context, s *scenario, from time.Time) error {
 		}
 	}
 	if first.IsZero() {
-		return fmt.Errorf("no write sent after the event is acknowledged by %s yet", primary)
+		return time.Time{}, fmt.Errorf("no write sent after the event is acknowledged by %s yet", primary)
 	}
 	s.detail = fmt.Sprintf("first write acknowledged by %s %s after the event", primary, seconds(first.Sub(from)))
-	return nil
+	return first, nil
 }
 
 func longestReadGap(ctx context.Context, s *scenario) (time.Duration, error) {

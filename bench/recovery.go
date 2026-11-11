@@ -25,8 +25,8 @@ const (
 	newImageValues = "values/new-image.yaml"
 )
 
-// walNeed is the WAL an instance that was down needs: the WAL file the
-// instance on was writing when more WAL was written on it.
+// walNeed is the WAL an instance that was down needs: the instance more WAL
+// was written on, and the WAL file it was writing when that started.
 type walNeed struct {
 	on, file string
 }

@@ -163,7 +163,7 @@ The chart keeps enough WAL on the instances' own disks that a replica that was d
 
 Commits and reads never wait for the store. A failover, a switchover and a starting replica do: a promotion looks up the timeline history and the last WAL file in the store, a starting replica asks the store first for each WAL file it replays, and the old primary in a switchover tries to archive once more before it stops.
 
-What a broken store costs, in seconds from the event until the new primary took a write, measured on a three-node k3s cluster with these settings. The refusing and the never answering store are the `store-refuse` and `store-hang` scenarios of [live.md](live.md), with a store over plain HTTP, and of the [bench](bench.md), with a store over TLS. Over TLS a store that never answers holds each call in the TLS handshake, which no setting limits, as a store that drops connections does. The last row comes from a test whose store dropped every new connection.
+What a broken store costs, in seconds from the event until the new primary took a write, measured on a three-node k3s cluster with these settings. The refusing and the never answering store are the `store-refuse` and `store-hang` scenarios of [live.md](live.md), with a store over plain HTTP, and of the [bench](bench.md), with a store over TLS. Over TLS a store that never answers holds each call in the TLS handshake. That wait ends only at botocore's connect timeout of 60 s, which barman-cloud gives no way to change, as with a store that drops connections. The last row comes from a test whose store dropped every new connection.
 
 | Store | Primary node loss | Switchover |
 |---|---|---|

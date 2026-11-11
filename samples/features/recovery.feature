@@ -55,6 +55,7 @@ Feature: Recovery
     Then the cluster is healthy < 600 s
     When the primary's node is killed
     Then another instance is primary < 600 s
+    And writing is healthy < 180 s after the kill
     When 256 MB of WAL is written on the new primary
     Then the WAL the primary needs is gone from the new primary < 120 s
     When the node starts

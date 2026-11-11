@@ -403,7 +403,7 @@ func (s *scenario) measure(key string, w word, n, after, forN string) error {
 }
 
 // measureBack waits until the measure is back after the event, by N s after
-// it.
+// it. It counts when the measure came back, not when the bench saw it.
 func (s *scenario) measureBack(key string, w word, n, after string) error {
 	if w.back == nil {
 		return fmt.Errorf("%s takes no \"after the <event>\"", key)
@@ -413,7 +413,16 @@ func (s *scenario) measureBack(key string, w word, n, after string) error {
 		return err
 	}
 	from := s.marks[after]
-	return poll(s.ctx, deadline, func(ctx context.Context) error { return w.back(ctx, s, from) })
+	var back time.Time
+	err = poll(s.ctx, deadline, func(ctx context.Context) error {
+		var err error
+		back, err = w.back(ctx, s, from)
+		return err
+	})
+	if err != nil && !back.IsZero() && !back.After(deadline) {
+		return nil
+	}
+	return err
 }
 
 func (s *scenario) holdsFor(n string, check func(context.Context) error) error {

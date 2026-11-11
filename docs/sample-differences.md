@@ -671,7 +671,7 @@ CNPG gives the old primary of a switchover 3600 s by default (`switchoverDelay`)
 
 [../samples/charts/cnpg-cluster/templates/cluster.yaml](../samples/charts/cnpg-cluster/templates/cluster.yaml)
 
-The new primary is promoted only once the old one has stopped. Against a store over TLS that never answers, each archive call waits about 60 s in the TLS handshake, which barman-cloud does not limit, and the old primary took 11 minutes to stop. With 30 s, the new primary took a write about 610 s after the switchover; the rest is the promotion's and the replicas' own calls to the store. A working store archives the last WAL within a few seconds, so 30 s does not cut a normal switchover short. WAL the old primary could not archive stays in its `pg_wal` until it rejoins, and CNPG archives it before the rewind; the new primary already holds every confirmed commit.
+The new primary is promoted only once the old one has stopped. Against a store over TLS that never answers, each archive call waits in the TLS handshake until botocore's connect timeout of 60 s, which barman-cloud gives no way to change, and the old primary took 11 minutes to stop. With 30 s, the new primary took a write about 610 s after the switchover; the rest is the promotion's and the replicas' own calls to the store. A working store archives the last WAL within a few seconds, so 30 s does not cut a normal switchover short. WAL the old primary could not archive stays in its `pg_wal` until it rejoins, and CNPG archives it before the rewind; the new primary already holds every confirmed commit.
 
 ## No app database, app role or app Secret
 

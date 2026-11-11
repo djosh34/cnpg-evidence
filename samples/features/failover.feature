@@ -50,7 +50,7 @@ Feature: Failover
     And the node starts
 
   @quiet-failover
-  Scenario: A failover with no writes, the old primary back after 12 minutes
+  Scenario: A failover with no writes, the old primary back once the new one is idle
     A former primary that rewinds onto an idle primary just after a WAL
     switch waits for that primary's next WAL record (docs/samples.md). The
     catalog read writes the new primary's hint bits now, so the rejoin writes
