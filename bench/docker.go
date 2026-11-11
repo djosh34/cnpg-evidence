@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 )
 
@@ -60,16 +62,16 @@ func makeDisk(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := closeWith(f.Truncate(diskSize), f); err != nil {
+	if err := errors.Join(f.Truncate(diskSize), f.Close()); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(diskDir, 0o700); err != nil {
 		return err
 	}
-	if _, err := command(ctx, nil, "mkfs.ext4", "-q", "-F", diskFile); err != nil {
+	if _, err := command(ctx, "mkfs.ext4", "-q", "-F", diskFile); err != nil {
 		return err
 	}
-	_, err = command(ctx, nil, "mount", "-o", "loop", diskFile, diskDir)
+	_, err = command(ctx, "mount", "-o", "loop", diskFile, diskDir)
 	return err
 }
 
@@ -84,4 +86,53 @@ func tail(file string) string {
 		data = data[len(data)-most:]
 	}
 	return string(data)
+}
+
+// What runs outside k3s in production runs here as a container next to the
+// nodes, on one network, at fixed addresses that the DNS container names.
+const (
+	network = "bench"
+	subnet  = "10.77.0.0/24"
+	// The bench's own address on the network.
+	gatewayIP = "10.77.0.1"
+)
+
+func createNetwork(ctx context.Context) error {
+	_, err := command(ctx, "docker", "network", "create", "--subnet", subnet, "--gateway", gatewayIP, network)
+	return err
+}
+
+// container is a container on the bench network.
+type container struct {
+	name  string // the container's name and host name
+	ip    string
+	files map[string]string // the content of each file the container gets, by its path
+	opts  []string          // more docker run options
+	image string
+	args  []string
+}
+
+// run starts the container with the DNS container as its resolver. Its
+// files are written under workDir and mounted read-only. The DNS container
+// itself keeps docker's resolver, to which it forwards every other name.
+func (c container) run(ctx context.Context) error {
+	args := []string{"run", "-d", "--name", c.name, "--hostname", c.name, "--network", network, "--ip", c.ip}
+	if c.ip != dnsIP {
+		args = append(args, "--dns", dnsIP)
+	}
+	for path, content := range c.files {
+		local := filepath.Join(workDir, "files", c.name, path)
+		if err := os.MkdirAll(filepath.Dir(local), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(local, []byte(content), 0o644); err != nil {
+			return err
+		}
+		args = append(args, "--volume", local+":"+path+":ro")
+	}
+	args = append(append(append(args, c.opts...), c.image), c.args...)
+	if _, err := command(ctx, "docker", args...); err != nil {
+		return fmt.Errorf("starting %s: %w", c.name, err)
+	}
+	return nil
 }

@@ -92,9 +92,9 @@ func (s *scenario) tearDown(sn *godog.Scenario, err error) error {
 		logf("always.feature")
 		err = errors.Join(err, s.runAlways())
 	}
-	if s.cl != nil {
+	if s.clientRan {
 		err = errors.Join(err, s.stopClient(s.ctx))
-		log, logErr := s.cl.rawLog(s.ctx)
+		log, logErr := rawClientLog(s.ctx)
 		err = errors.Join(err, logErr, s.results.write("client.log", log))
 	}
 	table := s.table(sn.Name)

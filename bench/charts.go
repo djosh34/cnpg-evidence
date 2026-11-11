@@ -139,7 +139,7 @@ func installRestore(ctx context.Context, name string) error {
 func helm(ctx context.Context, limit time.Duration, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
-	return command(ctx, nil, "helm", args...)
+	return command(ctx, "helm", args...)
 }
 
 // spreadK3sServices runs one pod of CoreDNS and metrics-server on every
@@ -167,7 +167,7 @@ func spreadK3sServices(ctx context.Context) error {
 	}
 	for _, d := range []string{"deployment/coredns", "deployment/metrics-server", "daemonset/traefik"} {
 		rollout, cancel := context.WithTimeout(ctx, 5*time.Minute)
-		_, err := command(rollout, nil, "kubectl", "rollout", "status", d, "-n", "kube-system", "--timeout=5m")
+		_, err := command(rollout, "kubectl", "rollout", "status", d, "-n", "kube-system", "--timeout=5m")
 		cancel()
 		if err != nil {
 			return err

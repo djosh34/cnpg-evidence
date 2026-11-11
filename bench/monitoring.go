@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -16,8 +15,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/testcontainers/testcontainers-go"
 )
 
 // The monitoring outside k3s, as containers next to the nodes: the upstream
@@ -109,7 +106,7 @@ providers:
 
 // startMonitoring starts the receiver and the four containers, and returns
 // once each answers.
-func startMonitoring(ctx context.Context, nw *testcontainers.DockerNetwork, root *ca) (*monitoring, error) {
+func startMonitoring(ctx context.Context, root *ca) (*monitoring, error) {
 	dir := filepath.Join(benchDir, "monitoring")
 	read := func(name string) (string, error) {
 		data, err := os.ReadFile(filepath.Join(dir, name))
@@ -145,60 +142,47 @@ func startMonitoring(ctx context.Context, nw *testcontainers.DockerNetwork, root
 	if err != nil {
 		return nil, err
 	}
-	_, err = start(ctx, testcontainers.ContainerRequest{
-		Name:  "otel",
-		Image: otelImage,
-		Cmd:   []string{"--config=/etc/otel/config.yaml"},
-		Files: []testcontainers.ContainerFile{
-			file("/etc/otel/config.yaml", upstreamConfig),
-			file("/tls/tls.crt", string(cert)),
-			file("/tls/tls.key", string(key)),
-			file("/tls/ca.crt", string(root.certPEM)),
+	containers := []container{
+		{
+			name: "otel", ip: otelIP, image: otelImage, args: []string{"--config=/etc/otel/config.yaml"},
+			files: map[string]string{
+				"/etc/otel/config.yaml": upstreamConfig,
+				"/tls/tls.crt":          string(cert),
+				"/tls/tls.key":          string(key),
+				"/tls/ca.crt":           string(root.certPEM),
+			},
 		},
-	}, on(nw, otelIP, otelName))
-	if err != nil {
-		return nil, err
+		{
+			name: "prometheus", ip: prometheusIP, image: prometheusImage,
+			args: []string{"--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus",
+				"--web.enable-remote-write-receiver"},
+			files: map[string]string{"/etc/prometheus/prometheus.yml": prometheusConfig, "/etc/prometheus/rules.yaml": rules},
+		},
+		// Alertmanager trusts the company CA, which signs the receiver's
+		// certificate.
+		{
+			name: "alertmanager", ip: alertmanagerIP, image: alertmanagerImage,
+			args: []string{"--config.file=/etc/alertmanager/alertmanager.yml", "--storage.path=/alertmanager",
+				"--cluster.listen-address="},
+			files: map[string]string{
+				"/etc/alertmanager/alertmanager.yml": routes,
+				"/etc/ssl/certs/ca-certificates.crt": string(root.certPEM),
+			},
+		},
+		{
+			name: "grafana", ip: grafanaIP, image: grafanaImage,
+			opts: []string{"--env", "GF_SECURITY_ADMIN_PASSWORD=" + grafanaPassword},
+			files: map[string]string{
+				"/etc/grafana/provisioning/datasources/bench.yaml": grafanaSources,
+				"/etc/grafana/provisioning/dashboards/bench.yaml":  grafanaDashboards,
+				"/etc/grafana/dashboards/dashboard.json":           dashboard,
+			},
+		},
 	}
-	_, err = start(ctx, testcontainers.ContainerRequest{
-		Name:  "prometheus",
-		Image: prometheusImage,
-		Cmd: []string{"--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus",
-			"--web.enable-remote-write-receiver"},
-		Files: []testcontainers.ContainerFile{
-			file("/etc/prometheus/prometheus.yml", prometheusConfig),
-			file("/etc/prometheus/rules.yaml", rules),
-		},
-	}, on(nw, prometheusIP, prometheusName))
-	if err != nil {
-		return nil, err
-	}
-	// Alertmanager trusts the company CA, which signs the receiver's
-	// certificate.
-	_, err = start(ctx, testcontainers.ContainerRequest{
-		Name:  "alertmanager",
-		Image: alertmanagerImage,
-		Cmd: []string{"--config.file=/etc/alertmanager/alertmanager.yml", "--storage.path=/alertmanager",
-			"--cluster.listen-address="},
-		Files: []testcontainers.ContainerFile{
-			file("/etc/alertmanager/alertmanager.yml", routes),
-			file("/etc/ssl/certs/ca-certificates.crt", string(root.certPEM)),
-		},
-	}, on(nw, alertmanagerIP, alertmanagerName))
-	if err != nil {
-		return nil, err
-	}
-	_, err = start(ctx, testcontainers.ContainerRequest{
-		Name:  "grafana",
-		Image: grafanaImage,
-		Env:   map[string]string{"GF_SECURITY_ADMIN_PASSWORD": grafanaPassword},
-		Files: []testcontainers.ContainerFile{
-			file("/etc/grafana/provisioning/datasources/bench.yaml", grafanaSources),
-			file("/etc/grafana/provisioning/dashboards/bench.yaml", grafanaDashboards),
-			file("/etc/grafana/dashboards/dashboard.json", dashboard),
-		},
-	}, on(nw, grafanaIP, grafanaName))
-	if err != nil {
-		return nil, err
+	for _, c := range containers {
+		if err := c.run(ctx); err != nil {
+			return nil, err
+		}
 	}
 	err = poll(ctx, time.Now().Add(2*time.Minute), func(ctx context.Context) error {
 		return errors.Join(
@@ -296,25 +280,7 @@ func (m *monitoring) get(ctx context.Context, url string, out any) error {
 	if err != nil {
 		return err
 	}
-	return m.do(req, out)
-}
-
-func (m *monitoring) do(req *http.Request, out any) error {
-	resp, err := m.http.Do(req)
-	if err != nil {
-		return err
-	}
-	data, err := io.ReadAll(resp.Body)
-	if err := closeWith(err, resp.Body); err != nil {
-		return err
-	}
-	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("%s %s: %s: %s", req.Method, req.URL, resp.Status, strings.TrimSpace(string(data)))
-	}
-	if out == nil {
-		return nil
-	}
-	return json.Unmarshal(data, out)
+	return callJSON(m.http, req, out)
 }
 
 // A series of a Prometheus query result.
@@ -446,7 +412,7 @@ func (m *monitoring) amSend(ctx context.Context, name, pod string) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	return m.do(req, nil)
+	return callJSON(m.http, req, nil)
 }
 
 // dashboardHasData: Grafana has the dashboard, and each of its panels gets

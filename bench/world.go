@@ -7,15 +7,12 @@ import (
 	"slices"
 	"strings"
 	"time"
-
-	"github.com/testcontainers/testcontainers-go"
 )
 
 // world is everything one run starts: the network, the services outside
 // k3s, the three nodes, and the releases of the mounted directory on them.
 // Nothing of it outlives the bench's container.
 type world struct {
-	nw   *testcontainers.DockerNetwork
 	root *ca
 	bao  *openbao
 	mon  *monitoring
@@ -28,26 +25,25 @@ func newWorld(ctx context.Context) (*world, error) {
 	if err != nil {
 		return nil, err
 	}
-	nw, err := newNetwork(ctx)
-	if err != nil {
+	if err := createNetwork(ctx); err != nil {
 		return nil, err
 	}
-	w := &world{nw: nw, root: root, built: time.Now()}
+	w := &world{root: root, built: time.Now()}
 	logf("starting the DNS, the company CA, the store and the monitoring")
-	if err := startDNS(ctx, nw); err != nil {
+	if err := startDNS(ctx); err != nil {
 		return nil, err
 	}
-	if w.bao, err = startACME(ctx, nw, root); err != nil {
+	if w.bao, err = startACME(ctx, root); err != nil {
 		return nil, err
 	}
-	if err := startStore(ctx, nw, root); err != nil {
+	if err := startStore(ctx, root); err != nil {
 		return nil, err
 	}
-	if w.mon, err = startMonitoring(ctx, nw, root); err != nil {
+	if w.mon, err = startMonitoring(ctx, root); err != nil {
 		return nil, err
 	}
 	logf("starting k3s")
-	if err := startNodes(ctx, nw); err != nil {
+	if err := startNodes(ctx); err != nil {
 		return nil, err
 	}
 	logf("one CoreDNS, metrics-server and Traefik pod per node")
@@ -108,7 +104,7 @@ func backupCompleted(ctx context.Context, name string) error {
 // roles names the instances: the primary, and the replicas by pod name.
 // Until a change of primary, a replica is replica 1.
 func roles(ctx context.Context) (map[string]string, error) {
-	primary, err := clusterField(ctx, "currentPrimary")
+	primary, err := status(ctx, clusterName, "currentPrimary")
 	if err != nil {
 		return nil, err
 	}
@@ -123,12 +119,4 @@ func roles(ctx context.Context) (map[string]string, error) {
 	return map[string]string{
 		"the primary": primary, "replica 1": replicas[0], "replica 2": replicas[1], "a replica": replicas[0],
 	}, nil
-}
-
-func (w *world) startClient(ctx context.Context, writes bool) (*client, error) {
-	key, err := w.bao.newEAB(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return startClient(ctx, w.nw, w.root, key, writes)
 }

@@ -5,16 +5,11 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
-	"io"
 	"os"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
 	"time"
-
-	"github.com/moby/moby/api/types/container"
-	"github.com/testcontainers/testcontainers-go"
 )
 
 // Three k3s servers with embedded etcd, each a privileged container, as the
@@ -39,24 +34,18 @@ var nodeInit string
 // startNodes starts the three nodes one after another, each joining the
 // first, and waits until each is Ready. It writes the kubeconfig of the
 // first node's API server to workDir/kubeconfig.
-func startNodes(ctx context.Context, nw *testcontainers.DockerNetwork) error {
+func startNodes(ctx context.Context) error {
 	for i := range nodeCount {
-		// Each node needs its own files: a file's reader is read once.
-		files, err := k3sFiles()
-		if err != nil {
-			return err
-		}
-		c, err := startNode(ctx, nw, i, files)
-		if err != nil {
+		if err := startNode(ctx, i); err != nil {
 			return err
 		}
 		if i == 0 {
-			if err := writeKubeconfig(ctx, c); err != nil {
+			if err := writeKubeconfig(ctx); err != nil {
 				return err
 			}
 		}
 		name := nodeName(i)
-		err = poll(ctx, time.Now().Add(5*time.Minute), func(ctx context.Context) error {
+		err := poll(ctx, time.Now().Add(5*time.Minute), func(ctx context.Context) error {
 			return nodeReady(ctx, name)
 		})
 		if err != nil {
@@ -67,95 +56,58 @@ func startNodes(ctx context.Context, nw *testcontainers.DockerNetwork) error {
 	return nil
 }
 
-// k3sFiles are the files of the mounted k3s directory, placed where k3s
-// reads them: config.yaml as /etc/rancher/k3s/config.yaml, each file of
-// manifests/ in the server's manifests directory, which k3s applies.
-func k3sFiles() ([]testcontainers.ContainerFile, error) {
-	dir := filepath.Join(benchDir, "k3s")
-	config, err := os.ReadFile(filepath.Join(dir, "config.yaml"))
-	if err != nil {
-		return nil, err
-	}
-	files := []testcontainers.ContainerFile{
-		file("/etc/rancher/k3s/config.yaml", string(config)),
-		file("/node-init.sh", nodeInit),
-		// The bench's DNS, for the kubelet and so for the pods. Without it k3s
-		// sees docker's loopback resolver and gives the pods public ones.
-		file("/etc/bench-resolv.conf", "nameserver "+dnsIP+"\n"),
-	}
-	manifests, err := filepath.Glob(filepath.Join(dir, "manifests", "*.yaml"))
-	if err != nil {
-		return nil, err
-	}
-	for _, m := range manifests {
-		data, err := os.ReadFile(m)
-		if err != nil {
-			return nil, err
-		}
-		files = append(files, file("/var/lib/rancher/k3s/server/manifests/"+filepath.Base(m), string(data)))
-	}
-	return files, nil
-}
-
-// startNode starts node i. The /tmp tmpfs is there because containerd tests
-// idmapped mounts under /tmp at start, which fail on overlayfs; pods with
-// hostUsers: false need them. The node's data is a volume on the bench's
-// disk.
-func startNode(ctx context.Context, nw *testcontainers.DockerNetwork, i int, files []testcontainers.ContainerFile) (*testcontainers.DockerContainer, error) {
+// startNode starts node i, with the mounted k3s directory at /bench/k3s:
+// k3s reads config.yaml there, and node-init.sh copies the files of
+// manifests/ into the server's manifests directory, which k3s applies. The
+// node's data is a volume on the bench's disk. The /tmp tmpfs is there
+// because containerd tests idmapped mounts under /tmp at start, which fail
+// on overlayfs; pods with hostUsers: false need them.
+func startNode(ctx context.Context, i int) error {
+	name := nodeName(i)
 	join := []string{"--cluster-init"}
 	if i > 0 {
 		join = []string{"--server", "https://" + nodeIP(0) + ":6443"}
 	}
-	name := nodeName(i)
-	args := append(join, "--node-ip", nodeIP(i), "--tls-san", nodeIP(i), "--resolv-conf", "/etc/bench-resolv.conf")
-	c, err := start(ctx, testcontainers.ContainerRequest{
-		Name:       name,
-		Image:      k3sImage,
-		Entrypoint: []string{"/bin/sh", "/node-init.sh"},
-		Cmd:        args,
-		Env:        map[string]string{"K3S_TOKEN": k3sToken},
-		Mounts:     testcontainers.ContainerMounts{testcontainers.VolumeMount(name, "/var/lib/rancher/k3s")},
-		Files:      files,
-		HostConfigModifier: func(hc *container.HostConfig) {
-			hc.Privileged = true
-			hc.Tmpfs = map[string]string{"/run": "", "/var/run": "", "/tmp": ""}
-			hc.Ulimits = []*container.Ulimit{
-				{Name: "nproc", Soft: 65535, Hard: 65535},
-				{Name: "nofile", Soft: 65535, Hard: 65535},
-			}
+	err := container{
+		name: name, ip: nodeIP(i), image: k3sImage,
+		opts: []string{
+			"--privileged", "--tmpfs", "/run", "--tmpfs", "/var/run", "--tmpfs", "/tmp",
+			"--ulimit", "nproc=65535:65535", "--ulimit", "nofile=65535:65535",
+			"--env", "K3S_TOKEN=" + k3sToken, "--entrypoint", "/bin/sh",
+			"--volume", name + ":/var/lib/rancher/k3s", "--volume", benchDir + "/k3s:/bench/k3s:ro",
 		},
-	}, on(nw, nodeIP(i), name))
+		args: append([]string{"/node-init.sh", "--config", "/bench/k3s/config.yaml",
+			"--node-ip", nodeIP(i), "--tls-san", nodeIP(i), "--resolv-conf", "/etc/bench-resolv.conf"}, join...),
+		files: map[string]string{
+			"/node-init.sh": nodeInit,
+			// The bench's DNS, for the kubelet and so for the pods. Without it
+			// k3s sees docker's loopback resolver and gives the pods public ones.
+			"/etc/bench-resolv.conf": "nameserver " + dnsIP + "\n",
+		},
+	}.run(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	logf("node %s started", name)
-	return c, nil
+	return nil
 }
 
 // writeKubeconfig waits for k3s to write its kubeconfig on the first node
 // and keeps a copy that reaches its API server.
-func writeKubeconfig(ctx context.Context, c *testcontainers.DockerContainer) error {
+func writeKubeconfig(ctx context.Context) error {
 	var config string
 	err := poll(ctx, time.Now().Add(2*time.Minute), func(ctx context.Context) error {
-		r, err := c.CopyFileFromContainer(ctx, "/etc/rancher/k3s/k3s.yaml")
-		if err != nil {
-			return err
+		var err error
+		config, err = command(ctx, "docker", "exec", nodeName(0), "cat", "/etc/rancher/k3s/k3s.yaml")
+		if err == nil && config == "" {
+			err = fmt.Errorf("the kubeconfig of %s is empty", nodeName(0))
 		}
-		data, err := io.ReadAll(r)
-		if err := closeWith(err, r); err != nil {
-			return err
-		}
-		if len(data) == 0 {
-			return fmt.Errorf("the kubeconfig of %s is empty", nodeName(0))
-		}
-		config = string(data)
-		return nil
+		return err
 	})
 	if err != nil {
 		return err
 	}
-	ip := nodeIP(0)
-	config = strings.ReplaceAll(config, "https://127.0.0.1:6443", "https://"+ip+":6443")
+	config = strings.ReplaceAll(config, "https://127.0.0.1:6443", "https://"+nodeIP(0)+":6443")
 	return os.WriteFile(kubeconfig, []byte(config), 0o600)
 }
 
@@ -170,15 +122,10 @@ func nodeReady(ctx context.Context, name string) error {
 	return nil
 }
 
-// nodeOf is the node an instance runs on.
-func nodeOf(ctx context.Context, pod string) (string, error) {
-	return kubectl(ctx, "get", "pod", pod, "-n", namespace, "-o", "jsonpath={.spec.nodeName}")
-}
-
 // stopNodes stops node containers at once, as docker stop -t 0 does, as lost
 // VMs.
 func stopNodes(ctx context.Context, nodes ...string) error {
-	if _, err := command(ctx, nil, "docker", append([]string{"stop", "-t", "0"}, nodes...)...); err != nil {
+	if _, err := command(ctx, "docker", append([]string{"stop", "-t", "0"}, nodes...)...); err != nil {
 		return err
 	}
 	logf("node %s stopped", strings.Join(nodes, " and "))
@@ -188,7 +135,7 @@ func stopNodes(ctx context.Context, nodes ...string) error {
 // restartNodes starts node containers that stopNodes stopped. k3s and the
 // pods of each node start again.
 func restartNodes(ctx context.Context, nodes ...string) error {
-	if _, err := command(ctx, nil, "docker", append([]string{"start"}, nodes...)...); err != nil {
+	if _, err := command(ctx, "docker", append([]string{"start"}, nodes...)...); err != nil {
 		return err
 	}
 	logf("node %s started", strings.Join(nodes, " and "))

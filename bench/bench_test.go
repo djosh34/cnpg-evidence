@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -159,7 +160,7 @@ func TestFeaturesUseTheVocabulary(t *testing.T) {
 			t.Fatal(err)
 		}
 		doc, err := gherkin.ParseGherkinDocument(f, newID)
-		if err := closeWith(err, f); err != nil {
+		if err := errors.Join(err, f.Close()); err != nil {
 			t.Fatalf("%s: %v", file, err)
 		}
 		for _, pickle := range gherkin.Pickles(*doc, file, newID) {

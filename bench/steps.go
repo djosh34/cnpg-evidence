@@ -73,9 +73,9 @@ type scenario struct {
 	marks map[string]time.Time    // when each named event happened
 	last  string                  // the last named event
 
-	cl          *client
-	clientEnded time.Time
-	writes      bool // false after "Given no writes"
+	clientRan   bool      // the client was started
+	clientEnded time.Time // when the bench stopped it
+	writes      bool      // false after "Given no writes"
 
 	down     []string // the nodes killed and not started again
 	downPods []string // the instances on them
@@ -111,14 +111,13 @@ type row struct {
 func (s *scenario) beforeStep(ctx context.Context, st *godog.Step) (context.Context, error) {
 	s.kind, s.stepStart, s.detail = st.Type, time.Now(), ""
 	logf("%s %s", keyword(st.Type), st.Text)
-	if st.Type == messages.PickleStepType_ACTION && s.cl == nil {
+	if st.Type == messages.PickleStepType_ACTION && !s.clientRan {
 		if s.w == nil {
 			return ctx, errors.New("the cluster did not start")
 		}
 		logf("starting the client, writes %t", s.writes)
-		cl, err := s.w.startClient(ctx, s.writes)
-		s.cl = cl
-		if err != nil {
+		s.clientRan = true
+		if err := s.w.startClient(ctx, s.writes); err != nil {
 			return ctx, fmt.Errorf("the client: %w", err)
 		}
 	}
@@ -356,7 +355,7 @@ func (s *scenario) pass(n, after string) error {
 
 // noWrites: "Given no writes", the only scenarios whose client never writes.
 func (s *scenario) noWrites() error {
-	if s.cl != nil {
+	if s.clientRan {
 		return errors.New("no writes must come before the first event")
 	}
 	s.writes = false

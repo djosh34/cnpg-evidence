@@ -170,7 +170,7 @@ func runProve(ctx context.Context, s *scenario, _ args) error {
 	}
 	for i := range nodeCount {
 		node := nodeName(i)
-		pid, err := command(ctx, nil, "docker", "inspect", "-f", "{{.State.Pid}}", node)
+		pid, err := command(ctx, "docker", "inspect", "-f", "{{.State.Pid}}", node)
 		if err != nil {
 			return err
 		}
@@ -263,7 +263,7 @@ func runHostCheck(ctx context.Context, s *scenario, _ args) error {
 			{"cp", "-q", filepath.Join(scriptsDir, "lib"), node + ":" + dir + "/lib"},
 		}
 		for _, c := range copies {
-			if _, err := command(ctx, nil, "docker", c...); err != nil {
+			if _, err := command(ctx, "docker", c...); err != nil {
 				return err
 			}
 		}

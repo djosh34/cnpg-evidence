@@ -69,6 +69,5 @@ COPY --from=tools /tools/node/ /opt/cnpg-evidence/node/
 COPY scripts/ /opt/cnpg-evidence/scripts/
 COPY --from=build /out/bench /usr/local/bin/bench
 ARG CLIENT_IMAGE
-# The whole run lives in this container, so testcontainers needs no reaper.
-ENV BENCH_CLIENT_IMAGE=$CLIENT_IMAGE TESTCONTAINERS_RYUK_DISABLED=true
+ENV BENCH_CLIENT_IMAGE=$CLIENT_IMAGE
 ENTRYPOINT ["bench"]

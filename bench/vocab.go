@@ -202,7 +202,7 @@ func killPostgres(ctx context.Context, s *scenario, a args) error {
 		return err
 	}
 	id := strings.TrimPrefix(fields[1], "containerd://")
-	_, err = command(ctx, nil, "docker", "exec", fields[0], "crictl", "stop", "--timeout", "0", id)
+	_, err = command(ctx, "docker", "exec", fields[0], "crictl", "stop", "--timeout", "0", id)
 	return err
 }
 
@@ -230,7 +230,7 @@ func postgresRestarted(ctx context.Context, s *scenario, a args) error {
 // nonePromoted: no promotion has started; the target primary is still the
 // primary.
 func nonePromoted(ctx context.Context, s *scenario, _ args) error {
-	target, err := clusterField(ctx, "targetPrimary")
+	target, err := status(ctx, clusterName, "targetPrimary")
 	if err != nil {
 		return err
 	}
@@ -408,7 +408,7 @@ func stopWriting(ctx context.Context, s *scenario, _ args) error {
 	if !s.writes {
 		return errors.New("the scenario has no writes to stop: it says \"Given no writes\"")
 	}
-	return s.cl.stopWrites(ctx)
+	return stopWrites(ctx)
 }
 
 // clusterHealthy: three ready instances, the phase healthy, and two
@@ -436,7 +436,7 @@ func rolePrimary(ctx context.Context, s *scenario, a args) error {
 // the primary. It stops the client first, so every write it started has
 // ended.
 func noneLost(ctx context.Context, s *scenario, _ args) error {
-	if s.cl == nil {
+	if !s.clientRan {
 		return errors.New("the client did not run: the scenario has no When line")
 	}
 	if err := s.stopClient(ctx); err != nil {
@@ -456,7 +456,7 @@ func (s *scenario) acknowledgedOn(ctx context.Context, cluster string) error {
 	if len(acked) == 0 && s.writes {
 		return errors.New("the client got no write acknowledged")
 	}
-	primary, err := fieldOf(ctx, cluster, "currentPrimary")
+	primary, err := status(ctx, cluster, "currentPrimary")
 	if err != nil {
 		return err
 	}
@@ -501,7 +501,7 @@ func writingBack(ctx context.Context, s *scenario, from time.Time) (time.Time, e
 	if !s.writes {
 		return time.Time{}, errors.New("the scenario has no writes")
 	}
-	primary, err := clusterField(ctx, "currentPrimary")
+	primary, err := status(ctx, clusterName, "currentPrimary")
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -564,17 +564,19 @@ func (s *scenario) longestGap(ctx context.Context, what string) (time.Duration, 
 
 // clientLog is the client's log so far.
 func (s *scenario) clientLog(ctx context.Context) (clientLog, error) {
-	if s.cl == nil {
+	if !s.clientRan {
 		return clientLog{}, errors.New("the client did not run: the scenario has no When line")
 	}
-	return s.cl.log(ctx)
+	return readClientLog(ctx)
 }
 
 // stopClient stops the client once.
 func (s *scenario) stopClient(ctx context.Context) error {
-	if s.cl == nil || !s.clientEnded.IsZero() {
+	if !s.clientRan || !s.clientEnded.IsZero() {
 		return nil
 	}
 	s.clientEnded = time.Now()
-	return s.cl.stop(ctx)
+	// It ends the reads and writes the client started.
+	_, err := command(ctx, "docker", "stop", "-t", "20", "client")
+	return err
 }
