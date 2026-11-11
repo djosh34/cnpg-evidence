@@ -3,7 +3,7 @@ Feature: pgfallback from outside the cluster
   also connects to the rw port of each node alone every 0.25 s, which shows
   when rw takes connections, and logs each attempt of pgfallback at rw.
   "pgfallback has been healthy since the <event>" is the report of
-  docs/bench.md: rw back, no read or write on a read address that rw should
+  docs/e2e.md: rw back, no read or write on a read address that rw should
   have taken, and the last read and write on rw.
 
   Background:

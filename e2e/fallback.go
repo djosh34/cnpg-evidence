@@ -16,7 +16,7 @@ import (
 
 // The pgfallback report: what the client's reads and writes through
 // pgfallback did from an event on, in seconds after the event, and what
-// makes it fail, as docs/bench.md says under "The pgfallback report". The
+// makes it fail, as docs/e2e.md says under "The pgfallback report". The
 // client reads through one pool and writes through another, each with its
 // own pgfallback, and connects to each rw address alone every 0.25 s.
 
