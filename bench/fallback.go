@@ -15,32 +15,10 @@ import (
 )
 
 // The pgfallback report: what the client's reads and writes through
-// pgfallback did from an event on, in seconds after the event. The client
-// reads through one pool and writes through another, each with its own
-// pgfallback, and connects to each rw address alone every 0.25 s.
-//
-//   - rw took no connection while no rw address's last connect alone worked.
-//     rw is back at the end of the first connect that worked after that.
-//   - Reads and writes work again at the end of the first one that worked
-//     after the last one that failed, counting the failures that were still
-//     running at the event.
-//   - The last read or write served by a read address after rw was back.
-//   - A read or write is wrong when a read address served it although it
-//     started more than 1 s after rw was back, while rw took connections
-//     until 0.25 s after it ended, and after its pool's own attempt at rw had
-//     worked: the first attempt of that pool that worked since rw went down
-//     and before it went down again. Without one, 1 s alone. That attempt
-//     must work within 1 s plus connect_timeout per rw address and one more
-//     after rw was back: the attempt that was running then can still wait
-//     on addresses it dialed before, and the next one connects. Every read
-//     and write is one statement, so none ran inside a transaction that was
-//     already open.
-//   - Every failed read and write with its error, consecutive ones with the
-//     same address and error as one line.
-//   - The last read and write of the log so far worked on rw.
-//
-// A wrong read or write, a late attempt, or a last read or write not on rw
-// makes the report fail.
+// pgfallback did from an event on, in seconds after the event, and what
+// makes it fail, as docs/bench.md says under "The pgfallback report". The
+// client reads through one pool and writes through another, each with its
+// own pgfallback, and connects to each rw address alone every 0.25 s.
 
 const (
 	rwPort         = 5432
