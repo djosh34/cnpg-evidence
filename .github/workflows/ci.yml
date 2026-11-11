@@ -148,8 +148,14 @@ jobs:
           "$RUNNER_TEMP/golangci-lint" run ./...
       - name: shellcheck
         run: shellcheck bench/*.sh
-      - name: The scenarios
-        run: bash bench/scenarios.sh
+      - name: The scenarios, each tag once
+        run: |
+          set -euo pipefail
+          tags=$(bash bench/scenarios.sh)
+          echo "$tags"
+          [[ -n $tags ]] || { echo "no scenario" >&2; exit 1; }
+          twice=$(uniq -d <<<"$tags")
+          [[ -z $twice ]] || { echo "tags of more than one scenario: $twice" >&2; exit 1; }
 
   # pgfallback against PostgreSQL 18 in docker: a primary and three standbys,
   # behind TCP proxies the tests stop and start.

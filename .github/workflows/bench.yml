@@ -74,10 +74,17 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      # A rerun on the same commit keeps the images an earlier run tested,
+      # since a release tags those.
       - name: Build and push both images as sha-<commit>
         run: |
           set -euo pipefail
           tag=sha-$GITHUB_SHA
+          if docker buildx imagetools inspect "$CLIENT_IMAGE:$tag" >/dev/null 2>&1 &&
+            docker buildx imagetools inspect "$BENCH_IMAGE:$tag" >/dev/null 2>&1; then
+            echo "both images of $tag exist; not built again"
+            exit 0
+          fi
           docker buildx build --platform linux/amd64,linux/arm64 --file bench/Dockerfile --target client \
             --tag "$CLIENT_IMAGE:$tag" --push .
           docker buildx build --platform linux/amd64,linux/arm64 --file bench/Dockerfile --target bench \

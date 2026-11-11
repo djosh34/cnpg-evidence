@@ -305,8 +305,8 @@ func fallbackReport(log clientLog, eventTime time.Time, rwAddrs, pools []string)
 		// Only while rw took connections from the start to 0.25 s after the
 		// end: one that was running when rw went down may land on read, and
 		// the connects alone see rw down up to their interval later.
-		s, known := stateAt(states, e.start)
-		if end, _ := stateAt(states, e.end+connectEvery.Milliseconds()); !known || !s.up || end.at != s.at {
+		s, seen := stateAt(states, e.start)
+		if end, _ := stateAt(states, e.end+connectEvery.Milliseconds()); !seen || !s.up || end.at != s.at {
 			continue
 		}
 		limit := s.at + 1000
