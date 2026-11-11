@@ -56,6 +56,11 @@ jobs:
 
   images:
     runs-on: ubuntu-24.04
+    # One build per commit at a time: a second run waits, then finds the
+    # images the first one pushed.
+    concurrency:
+      group: bench-images-${{ github.sha }}
+      cancel-in-progress: false
     permissions:
       contents: read
       packages: write
