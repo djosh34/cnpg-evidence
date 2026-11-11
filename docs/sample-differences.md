@@ -1235,7 +1235,7 @@ done
 
 [../bench/node-init.sh](../bench/node-init.sh)
 
-k3s's systemd unit does the same (`Restart=always`, `KillMode=process`), so a node's pods keep running while k3s is down. As a container's first process, a k3s exit would stop every pod on the node. k3s exits, for example, when it loses a leader lease because two of three nodes are gone. The script also moves itself out of the root cgroup so containerd can create cgroups below it.
+k3s's systemd unit does the same (`Restart=always`, `KillMode=process`), so a node's pods keep running while k3s is down. As a container's first process, a k3s exit would stop every pod on the node. k3s exits, for example, when it loses a leader lease because two of three nodes are gone. The script also moves itself out of the root cgroup so containerd can create cgroups below it, and sets k3s's server directory to 700, as k3s makes it: the bench copies the manifests into it before k3s starts, which made it 755.
 
 ## kube-proxy leaves the conntrack table size alone
 
@@ -1264,7 +1264,7 @@ After a node loss the bench uses the API server of a node that runs, by its addr
 
 ## No SELinux, no secrets encryption, low ports open
 
-The bench's nodes run without `--selinux` and without `--secrets-encryption`, and docker sets `ip_unprivileged_port_start` to 0 in their network namespaces. `host-check.sh` fails four checks there: `selinux`, `k3s-secrets` and `low-ports` for these reasons, and `postgres-account` because the k3s image has no `getent`. `k3s-secrets` also finds `/var/lib/rancher/k3s/server` at mode 755: the bench copies `k3s/manifests/` into it before k3s starts, and k3s makes the directory 700 only when it creates it. The `host-check` scenario expects exactly these failures, with the values in its table.
+The bench's nodes run without `--selinux` and without `--secrets-encryption`, and docker sets `ip_unprivileged_port_start` to 0 in their network namespaces. `host-check.sh` fails four checks there: `selinux`, `k3s-secrets` and `low-ports` for these reasons, and `postgres-account` because the k3s image has no `getent`. The `host-check` scenario expects exactly these failures, with the values in its table.
 
 [../samples/features/host-check.feature](../samples/features/host-check.feature)
 

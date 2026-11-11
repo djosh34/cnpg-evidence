@@ -24,6 +24,11 @@ if [ -f "$cgroup/cgroup.controllers" ]; then
   done
 fi
 
+# k3s makes its server directory 700 when it creates it. The bench copies
+# the manifests into server/manifests before k3s starts, which made it 755.
+mkdir -p /var/lib/rancher/k3s/server
+chmod 700 /var/lib/rancher/k3s/server
+
 while true; do
   status=0
   /bin/k3s server "$@" || status=$?
