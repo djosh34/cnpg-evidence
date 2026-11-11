@@ -79,21 +79,29 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-      # A rerun on the same commit keeps the images an earlier run tested,
-      # since a release tags those.
+      # A rerun on the same commit keeps each image an earlier run tested,
+      # since a release tags those. Only "not found" means an image is
+      # missing; any other error of the lookup stops the job.
       - name: Build and push both images as sha-<commit>
         run: |
           set -euo pipefail
           tag=sha-$GITHUB_SHA
-          if docker buildx imagetools inspect "$CLIENT_IMAGE:$tag" >/dev/null 2>&1 &&
-            docker buildx imagetools inspect "$BENCH_IMAGE:$tag" >/dev/null 2>&1; then
-            echo "both images of $tag exist; not built again"
-            exit 0
+          missing() {
+            local out
+            if out=$(docker buildx imagetools inspect "$1" 2>&1); then
+              echo "$1 exists; not built again"
+              return 1
+            fi
+            [[ $out == *": not found" ]] || { echo "looking up $1: $out" >&2; exit 1; }
+          }
+          if missing "$CLIENT_IMAGE:$tag"; then
+            docker buildx build --platform linux/amd64,linux/arm64 --file bench/Dockerfile --target client \
+              --tag "$CLIENT_IMAGE:$tag" --push .
           fi
-          docker buildx build --platform linux/amd64,linux/arm64 --file bench/Dockerfile --target client \
-            --tag "$CLIENT_IMAGE:$tag" --push .
-          docker buildx build --platform linux/amd64,linux/arm64 --file bench/Dockerfile --target bench \
-            --build-arg "CLIENT_IMAGE=$CLIENT_IMAGE:$tag" --tag "$BENCH_IMAGE:$tag" --push .
+          if missing "$BENCH_IMAGE:$tag"; then
+            docker buildx build --platform linux/amd64,linux/arm64 --file bench/Dockerfile --target bench \
+              --build-arg "CLIENT_IMAGE=$CLIENT_IMAGE:$tag" --tag "$BENCH_IMAGE:$tag" --push .
+          fi
       - name: Log out of ghcr
         if: always()
         run: docker logout ghcr.io
