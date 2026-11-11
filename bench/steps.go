@@ -25,13 +25,16 @@ import (
 //	<thing> has|have been <word> since the <event>
 //	<thing> starts|stops|runs|passes
 //	N s pass [after the <event>]
-//	<ALERT> fired|may fire|fires|resolves|has not fired for <role> [< N s [after the <event>]]
+//	<ALERT> fired|may fire|fires|resolves|has not fired for <role>|the cluster [< N s [after the <event>]]
 //	Alertmanager gets|sends|mutes <ALERT> for <role> [< N s [after the <event>]]
 //	no writes
 //
 // "< N s" counts from the line above, "< N s after the <event>" from that
 // event, "for N s" watches the state for the next N s, and "since the
-// <event>" checks the whole time from that event to now.
+// <event>" checks the whole time from that event to now. A measure such as
+// "writing is healthy" takes "< N s" as its limit over the whole scenario,
+// and "< N s after the <event>" as the time by which it is back after that
+// event.
 const (
 	within    = ` < (\d+) s(?: after the (\w+))?`
 	isLine    = `^(.+?) (?:is|are) (.+?)(?:` + within + `| for (\d+) s)?$`
@@ -71,7 +74,14 @@ type scenario struct {
 	clientEnded time.Time
 	writes      bool // false after "Given no writes"
 
-	down []string // the nodes killed and not started again
+	down     []string // the nodes killed and not started again
+	downPods []string // the instances on them
+
+	needs    map[string]walNeed // what each instance that was down needs of the WAL written meanwhile
+	switched map[string]string  // the WAL file each instance switched away from last
+	restarts map[string]int     // the restart count of an instance's postgres container before it was killed
+	ident    string             // the pg_ident lines every instance had at the first line about them
+	store    string             // how the store is broken: stopped, paused, or "" when it is not
 
 	started time.Time       // when the scenario started, after the monitoring was ready
 	alerts  map[string]bool // the alerts the scenario names, "<alertname> <pod>": true when they must fire, false when they may
@@ -163,6 +173,8 @@ func (s *scenario) is(thing, word, n, after, forN string) error {
 		return s.event(key, w, a)
 	case s.kind == messages.PickleStepType_ACTION:
 		return fmt.Errorf("a check in a When line: %s", key)
+	case w.longest != nil && after != "":
+		return s.measureBack(key, w, n, after)
 	case w.longest != nil:
 		return s.measure(key, w, n, after, forN)
 	}
@@ -210,12 +222,9 @@ func (s *scenario) alert(name, verb, who, n, after string) error {
 	if s.kind == messages.PickleStepType_ACTION {
 		return errors.New("an alert check in a When line")
 	}
-	pod, err := s.role(who)
+	pod, err := s.alertPod(who)
 	if err != nil {
 		return err
-	}
-	if pod == anotherInstance {
-		return errors.New("an alert names one instance")
 	}
 	key := alertKey(name, pod)
 	var check func(context.Context) error
@@ -244,6 +253,19 @@ func (s *scenario) alert(name, verb, who, n, after string) error {
 		return err
 	}
 	return poll(s.ctx, deadline, check)
+}
+
+// alertPod is the pod an alert line names: an instance by its role, or ""
+// for "the cluster", an alert of the whole cluster such as CNPGDatabaseDown.
+func (s *scenario) alertPod(who string) (string, error) {
+	if who == "the cluster" {
+		return "", nil
+	}
+	pod, err := s.role(who)
+	if err == nil && pod == anotherInstance {
+		err = errors.New("an alert names one instance, or the cluster")
+	}
+	return pod, err
 }
 
 // alertIs checks that key fires now, or fired in the scenario, or not.
@@ -334,16 +356,18 @@ func (s *scenario) noWrites() error {
 	return nil
 }
 
+// event does an event. Its time, for "after the <event>" and "since the
+// <event>", is when the bench has done it: a kill, for one, first looks up
+// the nodes.
 func (s *scenario) event(key string, w word, a args) error {
 	if s.kind == messages.PickleStepType_OUTCOME {
 		return fmt.Errorf("an event in a Then line: %s", key)
 	}
-	at := time.Now()
 	if err := w.event(s.ctx, s, a); err != nil {
 		return err
 	}
 	if w.mark != "" {
-		s.marks[w.mark], s.last = at, w.mark
+		s.marks[w.mark], s.last = time.Now(), w.mark
 	}
 	return nil
 }
@@ -376,6 +400,29 @@ func (s *scenario) measure(key string, w word, n, after, forN string) error {
 		return fmt.Errorf("%s: the longest time without one was %s, not < %d s", key, seconds(got), limit)
 	}
 	return nil
+}
+
+// measureBack waits until the measure is back after the event, by N s after
+// it. It counts when the measure came back, not when the bench saw it.
+func (s *scenario) measureBack(key string, w word, n, after string) error {
+	if w.back == nil {
+		return fmt.Errorf("%s takes no \"after the <event>\"", key)
+	}
+	deadline, err := s.deadline(n, after)
+	if err != nil {
+		return err
+	}
+	from := s.marks[after]
+	var back time.Time
+	err = poll(s.ctx, deadline, func(ctx context.Context) error {
+		var err error
+		back, err = w.back(ctx, s, from)
+		return err
+	})
+	if err != nil && !back.IsZero() && !back.After(deadline) {
+		return nil
+	}
+	return err
 }
 
 func (s *scenario) holdsFor(n string, check func(context.Context) error) error {
@@ -416,18 +463,21 @@ func (s *scenario) deadline(n, after string) (time.Time, error) {
 }
 
 // The roles a line can name. "another instance" is any instance but the
-// primary; "the new primary" is the instance that became primary last.
-var roleNames = []string{"the new primary", "the primary", "replica 1", "replica 2", "another instance"}
+// primary; "the new primary" is the instance that became primary last; "a
+// replica" is an instance other than the one that became primary last.
+var roleNames = []string{"the new primary", "the primary", "replica 1", "replica 2", "another instance", "a replica"}
 
 const anotherInstance = ""
 
-// args are what lookup took out of a line: the pods of its roles, in order.
+// args are what lookup took out of a line: the pods of its roles and its
+// numbers, in order.
 type args struct {
 	pods []string
+	ns   []int
 }
 
 // lookup turns thing and word into a vocabulary key, replacing each role
-// with <role> and keeping its pod.
+// with <role> and keeping its pod, and each number with <n>.
 func (s *scenario) lookup(thing, word string) (string, args, error) {
 	var a args
 	key := ""
@@ -446,6 +496,16 @@ next:
 				continue next
 			}
 		}
+		if digits := leadingDigits(text[i:]); digits != "" {
+			n, err := strconv.Atoi(digits)
+			if err != nil {
+				return "", a, err
+			}
+			a.ns = append(a.ns, n)
+			key += "<n>"
+			i += len(digits)
+			continue
+		}
 		key += text[i : i+1]
 		i++
 	}
@@ -453,6 +513,26 @@ next:
 		return "", a, fmt.Errorf("not in the vocabulary: %q", key)
 	}
 	return key, a, nil
+}
+
+func leadingDigits(text string) string {
+	end := 0
+	for end < len(text) && text[end] >= '0' && text[end] <= '9' {
+		end++
+	}
+	return text[:end]
+}
+
+// newPrimary names the instance that became primary: the new primary, and a
+// replica one of the others.
+func (s *scenario) newPrimary(pod string) {
+	s.roles["the new primary"] = pod
+	for _, role := range []string{"the primary", "replica 1", "replica 2"} {
+		if other := s.roles[role]; other != pod {
+			s.roles["a replica"] = other
+			return
+		}
+	}
 }
 
 func (s *scenario) role(name string) (string, error) {

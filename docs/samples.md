@@ -124,6 +124,7 @@ The chart's settings in the `Cluster`:
   - Why not `switchover`: in CloudNativePG 1.30.1, the switchover of a rollout can name one replica as the target and then another a moment later. The first one keeps trying to take the primary lease. At the next switchover the primary releases the lease, that replica takes it and keeps it, and the switchover never ends, with no primary, until that replica's pod restarts. In repeated live runs this stopped 5 of 119 switchovers made right after a rollout; with `restart`, none of 144. CloudNativePG fixed it after 1.30.1 ([cloudnative-pg#11677](https://github.com/cloudnative-pg/cloudnative-pg/pull/11677)). With `restart`, a rollout makes no switchover.
 - **No replication slots, and WAL kept on every instance.** See [WAL and the object store](#wal-and-the-object-store).
 - **`smartShutdownTimeout: 0`.** A stopping instance ends open sessions at once instead of waiting up to 180 s for them to close, which a connection pool does not do by itself. A commit that is still waiting for its standby then ends with the warning that it committed locally but might not have been replicated. It stays committed.
+- **`switchoverDelay: 30`.** In a switchover the old primary has 30 s to stop and archive its WAL, then CNPG stops it at once. CNPG's default is 3600 s. A store over TLS that never answers holds each archive call for about 60 s, and the old primary then took 11 minutes to stop. With 30 s the new primary took a write about 610 s after the switchover. WAL the old primary could not archive stays in its `pg_wal` until it rejoins, and CNPG archives it then; the new primary already has every confirmed commit. Until then the store lacks that WAL, as it does after a primary node loss.
 - **Startup, readiness and liveness checks are CNPG's defaults.** An instance is ready, and its node opens the read port, once PostgreSQL accepts connections, so a failover never waits on a lag check. A starting or rewound replica can therefore open the read port while it is still behind the primary, and a replica that falls behind later stays on the read port; watch its replication lag. A client reads through `pg-rw` first and turns to the read port only when no primary answers, so while a primary exists these reads do not reach it. The liveness isolation check stays on.
 
 What clients see, from tests on a three-node k3s cluster with these settings, a new connection every 0.25 s and all three nodes in the host list:
@@ -162,13 +163,14 @@ The chart keeps enough WAL on the instances' own disks that a replica that was d
 
 Commits and reads never wait for the store. A failover, a switchover and a starting replica do: a promotion looks up the timeline history and the last WAL file in the store, a starting replica asks the store first for each WAL file it replays, and the old primary in a switchover tries to archive once more before it stops.
 
-What a broken store costs, in seconds from the event until the new primary took a write, measured on a three-node k3s cluster with these settings. The refusing and the never answering store are the `store-refuse` and `store-hang` scenarios of [live.md](live.md); the last row comes from a test whose store dropped every new connection.
+What a broken store costs, in seconds from the event until the new primary took a write, measured on a three-node k3s cluster with these settings. The refusing and the never answering store are the `store-refuse` and `store-hang` scenarios of [live.md](live.md), with a store over plain HTTP, and of the [bench](bench.md), with a store over TLS. Over TLS a store that never answers holds each call in the TLS handshake. That wait ends only at botocore's connect timeout of 60 s, which barman-cloud gives no way to change, as with a store that drops connections. The last row comes from a test whose store dropped every new connection.
 
 | Store | Primary node loss | Switchover |
 |---|---|---|
 | Works | about 75 | about 11 |
 | Refuses connections | about 80 | about 17 |
-| Accepts connections and never answers | about 120 | about 90 |
+| Accepts connections and never answers, plain HTTP | about 120 | about 90 |
+| Accepts connections and never answers, TLS | about 550 (9 min) | about 610 (10 min) |
 | Drops connections without an answer | about 600 (10 min) | about 850 (14 min) |
 
 With the store refusing, a replica that was down while 1.2 GB of WAL was written caught up from the primary alone, about 40 s after its node started. A former primary with WAL that the store never got waits for the store before it rejoins: CNPG archives that WAL before the former primary rewinds. Until the store is back, the cluster runs on the other two instances, and every commit needs both.

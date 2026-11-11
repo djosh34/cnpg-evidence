@@ -56,24 +56,84 @@ func installCharts(ctx context.Context) error {
 		if _, err := helm(ctx, 5*time.Minute, "dependency", "build", "--skip-refresh", dir); err != nil {
 			return err
 		}
-		args := []string{"upgrade", "--install", r.Name, dir, "--namespace", r.Namespace, "--create-namespace",
-			"--wait", "--timeout", "15m"}
-		for _, v := range r.Values {
-			args = append(args, "--values", filepath.Join(benchDir, v))
-		}
-		own := filepath.Join(benchDir, "values", r.Name+".yaml")
-		switch _, err := os.Stat(own); {
-		case err == nil:
-			args = append(args, "--values", own)
-		case !errors.Is(err, fs.ErrNotExist):
+		values, err := valuesOf(r)
+		if err != nil {
 			return err
 		}
+		args := append([]string{"upgrade", "--install", r.Name, dir, "--namespace", r.Namespace, "--create-namespace",
+			"--wait", "--timeout", "15m"}, values...)
 		logf("installing %s from charts/%s", r.Name, r.Chart)
 		if _, err := helm(ctx, 16*time.Minute, args...); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// valuesOf are the --values arguments of a release: its values files from
+// the mounted directory, then values/<release>.yaml when it exists.
+func valuesOf(r release) ([]string, error) {
+	var args []string
+	for _, v := range r.Values {
+		args = append(args, "--values", filepath.Join(benchDir, v))
+	}
+	own := filepath.Join(benchDir, "values", r.Name+".yaml")
+	switch _, err := os.Stat(own); {
+	case err == nil:
+		args = append(args, "--values", own)
+	case !errors.Is(err, fs.ErrNotExist):
+		return nil, err
+	}
+	return args, nil
+}
+
+// clusterChart is the release of the cluster, and the directory of its
+// chart in the bench's copy of the charts.
+func clusterChart() (release, string, error) {
+	charts := filepath.Join(workDir, "charts")
+	releases, err := readReleases(filepath.Join(charts, "releases.yaml"))
+	if err != nil {
+		return release{}, "", err
+	}
+	for _, r := range releases {
+		if r.Name == clusterRelease {
+			return r, filepath.Join(charts, r.Chart), nil
+		}
+	}
+	return release{}, "", fmt.Errorf("charts/releases.yaml has no release %s", clusterRelease)
+}
+
+// upgradeCluster changes the cluster's release: helm upgrade with the values
+// it has, and more.
+func upgradeCluster(ctx context.Context, more ...string) error {
+	_, dir, err := clusterChart()
+	if err != nil {
+		return err
+	}
+	args := append([]string{"upgrade", clusterRelease, dir, "--namespace", namespace, "--reuse-values"}, more...)
+	_, err = helm(ctx, 5*time.Minute, args...)
+	return err
+}
+
+// installRestore installs the cluster's chart with the cluster's values as a
+// new cluster that restores the cluster's backups from the store, as
+// docs/samples.md says. It gets its own rw LoadBalancer and no read
+// LoadBalancer.
+func installRestore(ctx context.Context, name string) error {
+	r, dir, err := clusterChart()
+	if err != nil {
+		return err
+	}
+	values, err := valuesOf(r)
+	if err != nil {
+		return err
+	}
+	args := append([]string{"install", name, dir, "--namespace", namespace}, values...)
+	args = append(args, "--set", "cluster.name="+name, "--set", "recovery.enabled=true",
+		"--set", "recovery.sourceCluster="+clusterName, "--set", "rwLoadBalancer.name="+name+"-rw-lb",
+		"--set", "readLoadBalancer=null")
+	_, err = helm(ctx, 5*time.Minute, args...)
+	return err
 }
 
 func helm(ctx context.Context, limit time.Duration, args ...string) (string, error) {

@@ -15,10 +15,12 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 )
 
-// The cluster the chart makes, as samples/desired.yaml names it.
+// The cluster the chart makes, as samples/desired.yaml names it, and its
+// release in charts/releases.yaml.
 const (
-	namespace   = "databases"
-	clusterName = "pg"
+	namespace      = "databases"
+	clusterName    = "pg"
+	clusterRelease = "pg"
 )
 
 var kubeconfig = workDir + "/kubeconfig"
@@ -38,11 +40,25 @@ func command(ctx context.Context, stdin io.Reader, name string, args ...string) 
 	return strings.TrimSuffix(stdout.String(), "\n"), nil
 }
 
-// kubectl runs kubectl with a time limit of 30 s.
+// kubectl runs kubectl with a time limit of 30 s per try. The API server
+// rejects requests while etcd elects a new leader, as after a node is
+// killed, and applies none of them; such a request is tried again until 30 s
+// after the first try, so a call can take up to about 60 s.
 func kubectl(ctx context.Context, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	return command(ctx, nil, "kubectl", args...)
+	end := time.Now().Add(30 * time.Second)
+	for {
+		once, cancel := context.WithTimeout(ctx, 30*time.Second)
+		out, err := command(once, nil, "kubectl", args...)
+		cancel()
+		if err == nil || !strings.Contains(err.Error(), "etcdserver: leader changed") || time.Now().After(end) {
+			return out, err
+		}
+		select {
+		case <-ctx.Done():
+			return "", errors.Join(err, ctx.Err())
+		case <-time.After(2 * time.Second):
+		}
+	}
 }
 
 // psql runs SQL as postgres on an instance, in database db.
@@ -52,12 +68,17 @@ func psql(ctx context.Context, pod, db, sql string) (string, error) {
 }
 
 func clusterField(ctx context.Context, field string) (string, error) {
-	return kubectl(ctx, "get", "cluster", clusterName, "-n", namespace, "-o", "jsonpath={.status."+field+"}")
+	return fieldOf(ctx, clusterName, field)
 }
 
-// instances are the instance pods of the cluster, by name.
-func instances(ctx context.Context) ([]string, error) {
-	out, err := kubectl(ctx, "get", "pods", "-n", namespace, "-l", "cnpg.io/cluster="+clusterName+",cnpg.io/podRole=instance",
+// fieldOf is a field of the status of a cluster.
+func fieldOf(ctx context.Context, cluster, field string) (string, error) {
+	return kubectl(ctx, "get", "cluster", cluster, "-n", namespace, "-o", "jsonpath={.status."+field+"}")
+}
+
+// instances are the instance pods of a cluster, by name.
+func instances(ctx context.Context, cluster string) ([]string, error) {
+	out, err := kubectl(ctx, "get", "pods", "-n", namespace, "-l", "cnpg.io/cluster="+cluster+",cnpg.io/podRole=instance",
 		"-o", "jsonpath={.items[*].metadata.name}")
 	if err != nil {
 		return nil, err
@@ -67,24 +88,24 @@ func instances(ctx context.Context) ([]string, error) {
 	return pods, nil
 }
 
-// healthy: three ready instances, the phase healthy, and two replicas
-// streaming from the primary.
-func healthy(ctx context.Context) error {
-	ready, err := clusterField(ctx, "readyInstances")
+// healthy: the cluster has three ready instances, the phase healthy, and two
+// replicas streaming from the primary.
+func healthy(ctx context.Context, cluster string) error {
+	ready, err := fieldOf(ctx, cluster, "readyInstances")
 	if err != nil {
 		return err
 	}
 	if ready != "3" {
 		return fmt.Errorf("ready instances: %q", ready)
 	}
-	phase, err := clusterField(ctx, "phase")
+	phase, err := fieldOf(ctx, cluster, "phase")
 	if err != nil {
 		return err
 	}
 	if phase != "Cluster in healthy state" {
 		return fmt.Errorf("phase: %q", phase)
 	}
-	primary, err := clusterField(ctx, "currentPrimary")
+	primary, err := fieldOf(ctx, cluster, "currentPrimary")
 	if err != nil {
 		return err
 	}

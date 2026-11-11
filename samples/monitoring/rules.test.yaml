@@ -592,6 +592,31 @@ tests:
               description: 2 sessions wait for a standby to confirm their commit. Reads still work.
       - {eval_time: 115s, alertname: CNPGWritesBlocked}
 
+  # The primary's collector is lost with its node while its last sample shows
+  # a commit waiting. It sends no stale marker, so the sample stays for the
+  # lookback: no alert.
+  - name: writes blocked, collector lost
+    interval: 5s
+    input_series:
+      - {series: 'cnpg_sync_replication_waiting{namespace="databases",cluster="pg",pod="pg-1"}', values: '0x5 1 _x40'}
+    alert_rule_test:
+      - {eval_time: 30s, alertname: CNPGWritesBlocked}
+      - {eval_time: 45s, alertname: CNPGWritesBlocked}
+      - {eval_time: 60s, alertname: CNPGWritesBlocked}
+      - {eval_time: 120s, alertname: CNPGWritesBlocked}
+
+  # As above, and the instance comes back within the lookback under a new
+  # address, as a new series: no alert.
+  - name: writes blocked, collector lost, instance back
+    interval: 5s
+    input_series:
+      - {series: 'cnpg_sync_replication_waiting{namespace="databases",cluster="pg",pod="pg-1",instance="10.42.0.5:9187"}', values: '0x5 1 _x40'}
+      - {series: 'cnpg_sync_replication_waiting{namespace="databases",cluster="pg",pod="pg-1",instance="10.42.0.9:9187"}', values: '_x20 0x20'}
+    alert_rule_test:
+      - {eval_time: 45s, alertname: CNPGWritesBlocked}
+      - {eval_time: 120s, alertname: CNPGWritesBlocked}
+      - {eval_time: 180s, alertname: CNPGWritesBlocked}
+
   # A cluster that is not listed in cnpg_sample:database gives no alert; the
   # listed one is healthy.
   - name: unlisted cluster

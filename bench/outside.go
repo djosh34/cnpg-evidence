@@ -200,6 +200,39 @@ func createBucket(ctx context.Context, client *http.Client) error {
 	return nil
 }
 
+// The store breaks in one of two ways. Stopped, it refuses connections: its
+// address belongs to a container that listens on no port. Paused, it takes
+// connections and never answers.
+const storeGone = "s3-gone"
+
+func stopStore(ctx context.Context, nw *testcontainers.DockerNetwork) error {
+	if _, err := command(ctx, nil, "docker", "stop", "-t", "0", "s3"); err != nil {
+		return err
+	}
+	_, err := command(ctx, nil, "docker", "run", "-d", "--name", storeGone, "--network", nw.Name, "--ip", s3IP,
+		"--entrypoint", "/bin/sleep", k3sImage, "86400")
+	return err
+}
+
+func pauseStore(ctx context.Context) error {
+	_, err := command(ctx, nil, "docker", "pause", "s3")
+	return err
+}
+
+// restoreStore brings back a store that stopStore stopped or pauseStore
+// paused.
+func restoreStore(ctx context.Context, stopped bool) error {
+	if !stopped {
+		_, err := command(ctx, nil, "docker", "unpause", "s3")
+		return err
+	}
+	if _, err := command(ctx, nil, "docker", "rm", "-f", storeGone); err != nil {
+		return err
+	}
+	_, err := command(ctx, nil, "docker", "start", "s3")
+	return err
+}
+
 func sha256Hex(s string) string {
 	sum := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(sum[:])
@@ -277,14 +310,20 @@ func startACME(ctx context.Context, nw *testcontainers.DockerNetwork, root *ca) 
 	if err != nil {
 		return nil, err
 	}
-	bao := &openbao{http: &http.Client{Timeout: 10 * time.Second}}
+	// Init can take longer than 10 s, and a second init fails, so it runs
+	// once, after OpenBao answers.
+	bao := &openbao{http: &http.Client{Timeout: 2 * time.Minute}}
+	err = poll(ctx, time.Now().Add(60*time.Second), func(ctx context.Context) error {
+		return bao.call(ctx, http.MethodGet, "sys/init", nil, nil)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("OpenBao answering: %w", err)
+	}
 	var init struct {
 		Keys  []string `json:"keys_base64"`
 		Token string   `json:"root_token"`
 	}
-	err = poll(ctx, time.Now().Add(60*time.Second), func(ctx context.Context) error {
-		return bao.call(ctx, http.MethodPut, "sys/init", map[string]any{"secret_shares": 1, "secret_threshold": 1}, &init)
-	})
+	err = bao.call(ctx, http.MethodPut, "sys/init", map[string]any{"secret_shares": 1, "secret_threshold": 1}, &init)
 	if err != nil {
 		return nil, fmt.Errorf("OpenBao init: %w", err)
 	}
