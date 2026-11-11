@@ -18,7 +18,7 @@ Scenario: The primary's node is lost for 2 minutes
 ./e2e.sh switchover      # runs one
 ```
 
-The host needs docker, bash, Go 1.27 and the [inotify limit](#raise-the-inotify-limit). `./e2e.sh` runs `TestScenario` in [`e2e/scenario_test.go`](../e2e/scenario_test.go) with `go test`, so you can run it directly too:
+The host needs what the [README](../README.md#run-a-scenario) lists. `./e2e.sh` runs `TestScenario` in [`e2e/scenario_test.go`](../e2e/scenario_test.go) with `go test`, so you can run it directly too:
 
 ```bash
 go -C e2e test -run '^TestScenario$' -count=1 -timeout 90m -v . -scenario switchover
@@ -28,7 +28,7 @@ Without `-scenario` the test skips, so `go test ./...` in `e2e/` starts no conta
 
 The test builds [`e2e/Dockerfile`](../e2e/Dockerfile) for the host's own architecture and keeps it as `cnpg-evidence-e2e:local`, so the next run reuses its layers. It copies `samples/` into the container, runs it privileged and copies `/results` out to `results/` at the end. testcontainers removes the container and its volumes when the test ends. If the test process is killed, its Ryuk container removes them. A run never writes into `samples/`.
 
-Exit codes: 0 the scenario passed, 1 it failed, 2 it could not run. One run takes 15 to 40 minutes.
+`./e2e.sh` exits 0 when the scenario passed, 2 without exactly one scenario, and 1 otherwise. The log gives the container's own code: 1 when the scenario failed, 2 when it could not run. One run takes 15 to 40 minutes.
 
 ## Raise the inotify limit
 
@@ -52,13 +52,13 @@ Each run writes a new directory `results/<scenario>-<time>/`, time in UTC:
 | `state.txt` | `docker ps`, the last log lines of every container, the nodes, pods, events and CNPG objects, and the alert history. After a failure it is also printed at the end of the log. |
 | `client.log` | The client's log: one line per read, write, connect and attempt, with the address it used ([format](../e2e/client/main.go)). |
 | `pgfallback.md` | The [pgfallback report](#the-pgfallback-report), for scenarios with a `pgfallback has been healthy` line. |
-| `evidence.json`, `evidence.desired.json`, `prove.<node>.json`, `prove.desired.json`, `host-check.<node>.json` | What the evidence scripts printed, for scenarios that run them. `cnpg-report` [draws them](report.md#run). |
+| `evidence.json`, `evidence.desired.json`, `prove.<node>.json`, `prove.desired.json`, `host-check.<node>.json` | What the evidence scripts printed, for scenarios that run them. `cnpg-report` [draws them](report.md#run); host-check needs its desired document from [`desired.sh --source host-check`](desired.md) first. |
 
 Start with `timing.md`: the first row with a failure names the line that failed, and its *Measured* column gives what was seen. Then read `state.txt` for what the cluster looked like at the end.
 
 ## Run scenarios in CI
 
-On GitHub, [`e2e.yml`](../.github/workflows/e2e.yml) runs every scenario on an amd64 and an arm64 runner, 46 jobs in parallel. It runs on demand only:
+On GitHub, [`e2e.yml`](../.github/workflows/e2e.yml) runs every scenario on an amd64 and an arm64 runner, one job each, in parallel. It runs on demand only:
 
 ```bash
 gh workflow run e2e.yml --ref <branch>

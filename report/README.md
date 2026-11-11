@@ -41,7 +41,7 @@ It downloads the pinned Chrome zip and checks its SHA-256, gathers the RPMs' lib
 ## Tests
 
 ```bash
-cd report && node --test test/*.test.js       # Node.js 20, bash, jq and openssl
+(cd report && node --test test/*.test.js)     # Node.js 20, bash, jq and openssl
 bash report/test/binary.sh build/cnpg-report images
 bash report/test/docker-example.sh VERSION OUT_DIR
 ```

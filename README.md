@@ -8,12 +8,10 @@ Sample charts for a CloudNativePG (CNPG) cluster that accepts only certificate l
 ./e2e.sh switchover
 ```
 
-- **Needs** Linux with docker, bash and Go 1.27, and the host's `fs.inotify.max_user_instances` at 1024 or more: `bash e2e/inotify.sh` raises it.
-- **Does** build the e2e image from this checkout, then run one privileged container. Inside it, a three-node k3s cluster gets the charts of `samples/`. The run then plays the scenario and [`always.feature`](samples/features/always.feature). testcontainers removes the container and its volumes at the end.
+- **Needs** docker, bash and Go 1.27, and the host's `fs.inotify.max_user_instances` at 1024 or more: `bash e2e/inotify.sh` raises it.
 - **Results** go to `results/<scenario>-<time>/`. Exit 0 means the scenario passed.
-- `./e2e.sh` with no argument lists the 23 scenarios and exits 2.
 
-A run takes 15 to 40 minutes. [docs/e2e.md](docs/e2e.md) covers what a run does, how to read its results, how to run scenarios in CI, and how to write a scenario.
+`./e2e.sh` with no argument lists the scenarios. A run builds a three-node k3s cluster from `samples/` inside one container and takes 15 to 40 minutes; [docs/e2e.md](docs/e2e.md) says what it does and how to read its results.
 
 ## How to
 

@@ -5,9 +5,9 @@ A release is a tag `vX.Y.Z` on a commit of `main` whose full scenario run is gre
 1. Run every scenario on the commit you want to release:
    ```bash
    gh workflow run e2e.yml --ref main
-   gh run list --workflow e2e.yml --limit 1
+   gh run list --workflow e2e.yml --limit 1 --json databaseId,headSha,url
    ```
-   Wait until all 46 jobs are green. Note the run's link. If `main` moves in the meantime, release the commit that run tested.
+   Wait until every job is green. Note the run's `url` and `headSha`: the commit to release, even if `main` moved since.
 2. Tag that commit and push the tag:
    ```bash
    git tag vX.Y.Z <commit>

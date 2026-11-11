@@ -64,7 +64,7 @@ The verdict is the script's: an evidence image fails when a violation's `path` p
 
 ### The comparison
 
-`report/page/compare.js` walks both documents from the top. It skips the top-level `kind`, `source`, `collected_at`, `cluster`, `node`, `status` and `violations`, `details.primary` and `details.instances`, every `raw` key, and every top-level section the desired document lacks. Maps are compared key by key, and a `"*"` key stands for every key. Lists are rows matched by `id` or `probe`, else by the whole row without `raw`; their order does not count. An `{"allowed": [...]}` list allows any of its members and no other. Each difference is `{path, extra}` or `{path, missing}`.
+`report/page/compare.js` walks both documents from the top. It skips the top-level `kind`, `source`, `collected_at`, `cluster`, `node`, `status` and `violations`, `details.primary` and `details.instances`, every `raw` key, and every top-level section the desired document lacks. Maps are compared key by key. Lists are rows matched by `id` or `probe`, else by the whole row without `raw`; their order does not count. `"*"` and `{"allowed": [...]}` work as [desired.md](desired.md) says. Each difference is `{path, extra}` or `{path, missing}`.
 
 ## Image files
 

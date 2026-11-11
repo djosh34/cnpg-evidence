@@ -23,9 +23,10 @@ A scenario installs each release of `releases.yaml` with `helm upgrade --install
 - **A setting only the scenarios need:** change `values/<release>.yaml`.
 - **The k3s settings:** change `k3s/config.yaml`, or add a manifest to `k3s/manifests/`. The run adds each node's address, the join and the DNS server itself.
 - **A new release:** add it to `releases.yaml` with `name`, `namespace` and `chart`, at the point in the order where its dependencies are installed.
-- **A new upstream chart version:** replace the directory and set the same version in the values chart's `Chart.yaml`; `helm dependency build` fails while the two differ. Then compare the RBAC as [below](#rbac-on-chart-upgrades).
+- **A new upstream chart version:** compare the RBAC as [below](#rbac-on-chart-upgrades), replace the directory, and set the same version in the values chart's `Chart.yaml`; `helm dependency build` fails while the two differ.
 
 ```bash
+rm -r samples/charts/<chart>
 helm pull <chart> --repo <repo> --version <version> --untar --untardir samples/charts
 ```
 
@@ -176,9 +177,10 @@ What clients see, with all three nodes in the host list:
 
 Commits and reads never wait for the store. A promotion, a switchover and a starting replica do. From the event until the new primary took a write:
 
+Against the times [above](#writes-reads-and-failover) for a working store:
+
 | Store | Primary node loss | Switchover |
 |---|---|---|
-| Works | about 75 s | about 11 s |
 | Refuses connections | about 80 s | about 17 s |
 | Accepts connections and never answers, over TLS | about 9 min | about 10 min |
 | Drops connections without an answer | about 10 min | about 14 min |
@@ -233,7 +235,7 @@ helm install pg-restore samples/charts/cnpg-cluster -n databases -f samples/desi
   --set rwLoadBalancer.name=pg-restore-rw-lb --set readLoadBalancer=null
 ```
 
-The new name gives its WAL archive its own folder. CNPG refuses a Service another cluster owns, so the restore gets its own rw LoadBalancer and none for reads; while the old cluster holds 5432, use its `pg-restore-rw` Service inside the cluster. A backup taken before `app` was removed brings `app` back.
+The new name gives its WAL archive its own folder. CNPG refuses a Service another cluster owns, so the restore gets its own rw LoadBalancer and none for reads; while the old cluster holds 5432, use its `pg-restore-rw` Service inside the cluster. A backup taken before `app` was removed brings `app` back: [remove it](#remove-app-from-a-cluster-bootstrapped-with-the-defaults) again. A backup taken before the chart's grants needs the [compliance grants](#compliance-metric) given again.
 
 ## Remove app from a cluster bootstrapped with the defaults
 
