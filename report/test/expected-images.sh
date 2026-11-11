@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Prints, sorted, the image files cnpg-report writes for one document, by the
-# list in report/README.md: both images of each pair for an actual document,
+# list in docs/report.md: both images of each pair for an actual document,
 # the desired images for a desired document.
 #
 # Usage: bash expected-images.sh DOC.json

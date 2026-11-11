@@ -1,64 +1,40 @@
 # prove.sh
 
-`scripts/prove/prove.sh` tries each forbidden login and host-uid access, and expects each to fail with the specific denial. One control attempt must succeed, so that a failure shows a denial and not a broken path. It covers [rules](../README.md#rules) 1 (the replication certificate), 2 and 5.
-
-Every run leaves failed logins in PostgreSQL's log; run it by hand, not on a schedule.
+`scripts/prove/prove.sh` tries the logins and host-uid accesses that [rules](../README.md#rules) 1, 2 and 5 forbid, and expects each to fail with its specific denial. One control login must succeed, so a failure shows a denial and not a broken path. Each run leaves failed logins in PostgreSQL's log, so run it by hand, not on a schedule.
 
 ## Run
 
-As root on the node given by `--node`, with a cluster-admin kubeconfig (on a k3s server node, `KUBECONFIG=/etc/rancher/k3s/k3s.yaml`), `kubectl`, `jq`, `psql`, `setpriv`, `pgrep` and `python3`. The desired state comes on stdin as JSON, as for `evidence.sh`:
+As root on a node that runs an instance, with a cluster-admin kubeconfig, `kubectl`, `jq`, `psql`, `setpriv`, `pgrep` and `python3`:
 
 ```bash
-yq -o=json samples/desired.yaml | bash scripts/prove/prove.sh
-yq -o=json samples/desired.yaml | bash scripts/prove/prove.sh --node node-a --node-root '' --postgres-uid 999 --postgres-gid 999
+yq -o=json samples/desired.yaml | bash scripts/prove/prove.sh > prove.json
+yq -o=json samples/desired.yaml | bash scripts/prove/prove.sh --node node-a --node-root '' \
+  --postgres-uid 999 --postgres-gid 999 > prove.json
 ```
 
-From [`samples/desired.yaml`](../samples/desired.yaml) it takes `cluster.namespace`, `cluster.name` and the rw LoadBalancer `rwLoadBalancer.name`.
+- stdin: `samples/desired.yaml` as JSON; it reads the cluster's name and namespace and `rwLoadBalancer.name`.
+- `--node`: this node's Kubernetes name. Default the hostname.
+- `--node-root`: a prefix for the kubelet and storage paths, for a node seen from elsewhere, such as `/proc/<pid>/root` of a node container. Default none.
+- `--postgres-uid`, `--postgres-gid`: the chart's ids. Default 999.
 
-It runs nothing in the instance pods: `psql` is the node's own, the logins go through the rw LoadBalancer, and the uid attempts use the node's view of the pods' processes and volumes.
+It runs nothing in the pods. The logins use the node's `psql` through every address of the rw LoadBalancer, with no `PG*` variable and an empty `HOME`, so no client certificate of the caller is sent. The replication key stays in memory.
 
-- `--node`: this node's Kubernetes node name, as in `kubectl get nodes`. Default the output of `hostname`. The uid attempts read this node's processes, so run the script on that node, and pick a node that runs an instance.
-- `--node-root`: a prefix for the kubelet and storage paths, for a node whose filesystem is seen under another path, such as a node in a container seen through `/proc/<pid>/root`. Default none; leave it empty when the script runs on the node itself.
-- `--postgres-uid`, `--postgres-gid`: PostgreSQL's uid and gid, the chart's `cluster.postgresUID` and `cluster.postgresGID`: the ids the image names `postgres`. Default 999, as in the Hummingbird image.
+Exit 0: every attempt matched. 1: one differed. 2: a usage or collection error, with nothing on stdout.
 
-## What happens
+## Probes
 
-### 1. Logins from the node
+| Probe | Must |
+|---|---|
+| `password-tls`, `password-no-tls` | A password login as `postgres` gets the pg_hba reject |
+| `tls-no-client-cert` | An application login is asked for a client certificate |
+| `replication-cert-as-<role>` | The replication certificate cannot log in as the application role |
+| `control-replication-cert` | The replication certificate logs in as `streaming_replica`. Must succeed. |
+| `uid-<uid> socket-proc-root` | The host uid cannot log in through the socket under the postgres process's root |
+| `uid-<uid> pgdata-host-path` | The host uid cannot read `PG_VERSION` in the data directory on the host |
+| `uid-mapped socket-host-path` | The pod's mapped host uid cannot log in through the socket on the host path |
+| `uid-probes` | Appears only to fail, as `not found`, when no instance runs on the node |
 
-The script reads the CNPG `Cluster`. It takes the application database and role from the first `hostssl ... cert` line in its pg_hba, and the replication certificate and key from the `<cluster>-replication` Secret.
-
-The rw LoadBalancer Service forwards its port on every address in `status.loadBalancer.ingress` to the primary. The script tries every address.
-
-- Password logins as `postgres` to `postgres`, with and without TLS, must get the pg_hba reject.
-- An application login without a client certificate must be asked for one.
-- The replication certificate must fail as the application role.
-- Control: the same certificate must log in as `streaming_replica` to the `postgres` database, which CNPG's fixed pg_hba line allows. This shows that the certificate and the connection path work.
-
-The replication key reaches `psql` as an in-memory file and is never written to disk (`login/key.py`).
-
-No `PG*` variable of the caller reaches `psql`, and the attempts run with `HOME` set to an empty directory. libpq would otherwise load a client certificate, key and root CA from `~/.postgresql` of whoever runs the script, and the attempt without a client certificate would send one.
-
-### 2. Access as the host postgres uid
-
-The script selects the instance pods on `--node`. It finds each pod's postgres process by the pod's object id (`metadata.uid`, not a Unix uid), which appears in the process's cgroup path. `/proc/<pid>/uid_map` and `gid_map` give the host uid and gid that the pod's `--postgres-uid` and `--postgres-gid` run as. The script also tries the socket's host path as that mapped uid and gid.
-
-Each pod is tried through two views:
-
-- `/proc/<pid>/root`: the process's own filesystem.
-- Host paths: the volumes kubelet mounts for the pod. The pod's PersistentVolumeClaim names a PersistentVolume, whose `spec.local.path` or `spec.hostPath.path` is the data directory on the node.
-
-The targets are the socket under `/proc/<pid>/root`, the data directory on the host path, and the socket on the host path as the pod's mapped uid.
-
-As root the script first checks that each target exists; a missing path cannot show a denial. It then switches to uid `--postgres-uid` and gid `--postgres-gid`, drops supplementary groups and capabilities, and turns off privilege escalation. As that uid it tries a socket login as `postgres` and reads one byte of `PG_VERSION` to `/dev/null`. It tries the socket login on the host path as the pod's mapped uid and gid. A socket login first changes into the socket directory as the trying uid, so the directory modes apply. Socket logins use PostgreSQL's `local` pg_hba lines, not the TCP certificate lines, so this is a separate path.
-
-### 3. Combine the results
-
-Each of the two groups writes one JSON record per attempt; `prove.sh` combines them when both have finished. A denial must show the expected failure text and a control must succeed; an unrelated error never counts as a denial. Attempts with the same probe name, such as one login per LoadBalancer address or one socket login per instance pod, become one row.
-
-The groups also run on their own and print their records, one per line:
-
-- `bash scripts/prove/login/login.sh NAMESPACE CLUSTER LB_SERVICE`: logins from the node.
-- `bash scripts/prove/uid/uid.sh NAMESPACE CLUSTER NODE NODE_ROOT POSTGRES_UID POSTGRES_GID`: host-uid attempts.
+The uid attempts find each pod's postgres process by its cgroup path, read its uid map, and switch to the uid with no groups or capabilities. A target that does not exist fails as `error`, since it shows no denial.
 
 ## Output
 
@@ -70,31 +46,6 @@ The groups also run on their own and print their records, one per line:
 ]}
 ```
 
-Exit 0: every attempt matches. Exit 1: at least one differs. Exit 2: a usage or collection error, with nothing on stdout.
+One row per probe. `value` is `denied`, `allowed` or `error`, or each value once when the attempts differ. `raw` holds every attempt with its target and what happened.
 
-- `kind`: `actual`, a document read from a live cluster.
-- `source`: `prove`.
-- `collected_at`: when the script started, in UTC, ISO 8601, from the local clock.
-- `node`: the node of the host-uid attempts.
-- `namespace`: the cluster's namespace.
-- `cluster`: the CNPG `Cluster` name.
-- `probes`: one row per probe name, the login and uid probes in that order.
-- `probe`: the attempt, named without addresses, pods or mapped uids, so the same probe has the same name on every cluster.
-- `expected`: the result it needs.
-- `value`: `denied` when the attempt failed with the expected denial, `allowed` when it got through, `error` when it failed in another way, or a target was missing. A denial probe passes with `denied`, a control with `allowed`. When the attempts of one row differ, the value lists each once, such as `denied, allowed`.
-- `ok`: `true` when every attempt of the row matches.
-- `raw`: each attempt, with its `target` (address and port, pod, or pod and mapped uid), its `value` and `actual`: what happened, on one line. Login and uid results are cut to 400 characters. `succeeded:` marks a forbidden attempt that got through.
-
-## Probes
-
-- `password-tls`: a password login with TLS gets the pg_hba reject. One attempt per address of the rw LoadBalancer, as for every login probe below.
-- `password-no-tls`: a password login without TLS gets the pg_hba reject.
-- `tls-no-client-cert`: an application login is asked for a client certificate.
-- `replication-cert-as-ROLE`: the replication certificate cannot log in as the application role.
-- `control-replication-cert`: the replication certificate logs in as `streaming_replica` to `postgres`. Must succeed.
-- `uid-UID socket-proc-root`: the host uid cannot log in through the socket under the process root. One attempt per instance pod on the node.
-- `uid-UID pgdata-host-path`: the host uid cannot read `PG_VERSION` in the data directory on the host path.
-- `uid-mapped socket-host-path`: the pod's mapped uid cannot reach the socket on the host path and log in.
-- `uid-probes`: appears only to fail, with the value `not found`, when no instance runs on the node or a pod's postgres process is not found.
-
-A uid probe whose target is missing as root fails too, with the value `error`, since a missing path shows no denial.
+`login/login.sh` and `uid/uid.sh` under `scripts/prove/` also run alone and print one record per attempt.

@@ -1,17 +1,35 @@
 # CNPG least-privilege access: samples and evidence
 
-Sample manifests for a CloudNativePG (CNPG) cluster that accepts only certificate logins, and three scripts that show the rules below hold on a running cluster. `cnpg-report` draws the scripts' output as images.
+Sample charts for a CloudNativePG (CNPG) cluster that accepts only certificate logins, scenarios that break a three-node k3s cluster built from them, and scripts that show the [rules](#rules) hold.
 
-## What the scripts assume
+## Run a scenario
 
-- k3s with its default flannel, servicelb, local-path provisioner and network policy controller.
-- Hosts with SELinux and rpm.
-- CNPG with the barman-cloud plugin.
-- [`samples/desired.yaml`](samples/desired.yaml) describes the cluster: its name and namespace, the client CA Secret, the rw and read LoadBalancers, the namespaces of the operator and the OTel collectors, the replication certificate and the databases. The sample chart, `evidence.sh` and `desired.sh` read it.
+```bash
+./e2e.sh switchover
+```
+
+- **Needs** docker, bash and Go 1.27, and the host's `fs.inotify.max_user_instances` at 1024 or more: `bash e2e/inotify.sh` raises it.
+- **Results** go to `results/<scenario>-<time>/`. Exit 0 means the scenario passed.
+
+`./e2e.sh` with no argument lists the scenarios. A run builds a three-node k3s cluster from `samples/` inside one container and takes 15 to 40 minutes; [docs/e2e.md](docs/e2e.md) says what it does and how to read its results.
+
+## How to
+
+| Action | Doc |
+|---|---|
+| Raise the host's inotify limit | [e2e.md](docs/e2e.md#raise-the-inotify-limit) |
+| List the scenarios and run one | [e2e.md](docs/e2e.md#run-a-scenario) |
+| Run scenarios in CI | [e2e.md](docs/e2e.md#run-scenarios-in-ci) |
+| Read a run's results | [e2e.md](docs/e2e.md#read-the-results) |
+| Change a chart, its values or the k3s settings | [samples.md](docs/samples.md#change-a-chart-its-values-or-the-k3s-settings) |
+| Add or change a scenario | [e2e.md](docs/e2e.md#add-or-change-a-scenario) |
+| Install the samples on a real cluster | [samples.md](docs/samples.md#install-on-a-cluster) |
+| Collect the evidence and draw its images | [Evidence](#evidence) |
+| Release a version | [release.md](docs/release.md) |
 
 ## Rules
 
-`evidence.sh` starts each violation with the number of the rule it breaks.
+The samples hold these rules, and `evidence.sh` starts each violation with the number of the rule it breaks.
 
 1. A client logs in only with a certificate signed by the client CA, over TLS 1.3. Its CN maps to exactly one role, and that role reaches exactly one database. The metrics port answers only over TLS.
 2. No password login works, with or without TLS.
@@ -19,69 +37,32 @@ Sample manifests for a CloudNativePG (CNPG) cluster that accepts only certificat
 4. There is no `app` role or database.
 5. A host user with the postgres uid cannot reach the socket or the data of an instance.
 6. The CNPG operator and the barman-cloud plugin cannot read Secrets outside the operator's and the cluster's namespaces.
-7. Only `system:masters`, CNPG's components, cert-manager and its cainjector, the API server, the Kubernetes and k3s controllers and k3s's Helm install jobs can get PostgreSQL superuser through rights in the cluster's namespace, write Ingresses or Traefik routes, run pods, or become cluster-admin. Rights that equal superuser include exec into the instance pods, reading or writing their Secrets, writing ConfigMaps there and changing CNPG objects; Traefik may also read the Secrets, for the certificates of the routes it serves. Of these subjects, only `system:masters`, cert-manager, the controllers and the Helm install jobs can create certificates.
+7. Only `system:masters`, CNPG's components, cert-manager and its cainjector, the API server, the Kubernetes and k3s controllers and k3s's Helm install jobs can get PostgreSQL superuser through rights in the cluster's namespace, write Ingresses or Traefik routes, run pods, or become cluster-admin. Of these, only `system:masters`, cert-manager, the controllers and the Helm install jobs can create certificates. [evidence.md](docs/evidence.md#kubernetes) lists the rights that count.
 8. On every node, only root can bind ports below 1024 or read the k3s credentials, k3s encrypts Secrets in its datastore, and k3s enforces NetworkPolicies.
 
-## Run
+## Evidence
 
-All three scripts print one JSON document on stdout and logs on stderr. Exit 0 means every check passed, 1 that at least one failed, 2 that the script could not run; then stdout is empty.
+Each script prints one JSON document on stdout and logs on stderr. Exit 0 means every check passed, 1 that one failed, and 2 that the script could not run.
 
-```bash
-# Anywhere with a cluster-admin kubeconfig (on a k3s server node,
-# KUBECONFIG=/etc/rancher/k3s/k3s.yaml). Rules 1 to 4, 6, 7 and the pod side of 5.
-yq -o=json samples/desired.yaml | bash scripts/evidence/evidence.sh --ca client-ca.pem > evidence.json
+| Script | Where it runs | Rules | Doc |
+|---|---|---|---|
+| `scripts/evidence/evidence.sh` | Anywhere with a cluster-admin kubeconfig | 1 to 4, 6, 7, the pod side of 5 | [evidence.md](docs/evidence.md) |
+| `scripts/host-check/host-check.sh` | On every node, as root | the host side of 5, and 8 | [host-check.md](docs/host-check.md) |
+| `scripts/prove/prove.sh` | On a node that runs an instance, as root | 1, 2, 5, by trying | [prove.md](docs/prove.md) |
+| `scripts/desired/desired.sh` | Anywhere | the desired document of each script | [desired.md](docs/desired.md) |
+| `cnpg-report` | Any x86_64 Linux, offline | draws a desired and an actual image per piece of evidence | [report.md](docs/report.md) |
 
-# On every node, as root. The host side of rule 5, and rule 8.
-bash scripts/host-check/host-check.sh > host-check.json
-
-# On one node that runs an instance, as root, with a cluster-admin kubeconfig
-# (on a k3s server node, KUBECONFIG=/etc/rancher/k3s/k3s.yaml).
-# Real login and access attempts that must fail.
-yq -o=json samples/desired.yaml | bash scripts/prove/prove.sh > prove.json
-
-# Anywhere with yq, bash, jq and openssl. The desired documents of the three scripts.
-yq -o=json samples/desired.yaml | bash scripts/desired/desired.sh --ca client-ca.pem > evidence.desired.json
-
-# On any x86_64 Linux host, with no network. A desired and an actual image
-# for each piece of evidence. See docs/report.md for getting the binary.
-cnpg-report --desired evidence.desired.json --out images/ evidence.json
-
-# Anywhere with bash, jq, openssl and python3. The unit tests of all three scripts,
-# with kubectl and psql stubbed.
-bash scripts/test.sh
-```
-
-`client-ca.pem` holds the CAs that may sign client certificates, including the CA of the `issuer` in `samples/charts/cnpg-cluster/values.yaml`: the same certificates as `ca.crt` in the client CA Secret. Each script's doc lists its options, the tools it needs and every key of its output.
-
-## How the scripts fit together
-
-- `evidence.sh` reads the live state through the API server and PostgreSQL, and compares it with `samples/desired.yaml`. It shows rules 1 to 4, 6, 7 and the pod side of rule 5. It only reads.
-- `host-check.sh` reads one node: SELinux, accounts with the postgres uid or gid, directory modes, the k3s credentials and secrets encryption, low ports and the network policy controller. It shows the host side of rule 5 and rule 8. It only reads.
-- `prove.sh` tries what rules 1, 2 and 5 forbid: password logins, a certificate login as the wrong role, and socket and data access as the host postgres uid. Each attempt must fail with the expected denial, and one control attempt must succeed.
-- `desired.sh` builds, from `samples/desired.yaml` alone, a document of the same shape as each script's output that holds the desired values. The scripts' own checks stay the verdict.
-- `cnpg-report` draws one desired and one actual document of the same script as PNG images, a desired and an actual image for each piece of evidence. On the actual image, every value or right beyond the desired document is red, and the image says Passed or Failed. It needs no cluster, network or OS library, so the scripts can run on the cluster and the images can be drawn elsewhere from the JSON files.
+`bash scripts/test.sh` runs the unit tests of the scripts, with `kubectl` and `psql` stubbed.
 
 ## Files
 
-| Path | What it is | Doc |
-|---|---|---|
-| `samples/desired.yaml` | The desired state of the cluster, read by the chart, `evidence.sh` and `desired.sh` | [samples.md](docs/samples.md) |
-| `samples/` | The bench's mounted directory: k3s settings, the upstream Helm charts with their values charts and RBAC, the cluster chart, the bench's own values and the scenarios | [samples.md](docs/samples.md), [bench.md](docs/bench.md) |
-| `samples/monitoring/` | Alert rules, the Alertmanager route and inhibition rules, and a Grafana dashboard for the cluster | [monitoring.md](docs/monitoring.md) |
-| `docs/sample-differences.md` | Every place where the samples differ from the upstream projects' defaults and examples, and why | [sample-differences.md](docs/sample-differences.md) |
-| `scripts/evidence/evidence.sh` | Who can do what in PostgreSQL and Kubernetes, and every rule the live state breaks | [evidence.md](docs/evidence.md) |
-| `scripts/host-check/host-check.sh` | SELinux, accounts, modes, k3s credentials and low ports on one node | [host-check.md](docs/host-check.md) |
-| `scripts/prove/prove.sh` | Login and host-uid attempts that must fail | [prove.md](docs/prove.md) |
-| `scripts/desired/` | The desired documents of the three scripts | [desired.md](docs/desired.md) |
-| `report/` | `cnpg-report`, which draws a desired and an actual image for each piece of evidence: its page, build and tests | [report.md](docs/report.md), [report/README.md](report/README.md) |
-| `scripts/lib/` | Logging and exit helpers shared by the scripts | |
-| `scripts/test.sh` | Runs the `*.test.sh` next to every part of the three scripts | |
-| `bench/` | The bench: one `docker run` builds a three-node k3s cluster from `samples/` inside one container, with the services outside k3s next to it, and runs one scenario of `samples/features/` against it: node losses, switchovers, a rollout, a fence, a broken store, backups and restores, the alerts, the evidence scripts and host-check on the nodes, with an application that reads and writes through `pgfallback` | [bench.md](docs/bench.md) |
-| `pgfallback/` | Go package for pgx and GORM applications outside the cluster: the rw addresses first, the read port only while no rw address takes a connection | [pgfallback.md](docs/pgfallback.md) |
-| `go.mod` | The Go module `github.com/djosh34/cnpg-evidence`, for the `pgfallback` package; `bench/` and `report/launcher` are modules of their own | |
-| `.golangci.yml` | golangci-lint settings for the root module, which report every ignored error | |
-| `.github/workflows/ci.yml` | Runs `scripts/test.sh` for each script in its own job, `samples/monitoring/check.sh`, golangci-lint on the root module, the bench's vet, tests, lint and shellcheck, the `pgfallback` tests against PostgreSQL in docker, the page tests and the test of the built `cnpg-report` on every pull request and push to `main`, and as part of `release.yml` | |
-| `.github/workflows/bench.yml` | Builds the bench images of the commit for amd64 and arm64, pushes them to ghcr as `sha-<commit>`, and runs the chosen scenarios, or `all`, on demand, each on an amd64 and an arm64 runner | [bench.md](docs/bench.md#several-scenarios) |
-| `.github/workflows/release.yml` | On a pushed tag `v*`, checks that the tag's commit passed every scenario of the bench on amd64 and arm64 (`bench/release-check.sh`), runs `ci.yml`, tags the two bench images that run tested with the version, pushes the tested `cnpg-report` as the image `ghcr.io/djosh34/cnpg-report:<tag>`, then pulls it, copies the binary out and renders the clean samples, and last, in the job `go-get`, gets `pgfallback` at the tag through proxy.golang.org (`pgfallback/release-check.sh`) | [report.md](docs/report.md#get-the-binary) |
-| `.shellcheckrc` | ShellCheck settings for the scripts | |
-| `LICENSE` | Apache License 2.0 | |
+| Path | What it is |
+|---|---|
+| `e2e.sh`, `e2e/` | Runs a scenario: the Go test, the code inside the container, the client and `inotify.sh` ([e2e.md](docs/e2e.md)) |
+| `samples/` | The charts, values, k3s settings, monitoring and scenarios ([samples.md](docs/samples.md), [monitoring.md](docs/monitoring.md)) |
+| `scripts/` | The evidence scripts and their tests |
+| `report/` | `cnpg-report`: the page that draws the images, its build and tests ([report/README.md](report/README.md)) |
+| `pgfallback/` | A Go package for pgx and GORM that falls back to the read port while no primary answers ([pgfallback.md](docs/pgfallback.md)) |
+| `.github/workflows/` | `ci.yml` on every pull request and push to `main`; `e2e.yml`, every scenario on demand; `release.yml` on a pushed tag |
+
+Licence: Apache License 2.0.
