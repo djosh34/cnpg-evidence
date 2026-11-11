@@ -12,7 +12,7 @@ import (
 )
 
 // The company CA of one run: a new root key and certificate. OpenBao imports
-// it and issues every ACME certificate from it; the bench itself signs only
+// it and issues every ACME certificate from it; the e2e test itself signs only
 // the TLS certificates of the ACME server and the store with it.
 type ca struct {
 	cert    *x509.Certificate
@@ -28,7 +28,7 @@ func newCA() (*ca, error) {
 	}
 	template := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: "Bench CA"},
+		Subject:               pkix.Name{CommonName: "E2E CA"},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,

@@ -1,6 +1,6 @@
-# The releases the bench installs, top to bottom, each with
+# The releases the e2e test installs, top to bottom, each with
 # helm upgrade --install --wait. chart is a directory next to this file.
-# values are more values files of this mounted directory; the bench adds
+# values are more values files of samples/; the e2e test adds
 # values/<name>.yaml after them when it exists.
 - name: cert-manager
   namespace: cert-manager

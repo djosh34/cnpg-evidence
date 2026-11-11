@@ -18,7 +18,7 @@ import (
 
 // The line shapes. Most lines are "<thing> is <word>": the step cuts the line
 // into thing, word and limit, and looks them up in the vocabulary
-// (vocab.go), which says what the bench does. The limits are in the feature
+// (vocab.go), which says what the e2e test does. The limits are in the feature
 // files.
 //
 //	<thing> is|are <word> [< N s [after the <event>] | for N s]
@@ -74,7 +74,7 @@ type scenario struct {
 	last  string                  // the last named event
 
 	clientRan   bool      // the client was started
-	clientEnded time.Time // when the bench stopped it
+	clientEnded time.Time // when the e2e test stopped it
 	writes      bool      // false after "Given no writes"
 
 	down     []string // the nodes killed and not started again
@@ -342,7 +342,7 @@ func (s *scenario) noWrites() error {
 }
 
 // event does an event. Its time, for "after the <event>" and "since the
-// <event>", is when the bench has done it: a kill, for one, first looks up
+// <event>", is when the e2e test has done it: a kill, for one, first looks up
 // the nodes.
 func (s *scenario) event(key string, w word, a args) error {
 	if s.kind == messages.PickleStepType_OUTCOME {
@@ -388,7 +388,7 @@ func (s *scenario) measure(key string, w word, n, after, forN string) error {
 }
 
 // measureBack waits until the measure is back after the event, by N s after
-// it. It counts when the measure came back, not when the bench saw it.
+// it. It counts when the measure came back, not when the e2e test saw it.
 func (s *scenario) measureBack(key string, w word, n, after string) error {
 	if w.back == nil {
 		return fmt.Errorf("%s takes no \"after the <event>\"", key)
@@ -550,10 +550,7 @@ func (s *scenario) role(name string) (string, error) {
 // state. Its first failing line fails the scenario.
 func (s *scenario) runAlways() error {
 	s.inAlways = true
-	format := "progress"
-	if s.results.dir != "" {
-		format += ",cucumber:" + s.results.path("always.cucumber.json") + ",junit:" + s.results.path("always.junit.xml")
-	}
+	format := "progress,cucumber:" + s.results.path("always.cucumber.json") + ",junit:" + s.results.path("always.junit.xml")
 	var failed error
 	suite := godog.TestSuite{
 		Name: "always",
@@ -568,7 +565,7 @@ func (s *scenario) runAlways() error {
 		},
 		Options: &godog.Options{
 			Format: format, Output: io.Discard, Strict: true, NoColors: true,
-			Paths: []string{filepath.Join(benchDir, "features", "always.feature")},
+			Paths: []string{filepath.Join(samplesDir, "features", "always.feature")},
 		},
 	}
 	if suite.Run() != 0 && failed == nil {

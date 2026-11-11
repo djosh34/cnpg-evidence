@@ -20,7 +20,7 @@ const (
 	// The backup a scenario takes, and the cluster it restores it into.
 	scenarioBackup  = "scenario"
 	restoredCluster = "pg-restore"
-	// The values file, in the mounted directory, of the second instance image
+	// The values file, in /samples, of the second instance image
 	// that "the instance image is changed" changes the cluster to.
 	newImageValues = "values/new-image.yaml"
 )
@@ -41,7 +41,7 @@ func writeRow(ctx context.Context, _ *scenario, _ args) error {
 	if err := rowTable(ctx, primary); err != nil {
 		return err
 	}
-	_, err = psql(ctx, primary, "postgres", "insert into bench_row default values")
+	_, err = psql(ctx, primary, "postgres", "insert into e2e_row default values")
 	return err
 }
 
@@ -82,12 +82,12 @@ func writeWAL(ctx context.Context, s *scenario, a args) error {
 	for _, down := range s.downPods {
 		s.needs[down] = walNeed{on: pod, file: file}
 	}
-	if _, err := psql(ctx, pod, "postgres", "create table if not exists bench_load (n int, pad text)"); err != nil {
+	if _, err := psql(ctx, pod, "postgres", "create table if not exists e2e_load (n int, pad text)"); err != nil {
 		return err
 	}
 	for written := 0; written < mb; {
 		_, err := psql(ctx, pod, "postgres",
-			"insert into bench_load select g, repeat(md5(g::text), 30) from generate_series(1, 40000) g; truncate bench_load")
+			"insert into e2e_load select g, repeat(md5(g::text), 30) from generate_series(1, 40000) g; truncate e2e_load")
 		if err != nil {
 			return err
 		}
@@ -243,13 +243,13 @@ func idleAfterSwitch(ctx context.Context, _ *scenario, a args) error {
 // values/new-image.yaml. CNPG restarts every instance on it, the primary
 // last, in place.
 func changeImage(ctx context.Context, s *scenario, _ args) error {
-	return s.upgradeCluster(ctx, "--values", filepath.Join(benchDir, newImageValues))
+	return s.upgradeCluster(ctx, "--values", filepath.Join(samplesDir, newImageValues))
 }
 
 // onNewImage: every instance runs the image of values/new-image.yaml and is
 // ready.
 func onNewImage(ctx context.Context, _ *scenario, _ args) error {
-	data, err := os.ReadFile(filepath.Join(benchDir, newImageValues))
+	data, err := os.ReadFile(filepath.Join(samplesDir, newImageValues))
 	if err != nil {
 		return err
 	}
@@ -341,7 +341,7 @@ func restoreHealthy(ctx context.Context, _ *scenario, _ args) error {
 }
 
 // noneLostInRestore: every write the client got acknowledged is in
-// bench_writes on the primary of pg-restore. The client must have stopped
+// e2e_writes on the primary of pg-restore. The client must have stopped
 // writing before.
 func noneLostInRestore(ctx context.Context, s *scenario, _ args) error {
 	log, err := s.clientLog(ctx)

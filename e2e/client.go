@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"os"
 	"os/exec"
 	"slices"
 	"strconv"
@@ -15,21 +14,27 @@ import (
 )
 
 // The application host: the client image, outside k3s, with its own name
-// and its own certificate from the company CA. The bench reads only its log.
+// and its own certificate from the company CA. The e2e test reads only its log.
 const (
 	clientIP   = "10.77.0.40"
 	clientName = "orders-app.test"
 )
 
-// The client image the bench starts, set when the bench image is built.
-var clientImage = os.Getenv("BENCH_CLIENT_IMAGE")
+// The client image: the client binary of the e2e image, with the two-line
+// Dockerfile of client/, which the inner docker builds at start.
+const (
+	clientImage = "client"
+	clientDir   = "/opt/cnpg-evidence/client"
+)
+
+func buildClient(ctx context.Context) error {
+	_, err := command(ctx, "docker", "build", "--quiet", "--tag", clientImage, clientDir)
+	return err
+}
 
 // startClient starts the client with a new EAB key. It returns once the
 // client has read and, when it writes, written.
 func (w *world) startClient(ctx context.Context, writes bool) error {
-	if clientImage == "" {
-		return errors.New("BENCH_CLIENT_IMAGE is not set")
-	}
 	key, err := w.bao.newEAB(ctx)
 	if err != nil {
 		return err
@@ -40,7 +45,7 @@ func (w *world) startClient(ctx context.Context, writes bool) error {
 	}
 	err = container{
 		name: "client", ip: clientIP, image: clientImage,
-		opts: []string{"--env", "EAB_KID=" + key.id, "--env", "EAB_HMAC=" + key.key},
+		opts: []string{"--entrypoint", "/client", "--env", "EAB_KID=" + key.id, "--env", "EAB_HMAC=" + key.key},
 		args: []string{"-name", clientName, "-acme", acmeDirectory, "-ca", "/ca.crt",
 			"-hosts", strings.Join(hosts, ","), "-writes=" + strconv.FormatBool(writes)},
 		files: map[string]string{"/ca.crt": string(w.root.certPEM)},
@@ -71,7 +76,7 @@ func (w *world) startClient(ctx context.Context, writes bool) error {
 // stopWrites makes the client stop writing, and returns once every write it
 // started has ended: no write is acknowledged after this.
 func stopWrites(ctx context.Context) error {
-	if _, err := command(ctx, "docker", "exec", "client", "kill", "-USR1", "1"); err != nil {
+	if _, err := command(ctx, "docker", "kill", "--signal", "USR1", "client"); err != nil {
 		return err
 	}
 	return poll(ctx, time.Now().Add(30*time.Second), func(ctx context.Context) error {
@@ -104,7 +109,7 @@ func readClientLog(ctx context.Context) (clientLog, error) {
 }
 
 // One line of the client's log: "<start ms> <end ms> <what> <address>
-// <result> <detail>", as bench/client/main.go describes it.
+// <result> <detail>", as e2e/client/main.go describes it.
 type logLine struct {
 	start, end int64  // unix ms
 	what       string // read, write, connect, read-attempt, write-attempt or writes

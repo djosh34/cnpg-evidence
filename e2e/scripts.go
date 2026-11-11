@@ -21,7 +21,7 @@ import (
 
 // The words of the vocabulary about the scripts of the repository:
 // desired.sh, evidence.sh and prove.sh, run as docs/evidence.md and
-// docs/prove.md say, and host-check.sh on every node. The bench image has
+// docs/prove.md say, and host-check.sh on every node. The e2e image has
 // the scripts under scriptsDir, and under nodeTools a static bash and jq,
 // which it copies onto a node for host-check.sh: the k3s image has neither.
 const (
@@ -35,7 +35,7 @@ type scriptRun struct {
 	code int
 }
 
-// runScript runs a program with stdin and the bench's kubeconfig. An exit
+// runScript runs a program with stdin and the e2e test's kubeconfig. An exit
 // code of 0 or 1 is a result; any other, as the scripts' 2 for an error, is
 // an error with the end of what the program printed on stderr.
 func runScript(ctx context.Context, stdin, name string, args ...string) (scriptRun, error) {
@@ -63,7 +63,7 @@ func script(ctx context.Context, stdin, path string, args ...string) (scriptRun,
 }
 
 // desiredValues are the values of the cluster's release, desired.yaml of
-// the mounted directory with the bench's own values/pg.yaml on top, as
+// samples/ with the e2e test's own values/pg.yaml on top, as
 // JSON, which the scripts take on stdin.
 func desiredValues(ctx context.Context) (string, error) {
 	return helm(ctx, time.Minute, "get", "values", clusterRelease, "--namespace", namespace, "--output", "json")
@@ -119,7 +119,7 @@ func runDesired(ctx context.Context, s *scenario, _ args) error {
 	return nil
 }
 
-// runEvidence: evidence.sh, from the bench, with the CA of client-ca.
+// runEvidence: evidence.sh, from the e2e test, with the CA of client-ca.
 func runEvidence(ctx context.Context, s *scenario, _ args) error {
 	values, err := desiredValues(ctx)
 	if err != nil {
@@ -161,7 +161,7 @@ func evidencePasses(_ context.Context, s *scenario, _ args) error {
 	return nil
 }
 
-// runProve: prove.sh as root on every node, which the bench sees through
+// runProve: prove.sh as root on every node, which the e2e test sees through
 // /proc/<pid>/root of the node's container.
 func runProve(ctx context.Context, s *scenario, _ args) error {
 	values, err := desiredValues(ctx)
@@ -249,7 +249,7 @@ func provePasses(_ context.Context, s *scenario, _ args) error {
 }
 
 // runHostCheck: host-check.sh as root on every node, with the static bash
-// and jq of the bench image. /tmp of a node is a tmpfs, which docker cp does
+// and jq of the e2e image. /tmp of a node is a tmpfs, which docker cp does
 // not reach, so the scripts go under /opt.
 func runHostCheck(ctx context.Context, s *scenario, _ args) error {
 	const dir = "/opt/cnpg-evidence/scripts"

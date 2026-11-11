@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-// command runs a program with the bench's kubeconfig and returns its output
+// command runs a program with the e2e test's kubeconfig and returns its output
 // without the last newline. A failure's error holds its output.
 func command(ctx context.Context, name string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)

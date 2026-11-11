@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -32,14 +30,12 @@ const (
 	s3Bucket = "example-bucket"
 	s3Access = "example-access-key"
 	s3Secret = "example-secret-key"
-	// The store's data, on the bench's disk.
-	s3Data = diskDir + "/s3"
 )
 
 // The ACME directory of the company CA.
 var acmeDirectory = "https://" + acmeName + "/v1/pki/acme/directory"
 
-// hosts is the DNS container's hosts file: every name of the bench.
+// hosts is the DNS container's hosts file: every name of the e2e test.
 func hosts() string {
 	lines := []string{
 		s3IP + " " + s3Name, acmeIP + " " + acmeName, clientIP + " " + clientName,
@@ -77,15 +73,13 @@ func startStore(ctx context.Context, root *ca) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Join(s3Data, s3Bucket), 0o755); err != nil {
-		return err
-	}
 	return container{
 		name: "s3", ip: s3IP, image: s3Image,
-		opts: []string{"--entrypoint", "/usr/local/bin/versitygw", "--volume", s3Data + ":/data"},
+		opts: []string{"--entrypoint", "/usr/local/bin/versitygw"},
 		args: []string{"--access", s3Access, "--secret", s3Secret, "--port", ":443",
 			"--cert", "/tls/tls.crt", "--key", "/tls/tls.key", "posix", "/data"},
 		files: map[string]string{"/tls/tls.crt": string(cert), "/tls/tls.key": string(key)},
+		dirs:  []string{"/data/" + s3Bucket},
 	}.run(ctx)
 }
 
@@ -123,9 +117,9 @@ func restoreStore(ctx context.Context, stopped bool) error {
 }
 
 // The company CA: OpenBao's PKI with the run's root, serving ACME on 443 with
-// EAB required, http-01 checked through the bench's DNS, and only the
+// EAB required, http-01 checked through the e2e test's DNS, and only the
 // approved names: the nodes and the client. Port 8200 serves the API to the
-// bench without TLS, on the bench network only.
+// run without TLS, on the e2e network only.
 const openbaoConfig = `storage "raft" {
   path    = "/openbao/file"
   node_id = "acme"
@@ -143,7 +137,7 @@ listener "tcp" {
 }
 `
 
-// openbao is the API of the ACME server's OpenBao, for the bench.
+// openbao is the API of the ACME server's OpenBao, for the e2e test.
 type openbao struct {
 	http  *http.Client
 	token string

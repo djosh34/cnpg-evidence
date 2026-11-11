@@ -17,9 +17,9 @@ import (
 // lookup, so "replica 1 is promoted" looks up "<role> | promoted". A word is
 // one of four kinds:
 //
-//   - an event, which the bench does, in a Given or When line; mark names it
+//   - an event, which the e2e test does, in a Given or When line; mark names it
 //     for later lines, as in "after the promote";
-//   - a state, which the bench checks in a Given or Then line: now, waiting
+//   - a state, which the e2e test checks in a Given or Then line: now, waiting
 //     up to the line's limit, or for the line's time;
 //   - a measure over the whole scenario, whose line gives the limit; with
 //     back, also a state after an event, in "< N s after the <event>";
@@ -144,7 +144,7 @@ func unfence(ctx context.Context, _ *scenario, a args) error {
 	return err
 }
 
-// killNodes: the nodes of the instances stop at once, as lost VMs. The bench
+// killNodes: the nodes of the instances stop at once, as lost VMs. The run
 // then uses the API server of a node that runs.
 func killNodes(ctx context.Context, s *scenario, a args) error {
 	var nodes []string
@@ -432,7 +432,7 @@ func rolePrimary(ctx context.Context, s *scenario, a args) error {
 	return err
 }
 
-// noneLost: every write the client got acknowledged is in bench_writes on
+// noneLost: every write the client got acknowledged is in e2e_writes on
 // the primary. It stops the client first, so every write it started has
 // ended.
 func noneLost(ctx context.Context, s *scenario, _ args) error {
@@ -445,7 +445,7 @@ func noneLost(ctx context.Context, s *scenario, _ args) error {
 	return s.acknowledgedOn(ctx, clusterName)
 }
 
-// acknowledgedOn: every write the client got acknowledged is in bench_writes
+// acknowledgedOn: every write the client got acknowledged is in e2e_writes
 // on the primary of the cluster.
 func (s *scenario) acknowledgedOn(ctx context.Context, cluster string) error {
 	log, err := s.clientLog(ctx)
@@ -460,7 +460,7 @@ func (s *scenario) acknowledgedOn(ctx context.Context, cluster string) error {
 	if err != nil {
 		return err
 	}
-	out, err := psql(ctx, primary, "orders", "select n from bench_writes")
+	out, err := psql(ctx, primary, "orders", "select n from e2e_writes")
 	if err != nil {
 		return err
 	}
@@ -577,7 +577,6 @@ func (s *scenario) stopClient(ctx context.Context) error {
 		return nil
 	}
 	s.clientEnded = time.Now()
-	// It ends the reads and writes the client started.
-	_, err := command(ctx, "docker", "stop", "-t", "20", "client")
+	_, err := command(ctx, "docker", "kill", "client")
 	return err
 }
