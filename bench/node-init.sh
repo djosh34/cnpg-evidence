@@ -1,6 +1,6 @@
 #!/bin/sh
-# The first process of each node container that the bench and live/up.sh
-# start, in place of k3s itself. It runs "k3s server" with its arguments and
+# The first process of each node container that the bench starts, in place
+# of k3s itself. It runs "k3s server" with its arguments and
 # starts it again 5 s after it exits, as k3s's systemd unit does
 # (Restart=always, KillMode=process). So the node's pods keep running while k3s is down, as on
 # a VM. k3s exits, for example, when it loses a leader lease because two of
@@ -23,6 +23,11 @@ if [ -f "$cgroup/cgroup.controllers" ]; then
     echo "+$controller" >"$cgroup/cgroup.subtree_control"
   done
 fi
+
+# k3s makes its server directory 700 when it creates it. The bench copies
+# the manifests into server/manifests before k3s starts, which made it 755.
+mkdir -p /var/lib/rancher/k3s/server
+chmod 700 /var/lib/rancher/k3s/server
 
 while true; do
   status=0

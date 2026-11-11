@@ -28,6 +28,7 @@ import (
 //	<ALERT> fired|may fire|fires|resolves|has not fired for <role>|the cluster [< N s [after the <event>]]
 //	Alertmanager gets|sends|mutes <ALERT> for <role> [< N s [after the <event>]]
 //	no writes
+//	host-check.sh fails exactly these checks on every node:, with a table
 //
 // "< N s" counts from the line above, "< N s after the <event>" from that
 // event, "for N s" watches the state for the next N s, and "since the
@@ -44,6 +45,7 @@ const (
 	alertLine = `^(CNPG\w+) (fired|may fire|fires|resolves|has not fired) for (.+?)(?:` + within + `)?$`
 	amLine    = `^Alertmanager (gets|sends|mutes) (CNPG\w+) for (.+?)(?:` + within + `)?$`
 	quietLine = `^no writes$`
+	tableLine = `^host-check\.sh fails exactly these checks on every node:$`
 )
 
 func (s *scenario) bind(sc *godog.ScenarioContext) {
@@ -57,6 +59,7 @@ func (s *scenario) bind(sc *godog.ScenarioContext) {
 	sc.Step(alertLine, s.alert)
 	sc.Step(amLine, s.alertmanager)
 	sc.Step(quietLine, s.noWrites)
+	sc.Step(tableLine, s.hostCheckFails)
 }
 
 // scenario is the state of the run's one scenario.
@@ -77,11 +80,14 @@ type scenario struct {
 	down     []string // the nodes killed and not started again
 	downPods []string // the instances on them
 
-	needs    map[string]walNeed // what each instance that was down needs of the WAL written meanwhile
-	switched map[string]string  // the WAL file each instance switched away from last
-	restarts map[string]int     // the restart count of an instance's postgres container before it was killed
-	ident    string             // the pg_ident lines every instance had at the first line about them
-	store    string             // how the store is broken: stopped, paused, or "" when it is not
+	needs    map[string]walNeed   // what each instance that was down needs of the WAL written meanwhile
+	switched map[string]string    // the WAL file each instance switched away from last
+	restarts map[string]int       // the restart count of an instance's postgres container before it was killed
+	ident    string               // the pg_ident lines every instance had at the first line about them
+	store    string               // how the store is broken: stopped, paused, or "" when it is not
+	drain    *drained             // the node a drain runs on, until it is uncordoned
+	commit   *background          // the commit "a commit is started" started
+	scripts  map[string]scriptRun // what each script gave, by its name and node
 
 	started time.Time       // when the scenario started, after the monitoring was ready
 	alerts  map[string]bool // the alerts the scenario names, "<alertname> <pod>": true when they must fire, false when they may
@@ -90,7 +96,8 @@ type scenario struct {
 	inAlways bool           // always.feature runs
 
 	stepStart time.Time
-	detail    string // what the line running measured, for the timing table
+	holding   time.Time // when the "for N s" line running started
+	detail    string    // what the line running measured, for the timing table
 	rows      []row
 }
 
@@ -430,7 +437,9 @@ func (s *scenario) holdsFor(n string, check func(context.Context) error) error {
 	if err != nil {
 		return err
 	}
-	end := time.Now().Add(time.Duration(secs) * time.Second)
+	s.holding = time.Now()
+	defer func() { s.holding = time.Time{} }()
+	end := s.holding.Add(time.Duration(secs) * time.Second)
 	for {
 		if err := check(s.ctx); err != nil {
 			return fmt.Errorf("it stopped holding %s before the end: %w", seconds(time.Until(end)), err)

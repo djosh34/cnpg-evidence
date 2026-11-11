@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       scenarios:
-        description: Scenarios to run, separated by spaces
+        description: Scenarios to run, separated by spaces, or all
         type: string
         default: switchover
 
@@ -27,21 +27,40 @@ jobs:
     outputs:
       scenarios: ${{ steps.plan.outputs.scenarios }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Scenarios
         id: plan
         env:
           SCENARIOS: ${{ inputs.scenarios }}
         run: |
           set -euo pipefail
-          scenarios=$(jq -cn --arg s "$SCENARIOS" '$s | split(" ") | map(select(. != ""))')
-          if [[ $scenarios == '[]' ]]; then
+          known=$(bash bench/scenarios.sh)
+          read -ra wanted <<<"$SCENARIOS"
+          if [[ ${wanted[*]} == all ]]; then
+            mapfile -t wanted <<<"$known"
+          fi
+          if ((${#wanted[@]} == 0)); then
             echo "no scenario given" >&2
             exit 1
           fi
+          for s in "${wanted[@]}"; do
+            if ! grep -qxF -- "$s" <<<"$known"; then
+              echo "no scenario $s; the scenarios: $(paste -sd ' ' <<<"$known")" >&2
+              exit 1
+            fi
+          done
+          scenarios=$(printf '%s\n' "${wanted[@]}" | sort -u | jq -cRn '[inputs]')
           echo "scenarios=$scenarios" | tee -a "$GITHUB_OUTPUT"
 
   images:
     runs-on: ubuntu-24.04
+    # One build per commit at a time: a second run waits, then finds the
+    # images the first one pushed.
+    concurrency:
+      group: bench-images-${{ github.sha }}
+      cancel-in-progress: false
     permissions:
       contents: read
       packages: write
@@ -60,14 +79,29 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      # A rerun on the same commit keeps each image an earlier run tested,
+      # since a release tags those. Only "not found" means an image is
+      # missing; any other error of the lookup stops the job.
       - name: Build and push both images as sha-<commit>
         run: |
           set -euo pipefail
           tag=sha-$GITHUB_SHA
-          docker buildx build --platform linux/amd64,linux/arm64 --file bench/Dockerfile --target client \
-            --tag "$CLIENT_IMAGE:$tag" --push .
-          docker buildx build --platform linux/amd64,linux/arm64 --file bench/Dockerfile --target bench \
-            --build-arg "CLIENT_IMAGE=$CLIENT_IMAGE:$tag" --tag "$BENCH_IMAGE:$tag" --push .
+          missing() {
+            local out
+            if out=$(docker buildx imagetools inspect "$1" 2>&1); then
+              echo "$1 exists; not built again"
+              return 1
+            fi
+            [[ $out == *": not found" ]] || { echo "looking up $1: $out" >&2; exit 1; }
+          }
+          if missing "$CLIENT_IMAGE:$tag"; then
+            docker buildx build --platform linux/amd64,linux/arm64 --file bench/Dockerfile --target client \
+              --tag "$CLIENT_IMAGE:$tag" --push .
+          fi
+          if missing "$BENCH_IMAGE:$tag"; then
+            docker buildx build --platform linux/amd64,linux/arm64 --file bench/Dockerfile --target bench \
+              --build-arg "CLIENT_IMAGE=$CLIENT_IMAGE:$tag" --tag "$BENCH_IMAGE:$tag" --push .
+          fi
       - name: Log out of ghcr
         if: always()
         run: docker logout ghcr.io
@@ -120,7 +154,7 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          for table in results/*/timing.md; do
+          for table in results/*/timing.md results/*/pgfallback.md; do
             cat "$table" >>"$GITHUB_STEP_SUMMARY"
           done
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -50,54 +50,6 @@ jobs:
       - name: Monitoring rules
         run: bash samples/monitoring/check.sh
 
-  # host-check.sh on a k3s node in docker: only the known failures of a
-  # container node, which docs/host-check.md lists.
-  host-check-node:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: A static bash for the node
-        run: sudo apt-get install -y -qq bash-static
-      - name: Tool versions
-        run: |
-          set -euo pipefail
-          docker --version
-          jq --version
-          /bin/bash-static --version | head -1
-      - name: host-check on a container node
-        run: bash live/host-check.sh
-
-  live-client:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: live/client/go.mod
-          cache-dependency-path: |
-            live/client/go.sum
-            live/pgfallback/go.sum
-      - name: Vet and build the live scenarios' client
-        working-directory: live/client
-        run: |
-          set -euo pipefail
-          go version
-          go vet ./...
-          go build -o /dev/null .
-      # Against the pgfallback of this checkout; the scenarios get it at the
-      # commit with go get.
-      - name: Vet, test and build the program of the pgfallback scenarios
-        working-directory: live/pgfallback
-        run: |
-          set -euo pipefail
-          go vet ./...
-          go test ./...
-          go build -o /dev/null .
-
   # golangci-lint on the root module, with the release binary checked by its
   # SHA-256. golangci-lint cannot turn off nolint comments, so a step fails
   # on any.
@@ -146,7 +98,8 @@ jobs:
           "$RUNNER_TEMP/golangci-lint" run ./...
 
   # The bench and its client (bench/): vet, tests and golangci-lint v2.15.0,
-  # with no nolint comment, and shellcheck on its scripts.
+  # with no nolint comment, shellcheck on its scripts, and the list of
+  # scenarios.
   bench-go:
     runs-on: ubuntu-24.04
     steps:
@@ -194,7 +147,15 @@ jobs:
           "$RUNNER_TEMP/golangci-lint" config verify
           "$RUNNER_TEMP/golangci-lint" run ./...
       - name: shellcheck
-        run: shellcheck bench/host.sh bench/node-init.sh
+        run: shellcheck bench/*.sh
+      - name: The scenarios, each tag once
+        run: |
+          set -euo pipefail
+          tags=$(bash bench/scenarios.sh)
+          echo "$tags"
+          [[ -n $tags ]] || { echo "no scenario" >&2; exit 1; }
+          twice=$(uniq -d <<<"$tags")
+          [[ -z $twice ]] || { echo "tags of more than one scenario: $twice" >&2; exit 1; }
 
   # pgfallback against PostgreSQL 18 in docker: a primary and three standbys,
   # behind TCP proxies the tests stop and start.

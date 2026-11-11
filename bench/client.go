@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"slices"
 	"strconv"
@@ -62,6 +63,11 @@ func startClient(ctx context.Context, nw *testcontainers.DockerNetwork, root *ca
 		if _, ok := log.first("write"); writes && !ok {
 			return fmt.Errorf("no write yet; the client's log ends: %s", log.tail)
 		}
+		for _, host := range hosts {
+			if !log.connected(net.JoinHostPort(host, "5432")) {
+				return fmt.Errorf("no connect to %s:5432 alone yet; the client's log ends: %s", host, log.tail)
+			}
+		}
 		return nil
 	})
 	return cl, err
@@ -112,11 +118,13 @@ func (cl *client) log(ctx context.Context) (clientLog, error) {
 	return parseLog(raw), nil
 }
 
-// One line of the client's log: "<start ms> <end ms> <what> <result> <detail>".
+// One line of the client's log: "<start ms> <end ms> <what> <address>
+// <result> <detail>", as bench/client/main.go describes it.
 type logLine struct {
 	start, end time.Time
-	what       string // read, write or writes
-	result     string // ok or fail for read and write, stopped for writes
+	what       string // read, write, connect, read-attempt, write-attempt or writes
+	address    string // the <host>:<port> the client connected to, or -
+	result     string // ok or fail; started or worked for an attempt; stopped for writes
 	detail     string
 }
 
@@ -142,8 +150,8 @@ func parseLog(raw string) clientLog {
 }
 
 func parseLine(text string) (logLine, bool) {
-	fields := strings.SplitN(text, " ", 5)
-	if len(fields) < 4 {
+	fields := strings.SplitN(text, " ", 6)
+	if len(fields) < 5 {
 		return logLine{}, false
 	}
 	start, err1 := strconv.ParseInt(fields[0], 10, 64)
@@ -151,9 +159,9 @@ func parseLine(text string) (logLine, bool) {
 	if err1 != nil || err2 != nil {
 		return logLine{}, false
 	}
-	line := logLine{start: time.UnixMilli(start), end: time.UnixMilli(end), what: fields[2], result: fields[3]}
-	if len(fields) == 5 {
-		line.detail = fields[4]
+	line := logLine{start: time.UnixMilli(start), end: time.UnixMilli(end), what: fields[2], address: fields[3], result: fields[4]}
+	if len(fields) == 6 {
+		line.detail = fields[5]
 	}
 	return line, true
 }
@@ -166,6 +174,16 @@ func (l clientLog) first(what string) (time.Time, bool) {
 		}
 	}
 	return time.Time{}, false
+}
+
+// connected: a connect to address alone worked.
+func (l clientLog) connected(address string) bool {
+	for _, line := range l.lines {
+		if line.what == "connect" && line.address == address && line.result == "ok" {
+			return true
+		}
+	}
+	return false
 }
 
 // writesStopped is when the client stopped writing, if it did.
@@ -202,9 +220,15 @@ func (l clientLog) acknowledged() []string {
 	var ns []string
 	for _, line := range l.lines {
 		if line.what == "write" && line.result == "ok" {
-			n, _, _ := strings.Cut(line.detail, " ")
+			n, _ := line.write()
 			ns = append(ns, n)
 		}
 	}
 	return ns
+}
+
+// write is the n of an acknowledged write and the server's own address.
+func (line logLine) write() (n, server string) {
+	n, server, _ = strings.Cut(line.detail, " ")
+	return n, server
 }

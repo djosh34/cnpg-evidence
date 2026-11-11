@@ -9,11 +9,26 @@ docker run --rm --privileged -v "$PWD/samples:/bench:ro" -v "$PWD/results:/resul
 
 - The argument is the tag of one scenario, without the `@`.
 - `/bench` is the mounted directory, mounted read-only. The bench never writes into it.
-- `/results` is optional. When it is mounted, the run writes a new directory `<scenario>-<time>` there, owned by the owner of the mounted directory: `cucumber.json` and `junit.xml` of the scenario, `always.cucumber.json` and `always.junit.xml` of `always.feature`, `timing.md`, `client.log` and the cluster's state in `state.txt`.
+- `/results` is optional. When it is mounted, the run writes a new directory `<scenario>-<time>` there, owned by the owner of the mounted directory: `cucumber.json` and `junit.xml` of the scenario, `always.cucumber.json` and `always.junit.xml` of `always.feature`, `timing.md`, `client.log`, the cluster's state in `state.txt`, and what the scenario's scripts and pgfallback report gave.
 - `--rm` matters: the run's disk is a volume of the container, and `--rm` removes it with the container. A run that passed, failed or was killed then leaves no container, volume or network on the host.
 - Exit code 0: the scenario passed. 1: it failed. 2: it could not run.
 
-The images are public, tagged `sha-<commit>` by the [`bench` workflow](../.github/workflows/bench.yml) for amd64 and arm64.
+The images are public, tagged `sha-<commit>` by the [`bench` workflow](../.github/workflows/bench.yml) for amd64 and arm64, and with the version by a release.
+
+The scenarios are listed by `bash bench/scenarios.sh`. A run runs one scenario on its own new cluster; [Several scenarios](#several-scenarios) says how to run more.
+
+## Inside and outside k3s
+
+What runs inside k3s in production runs inside the bench's k3s nodes; what runs outside k3s in production is a container next to the nodes, never a pod.
+
+| Inside k3s | Outside k3s, as containers |
+|---|---|
+| k3s itself: CoreDNS, Traefik, local-path, metrics-server | DNS for every name |
+| cert-manager, with a ClusterIssuer of the company CA | The company CA: OpenBao serving ACME |
+| The CNPG operator and the barman-cloud plugin | The S3 store, with TLS |
+| The CNPG cluster | The upstream OTel service, one URL that receives everything |
+| The OTel collectors: a DaemonSet agent per node and a Deployment | The rule evaluator, Alertmanager, and Grafana with the dashboard |
+| | The application host: the client, reading and writing through `pgfallback` |
 
 ## The host's inotify limit
 
@@ -70,7 +85,18 @@ The bench queries Prometheus, Alertmanager and Grafana over their HTTP APIs. A s
 
 ## The client
 
-The client image is the application host: a container outside k3s, `orders-app.test`. It gets its own certificate from the company CA by ACME, with its own EAB key. Then it reads and writes through [pgfallback](pgfallback.md) for the whole scenario: a query and an insert every 0.25 s, each allowed 10 s, each from its own pool of up to 40 connections, so that inserts waiting for a standby leave the queries their connections, against the rw port 5432 of the three nodes, and their read port 5433 when no rw address takes a connection. Each TCP connect may take 500 ms, within `connect_timeout=2` (see [A short dial timeout](pgfallback.md#a-short-dial-timeout)). It logs in as `orders` with `verify-full`. The bench reads only its log. A scenario with `Given no writes` starts it without writes. `When writing stops` stops the writes while the reads go on; the line ends once every write the client started has ended, so no write is acknowledged after it.
+The client image is the application host: a container outside k3s, `orders-app.test`. It gets its own certificate from the company CA by ACME, with its own EAB key. Then it reads and writes through [pgfallback](pgfallback.md) for the whole scenario: a query and an insert every 0.25 s, each allowed 10 s, each from its own pool of up to 40 connections, so that inserts waiting for a standby leave the queries their connections, against the rw port 5432 of the three nodes, and their read port 5433 when no rw address takes a connection. Each TCP connect may take 500 ms, within `connect_timeout=2` (see [A short dial timeout](pgfallback.md#a-short-dial-timeout)). It logs in as `orders` with `verify-full`. It also connects to the rw port of each node alone every 0.25 s, which shows when rw takes connections, and logs each attempt of `pgfallback` at rw, in each pool. The bench reads only its log, one line per read, write, connect and attempt, with the address the client connected to ([`bench/client/main.go`](../bench/client/main.go) has the format). A scenario with `Given no writes` starts it without writes. `When writing stops` stops the writes while the reads go on; the line ends once every write the client started has ended, so no write is acknowledged after it.
+
+### The pgfallback report
+
+`pgfallback has been healthy since the <event>` runs the report of [`bench/fallback.go`](../bench/fallback.go) on the client's log and writes it to `pgfallback.md` in the results. It gives, in seconds after the event:
+
+- when rw took no connection, and when each rw address alone took none: from the start of a connect that failed to the end of the next one that worked;
+- when reads and when writes failed and worked again, and when the attempt at rw of each pool that brought it back started and worked;
+- the last read or write a read address served once rw was back;
+- every failed read and write with its error.
+
+The line fails when a read address served a read or write that started more than 1 s after rw was back, while rw took connections until 0.25 s after it ended (the connects alone see rw down up to 0.25 s late), and after the pool's own attempt at rw had worked; when that attempt worked only more than 1 s plus `connect_timeout` per rw address and one more after rw was back; or when the last read or write of the log did not work on rw. The attempt is the first of that pool that worked since rw went down and before it went down again; without one, 1 s alone counts. The bound allows for the attempt that was running when rw came back, which can still wait on the address that came back and those after it, and the next one, which waits on those before it and connects. The client sees the attempts because `pgfallback` runs them with the config's `LookupFunc` and `AfterConnect`, but not with the client's own contexts, which it marks. Every read and write is one statement, so none runs in a transaction that was already open.
 
 ## How a scenario reads
 
@@ -91,6 +117,7 @@ Most lines are `<thing> is <word>`. The bench cuts a line into thing, word and l
 | `Alertmanager gets <ALERT> for <role>` | Sends Alertmanager the critical alert for 2 min, as the rule evaluator would. An event. |
 | `Alertmanager sends / mutes <ALERT> for <role> < N s` | Waits up to N s until the bench got a notification of it firing, or Alertmanager holds it suppressed. |
 | `no writes` | The client does not write in this scenario. |
+| `host-check.sh fails exactly these checks on every node:` | With a table whose columns include `check` and `value`: on every node, the checks `host-check.sh` failed are those rows, each with its value. |
 
 An alert line names an instance by its role, or `the cluster` for an alert of the whole cluster, such as `CNPGDatabaseDown`. An event comes only in a Given or When line, a check only in a Given or Then line. Roles: **the primary**, **replica 1** and **replica 2**, named when the cluster is ready; **the new primary**, the instance that became primary last; **another instance**, any instance but the primary; **a replica**, an instance other than the one that became primary last.
 
@@ -100,6 +127,9 @@ An alert line names an instance by its role, or `the cluster` for an alert of th
 | `<role> is primary`, `<role> is still primary` | The instance is the cluster's current primary, out of recovery. |
 | `<role> is promoted` | `kubectl cnpg promote`. Its event is "the promote". |
 | `no instance is promoted` | The cluster's target primary is still the primary: no promotion has started. |
+| `<role>'s node is drained` | `kubectl drain --ignore-daemonsets --delete-emptydir-data` of the instance's node, which goes on while the scenario does. Its event is "the drain". |
+| `the drain is done` | That `kubectl drain` ended and succeeded. |
+| `the node is uncordoned` | `kubectl uncordon` of the drained node, once the drain is done. Its event is "the uncordon". |
 | `<role>'s node is killed`, `<role>'s node and <role>'s node are killed` | `docker stop -t 0` of the nodes the instances run on, as lost VMs. The bench then uses the API server of a node that runs. Its event is "the kill". |
 | `the node starts`, `the nodes start` | `docker start` of the killed nodes. Its event is "the start". |
 | `<role>'s postgres container is killed` | `crictl stop --timeout 0` of the instance's postgres container on its node, as when PostgreSQL crashes; the kubelet starts it again. |
@@ -126,6 +156,21 @@ An alert line names an instance by its role, or `the cluster` for an alert of th
 | `the catalog is read on <role>` | `select count(*)` of every catalog table of every database on the instance. |
 | `<role> is idle after a WAL switch` | The instance's insert position is 40 bytes, a page header, past its flush position at the start of a WAL file, for 30 s: no WAL since a switch. |
 | `a row is written` | One insert on the primary, outside the client. |
+| `a <n> s statement is committed on <role>` | One transaction on the instance runs `pg_sleep(<n>)`, then inserts a row and commits. |
+| `a commit is started on <role>` | One insert on the instance, outside the client, which goes on while the scenario does: with replay paused on every replica, its commit waits. |
+| `the commit is done` | That insert ended and succeeded. |
+| `replay on <role> is paused`, `... is resumed`, `replay on <role> and <role> is paused`, `... are resumed` | `pg_wal_replay_pause()` or `pg_wal_replay_resume()` on the instances. |
+| `<role> is cut off` | In the instance pod's network namespace on its node, a firewall rule rejects its connections to port 5432, and the primary ends its WAL sender: the replica stops streaming, while its exporter goes on answering. |
+| `<role> is reconnected` | That rule is gone. |
+| `<role> is not streaming` | The instance is not in the primary's `pg_stat_replication`. |
+| `<role>'s metrics are arriving` | Prometheus has a sample of `cnpg_collector_up` 1 of the instance from the last 30 s. |
+| `the replica lag is healthy for N s` | The chart's `cnpg_replica_lag_seconds` of each replica stays under 1 s in every sample taken in those N s. The timing table gives the most each instance reported since the last event, of it and of CNPG's own `cnpg_pg_replication_lag`. |
+| `compliance is healthy` | Every instance reported each of the four compliance checks as 0 in the last 30 s. |
+| `desired.sh runs` | [desired.sh](desired.md) makes the desired documents of `evidence.sh`, with the `client-ca` Secret's certificates as `--ca`, and of `prove.sh`. The three scripts get the values of the cluster's release on stdin, `helm get values`: `desired.yaml` with `values/pg.yaml` on top. |
+| `evidence.sh runs`, `evidence.sh passes` | [evidence.sh](evidence.md) from the bench, with the `client-ca` Secret's certificates as `--ca`; it found no violation. |
+| `prove.sh runs`, `prove.sh passes` | [prove.sh](prove.md) as root on every node, which the bench sees through `/proc/<pid>/root` of the node's container; on every node it passed, with every probe of the desired document and its value, and no other. |
+| `host-check.sh runs` | [host-check.sh](host-check.md) as root on every node, with the static bash and jq of the bench image copied onto the node. |
+| `pgfallback has been healthy since the <event>` | [The pgfallback report](#the-pgfallback-report) from that event on finds nothing `pgfallback` must not do. |
 | `writing stops` | The client stops writing; the reads go on. |
 | `reading is healthy < N s` | The longest time without a successful read of the client, from its first, is under N s. |
 | `writing is healthy < N s` | The longest time without an acknowledged write of the client, from its first until the writes stop, is under N s. |
@@ -138,6 +183,30 @@ An alert line names an instance by its role, or `the cluster` for an alert of th
 | `the exporters of <role> and <role> have been healthy since the <event>` | In every 15 s in which one of their exporters answered, at least one answer had both of those metrics, and none went 60 s without answering. |
 
 `always.feature` runs after every scenario, with the same steps. A scenario's own `writing is healthy < N s` line sets N for that scenario there too; every other limit of `always.feature` holds for every scenario.
+
+Each script's output goes into the results: `evidence.desired.json`, `prove.desired.json`, `evidence.json`, `prove.<node>.json` and `host-check.<node>.json`.
+
+## Several scenarios
+
+A run runs one scenario. To run several, run the bench once for each, one after another:
+
+```bash
+for scenario in switchover primary-node-loss; do
+  docker run --rm --privileged -v "$PWD/samples:/bench:ro" -v "$PWD/results:/results" \
+    ghcr.io/djosh34/cnpg-evidence-bench:<tag> "$scenario"
+done
+```
+
+Or start the `bench` workflow, which builds the images of the commit and runs each scenario as its own job on an amd64 and an arm64 runner. Its input is the scenarios, separated by spaces, or `all`; the run is named after it, such as `bench: all`.
+
+```bash
+gh workflow run bench.yml --ref <branch> -f scenarios=all
+gh workflow run bench.yml --ref <branch> -f scenarios="switchover primary-node-loss"
+```
+
+Each job checks that the run left no container, volume or network on the runner, uploads the results, and puts the timing table and the pgfallback report in the job summary. The last job, `bench`, fails when a scenario failed or did not run.
+
+A release runs only from a tag whose commit has a successful `bench` run of every scenario: [`bench/release-check.sh`](../bench/release-check.sh), the first job of `release.yml`. Runs of a few scenarios each count too, so a failed scenario can be run again on its own. The release then tags that commit's `sha-<commit>` images of both bench images with the version, without building them again.
 
 ## Building the images
 

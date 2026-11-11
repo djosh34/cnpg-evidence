@@ -95,12 +95,4 @@ The sudoers search also runs on its own: `bash scripts/host-check/postgres-sudoe
 
 ## Known failures on container nodes
 
-A k3s node that runs in a docker container, as in `live/`, fails these checks, each with this value. The `ci` workflow runs `host-check.sh` on such a node with `live/host-check.sh` and fails when any other check fails, or one of these passes or has another value.
-
-| Check | Value | Why |
-| --- | --- | --- |
-| `selinux` | `disabled; enable_selinux false` | The runner's kernel has no SELinux, and k3s runs without `--selinux` |
-| `postgres-account` | `getent not found` | The k3s image has no `getent` |
-| `dir-modes` | `/var/lib/rancher/k3s/storage: missing` | No volume was made on the node yet; the local-path provisioner makes the directory with the first one |
-| `k3s-secrets` | `secrets-encryption off` | The node runs without `--secrets-encryption` |
-| `low-ports` | `ip_unprivileged_port_start = 0` | Docker sets it to 0 in a container's network namespace |
+A k3s node that runs in a docker container, as in the [bench](bench.md), fails some checks. The table of the `host-check` scenario in [`samples/features/host-check.feature`](../samples/features/host-check.feature) lists them, each with its value and why. That scenario runs `host-check.sh` on every node of the bench and fails when any other check fails, or one of these passes or has another value.
