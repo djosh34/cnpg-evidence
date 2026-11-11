@@ -1,6 +1,6 @@
 Every place where `samples/desired.yaml`, `samples/` and the steps of [samples.md](samples.md) differ from the starting point each upstream project documents, and why. The comparison is with CloudNativePG 1.30.1 (operator chart `cloudnative-pg` 0.29.1), the barman-cloud plugin v0.15.1 (chart `plugin-barman-cloud` 0.8.1), cert-manager v1.21.3, and k3s v1.33.13+k3s2, the version the test cluster runs. "Default" means the chart's `helm show values`, the example manifests in each project's docs, and what CNPG or k3s does when a field is not set.
 
-The last two categories list what only the test cluster in `live/` sets, and the settings that stay at their default although there was a reason to change them.
+The last two categories list what only the test cluster of the [bench](bench.md) sets, and the settings that stay at their default although there was a reason to change them.
 
 # k3s
 
@@ -12,7 +12,7 @@ k3s's CoreDNS manifest sets no replica count, so it runs one pod. The sample sca
 | CoreDNS | `kubectl scale deployment coredns -n kube-system --replicas=3`. k3s's manifest spreads its pods by host name and sets no replica count, so the count holds across k3s restarts as long as a k3s version does not add one |
 ```
 
-[samples.md](samples.md#one-copy-of-every-service-per-node), [live/up.sh](../live/up.sh)
+[samples.md](samples.md#one-copy-of-every-service-per-node), [bench/charts.go](../bench/charts.go)
 
 With one CoreDNS pod, a lost node can take all name lookups in the cluster with it until Kubernetes starts the pod elsewhere, about 5 minutes later. A failover depends on names: a promotion asks the object store, by its host name, for the timeline history and the last WAL file. With the only CoreDNS pod on the lost primary node, that lookup fails and the promotion waits for DNS. With a pod on every node, the other two nodes keep answering. One gap stays: until Kubernetes marks the lost node unreachable, about 50 s, its CoreDNS pod stays in the DNS Service, so about one in three lookups in the cluster times out in that time. Failover waits for the same mark, so this does not delay it.
 
@@ -50,7 +50,7 @@ kubectl patch deployment metrics-server -n kube-system --type=merge -p '{
       "labelSelector": {"matchLabels": {"k8s-app": "metrics-server"}}}]}}}}}}'
 ```
 
-[samples.md](samples.md#one-copy-of-every-service-per-node), [live/up.sh](../live/up.sh)
+[samples.md](samples.md#one-copy-of-every-service-per-node), [bench/charts.go](../bench/charts.go)
 
 metrics-server serves the resource metrics API through the API server. While that API has no ready pod, it shows as unavailable in API discovery: tools that list every API, such as `kubectl` and Helm, report discovery errors, and the namespace controller cannot finish deleting a namespace. With one pod on a lost node, that lasts until Kubernetes moves the pod, about 5 minutes. With a pod on each node, the other two keep serving. The anti-affinity keeps two replicas from landing on one node. k3s's manifest sets neither field, so the patch holds across k3s restarts.
 
@@ -1190,33 +1190,33 @@ Red on the dashboard means that a critical alert fires, nothing else, and orange
 
 ## k3s nodes in docker, three servers with embedded etcd
 
-The test cluster runs three k3s servers as docker containers on one host, from the k3s image pinned by digest. The first starts with `--cluster-init`, the others join it, so the servers share an embedded etcd. A plain k3s install is one server with SQLite.
+The bench runs three k3s servers as containers of its own dockerd, from the k3s image pinned by digest. The first starts with `--cluster-init`, the others join it, so the servers share an embedded etcd. A plain k3s install is one server with SQLite.
 
-```bash
-K3S_IMAGE=rancher/k3s@sha256:ada5ff2e138120efe877f76d514dedda65b304122112b982eab532732c028c89  # v1.33.13+k3s2
+```go
+	k3sImage  = "rancher/k3s@sha256:ada5ff2e138120efe877f76d514dedda65b304122112b982eab532732c028c89" // v1.33.13+k3s2
 ```
 
-```bash
-  local join=(--cluster-init)
-  if ((i > 0)); then
-    join=(--server "https://${NODE_IPS[0]}:6443")
-  fi
+```go
+	join := []string{"--cluster-init"}
+	if i > 0 {
+		join = []string{"--server", "https://" + nodeIP(0) + ":6443"}
+	}
 ```
 
-[../live/lib.sh](../live/lib.sh), [../live/up.sh](../live/up.sh)
+[../bench/nodes.go](../bench/nodes.go)
 
-The scenarios need three nodes they can stop and start in seconds on one runner. Three servers with embedded etcd keep the API up when one node is lost, and lose it when two are, as the docs describe for a three-node cluster. The digest keeps every run on the same k3s.
+The scenarios need three nodes they can stop and start in seconds on one host. Three servers with embedded etcd keep the API up when one node is lost, and lose it when two are, as the docs describe for a three-node cluster. The digest keeps every run on the same k3s.
 
 ## Node containers run privileged, with tmpfs and raised limits
 
-Each node container runs `--privileged`, with tmpfs on `/run`, `/var/run` and `/tmp`, and raised `nproc` and `nofile` limits.
+Each node container runs privileged, with tmpfs on `/run`, `/var/run` and `/tmp`, and raised `nproc` and `nofile` limits.
 
-```bash
-    --privileged --tmpfs /run --tmpfs /var/run --tmpfs /tmp \
-    --ulimit nproc=65535 --ulimit nofile=65535:65535 \
+```go
+			hc.Privileged = true
+			hc.Tmpfs = map[string]string{"/run": "", "/var/run": "", "/tmp": ""}
 ```
 
-[../live/up.sh](../live/up.sh)
+[../bench/nodes.go](../bench/nodes.go)
 
 k3s in a container needs to manage cgroups, mounts and iptables as on a host, and the raised limits leave room for the processes and open files of a node's pods. `/tmp` is a tmpfs because containerd tests idmapped mounts under `/tmp` at start, and they fail on docker's overlayfs; without them `hostUsers: false` pods do not start.
 
@@ -1239,124 +1239,82 @@ k3s's systemd unit does the same (`Restart=always`, `KillMode=process`), so a no
 
 ## kube-proxy leaves the conntrack table size alone
 
-The node containers start k3s with `--kube-proxy-arg conntrack-max-per-core=0`.
+`k3s/config.yaml` of the mounted directory gives kube-proxy `conntrack-max-per-core=0`.
 
-```bash
-    --kube-proxy-arg conntrack-max-per-core=0 >/dev/null
+```yaml
+kube-proxy-arg:
+  - conntrack-max-per-core=0
 ```
 
-[../live/up.sh](../live/up.sh)
+[../samples/k3s/config.yaml](../samples/k3s/config.yaml)
 
 kube-proxy sets the host's conntrack table size at start by default. In a container that write is not allowed, and kube-proxy fails to start. With 0 it leaves the size as the host has it.
 
 ## Node addresses and the API certificate
 
-Each node gets a fixed address on the docker network `live` with `--node-ip`, and the API server's certificate lists it with `--tls-san`.
+Each node gets a fixed address on the bench's docker network with `--node-ip`, and the API server's certificate lists it with `--tls-san`.
 
-```bash
-    --node-ip "$ip" --tls-san "$ip" \
+```go
+	args := append(join, "--node-ip", nodeIP(i), "--tls-san", nodeIP(i), "--resolv-conf", "/etc/bench-resolv.conf")
 ```
 
-[../live/up.sh](../live/up.sh)
+[../bench/nodes.go](../bench/nodes.go)
 
-The scenarios reach every node's API server by its address, with one kubeconfig per node, so that a node loss leaves the others reachable. Fixed addresses let the read probes and `pgfallback` dial each node.
+After a node loss the bench uses the API server of a node that runs, by its address. Fixed addresses let the DNS container name each node, so the client and the ACME server reach them by name.
 
 ## No SELinux, no secrets encryption, low ports open
 
-The test cluster's nodes run without `--selinux` and without `--secrets-encryption`, and docker sets `ip_unprivileged_port_start` to 0 in their network namespaces. `host-check.sh` fails five checks there: `selinux`, `k3s-secrets` and `low-ports` for these reasons, `postgres-account` because the k3s image has no `getent`, and `dir-modes` because no volume was made on the node yet. CI expects exactly these failures.
+The bench's nodes run without `--selinux` and without `--secrets-encryption`, and docker sets `ip_unprivileged_port_start` to 0 in their network namespaces. `host-check.sh` fails five checks there: `selinux`, `k3s-secrets` and `low-ports` for these reasons, `postgres-account` because the k3s image has no `getent`, and `dir-modes`. The `host-check` scenario expects exactly these failures, with the values in its table.
 
-```text
-| `selinux` | `disabled; enable_selinux false` | The runner's kernel has no SELinux, and k3s runs without `--selinux` |
-```
+[../samples/features/host-check.feature](../samples/features/host-check.feature)
 
-[host-check.md](host-check.md#known-failures-on-container-nodes)
+The runners' kernel has no SELinux. Secrets encryption and the low-port threshold do not change failover, alerts or logins, which the scenarios test.
 
-The runners' kernel has no SELinux. Secrets encryption and the low-port threshold do not change failover, alerts or logins, which the scenarios test. `postgres-account` fails because the k3s image has no `getent`, and `dir-modes` because the node has no volume yet. `live/host-check.sh` checks that only these known failures appear.
+## The company CA, the store and the client outside the nodes
 
-## An S3 store next to the nodes, over plain HTTP
-
-The test cluster's object store is versitygw in a container next to the nodes, reached inside the cluster as `s3.s3.svc:9000` over HTTP, through a Service without selector and an EndpointSlice.
+The bench runs, as containers next to the nodes, OpenBao as the company's ACME CA with a new root on every run, versitygw as the store over TLS with a certificate of that CA, and the client as `orders-app.test`, which gets its own certificate from that CA by ACME. `values/pg.yaml` points the chart at them.
 
 ```yaml
-objectStore:
-  endpointURL: http://s3.s3.svc:9000
-```
-
-[../live/values.yaml](../live/values.yaml), [../live/up.sh](../live/up.sh)
-
-The scenarios break the store on purpose: they stop it so connections are refused, or pause it so it accepts connections and never answers. A store in a container on the same docker network can be broken that way in a second, and its address stays the same. The scenarios need no TLS to the store.
-
-## A self-signed CA behind the Issuer example-ca
-
-The test cluster creates a self-signed `Issuer`, a CA `Certificate` from it with an ECDSA P-256 key, and the CA `Issuer` `example-ca` that `values.yaml` names. The CA's certificate is also the client CA in the Secret `client-ca`.
-
-```yaml
-apiVersion: cert-manager.io/v1
-kind: Issuer
-metadata:
-  name: example-ca
-  namespace: $NS
-spec:
-  ca:
-    secretName: example-ca
-```
-
-[../live/up.sh](../live/up.sh)
-
-The chart needs an issuer whose CA is in the client CA Secret. A self-signed CA is the smallest issuer of that kind and needs nothing outside the cluster.
-
-## The node names in the server certificate
-
-The test cluster adds the three node names to the server certificate's `dnsNames`.
-
-```yaml
+issuer:
+  kind: ClusterIssuer
+  name: company-acme
 replication:
-  dnsNames: [pg-rw, pg-rw.databases.svc, k3s-1, k3s-2, k3s-3]
+  commonName: k3s-1.example.test
+  dnsNames: [k3s-1.example.test, k3s-2.example.test, k3s-3.example.test]
+objectStore:
+  endpointURL: https://s3.example.test
+  endpointCA:
+    name: s3-ca
+    key: ca.crt
 ```
 
-[../live/values.yaml](../live/values.yaml)
+[../samples/values/pg.yaml](../samples/values/pg.yaml), [../bench/outside.go](../bench/outside.go)
 
-The `pgfallback` scenarios connect from outside the cluster with `sslmode=verify-full`, to the nodes by name, so the certificate must carry those names.
+What is outside k3s in production is a container outside the nodes in the bench. The company CA approves only the node names, so the server certificate carries those, and the client connects to the nodes by name with `sslmode=verify-full`. The scenarios break the store on purpose: they stop it so connections are refused, or pause it so it accepts connections and never answers. A store in a container can be broken that way in a second, and its address stays the same.
 
-## A client certificate for orders-app.test
+## The monitoring outside the nodes, with a receiver in the bench
 
-The test cluster issues a client certificate with the CN `orders-app.test` from `example-ca`, which logs in as `orders`.
+The upstream OTel service, Prometheus with `rules.yaml`, Alertmanager with `alertmanager.yaml` and Grafana with the dashboard run as containers next to the nodes. Alertmanager's receiver, `https://alerts.example.com/hook`, is the bench itself.
 
-```yaml
-spec:
-  secretName: live-client
-  commonName: orders-app.test
-  usages: [client auth]
+```go
+	prometheusImage   = "prom/prometheus:v3.7.3@sha256:49214755b6153f90a597adcbff0252cc61069f8ab69ce8411285cd4a560e8038"
+	alertmanagerImage = "prom/alertmanager:v0.34.1@sha256:e9733bafb1bdef9b00e25a21f8f99dc26a22224bf16641ad754d1649f4c3357a"
 ```
 
-[../live/up.sh](../live/up.sh)
+[../bench/monitoring.go](../bench/monitoring.go)
 
-The writer, the read probes and `pgfallback` log in as an application would, with a certificate that the chart's pg_ident maps to one role.
-
-## Prometheus and Alertmanager in the cluster
-
-Every scenario runs Prometheus with `rules.yaml` and Alertmanager with `alertmanager.yaml` in the namespace `otel`, on a node the scenario does not stop. Alertmanager's receiver has an address that does not exist.
-
-```bash
-PROMETHEUS_IMAGE=prom/prometheus:v3.7.3@sha256:49214755b6153f90a597adcbff0252cc61069f8ab69ce8411285cd4a560e8038
-ALERTMANAGER_IMAGE=prom/alertmanager:v0.34.1@sha256:e9733bafb1bdef9b00e25a21f8f99dc26a22224bf16641ad754d1649f4c3357a
-PROM_NS=otel
-```
-
-[../live/lib.sh](../live/lib.sh)
-
-The samples' rules run outside the Kubernetes cluster. On one runner the stack runs inside it, on a node no scenario stops, which acts like an evaluator outside the database's nodes. The namespace `otel` is the one the chart's NetworkPolicy admits to 9187. The scenarios check that exactly the expected alerts fire and reach Alertmanager, so nothing has to be sent.
+The samples' rules run outside the Kubernetes cluster, as in production. The scenarios check that exactly the expected alerts fire and reach Alertmanager's receiver.
 
 ## One backup at the start instead of a schedule
 
-The test cluster starts one backup after install instead of a `ScheduledBackup`.
+The bench starts one backup after install instead of a `ScheduledBackup`.
 
-```bash
-  k cnpg backup "$CLUSTER" -n "$NS" --backup-name "$FIRST_BACKUP" \
-    --method plugin --plugin-name barman-cloud.cloudnative-pg.io >/dev/null
+```go
+	_, err := kubectl(ctx, "cnpg", "backup", clusterName, "-n", namespace, "--backup-name", name,
+		"--method", "plugin", "--plugin-name", "barman-cloud.cloudnative-pg.io")
 ```
 
-[../live/up.sh](../live/up.sh)
+[../bench/world.go](../bench/world.go)
 
 `CNPGBackupFailing` fires when there is no backup. A cluster with scheduled backups has one; a scenario's cluster lives less than a day, so one backup at the start stands in for the schedule.
 

@@ -4,7 +4,7 @@
 
 Every rw address reaches the primary: each node forwards 5432 to it (see [LoadBalancers](samples.md#loadbalancers)). The read port of a node reaches the instance on that node, primary or replica.
 
-The `pgfallback-*` scenarios of [live.md](live.md#pgfallback-from-outside-the-cluster) run it this way, with pgxpool and GORM, against a three-node cluster during a drain of the primary's node and the loss of a primary's or a replica's node.
+The [bench](bench.md)'s client runs it this way, with pgxpool, in every scenario against a three-node cluster. The `pgfallback-*` scenarios check it during a drain of the primary's node and the loss of a primary's or a replica's node with [the pgfallback report](bench.md#the-pgfallback-report).
 
 ## Get it
 
