@@ -1,7 +1,7 @@
 Feature: The evidence scripts
   desired.sh, evidence.sh and prove.sh against the cluster, as
-  docs/evidence.md and docs/prove.md run them: evidence.sh from the bench,
-  prove.sh as root on every node, which the bench sees through the node
+  docs/evidence.md and docs/prove.md run them: evidence.sh from the e2e test,
+  prove.sh as root on every node, which the e2e test sees through the node
   container's /proc/<pid>/root.
 
   Background:

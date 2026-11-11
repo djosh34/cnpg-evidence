@@ -21,7 +21,7 @@ import (
 // OTel service with the one URL the collectors in k3s send to, Prometheus
 // as the rule evaluator with monitoring/rules.yaml, Alertmanager with
 // monitoring/alertmanager.yaml, and Grafana with monitoring/dashboard.json.
-// The bench itself plays the receiver of alertmanager.yaml.
+// The e2e test itself plays the receiver of alertmanager.yaml.
 const (
 	otelIP         = "10.77.0.50"
 	prometheusIP   = "10.77.0.51"
@@ -98,7 +98,7 @@ datasources:
 
 const grafanaDashboards = `apiVersion: 1
 providers:
-  - name: bench
+  - name: e2e
     type: file
     options:
       path: /etc/grafana/dashboards
@@ -107,7 +107,7 @@ providers:
 // startMonitoring starts the receiver and the four containers, and returns
 // once each answers.
 func startMonitoring(ctx context.Context, root *ca) (*monitoring, error) {
-	dir := filepath.Join(benchDir, "monitoring")
+	dir := filepath.Join(samplesDir, "monitoring")
 	read := func(name string) (string, error) {
 		data, err := os.ReadFile(filepath.Join(dir, name))
 		return string(data), err
@@ -173,9 +173,9 @@ func startMonitoring(ctx context.Context, root *ca) (*monitoring, error) {
 			name: "grafana", ip: grafanaIP, image: grafanaImage,
 			opts: []string{"--env", "GF_SECURITY_ADMIN_PASSWORD=" + grafanaPassword},
 			files: map[string]string{
-				"/etc/grafana/provisioning/datasources/bench.yaml": grafanaSources,
-				"/etc/grafana/provisioning/dashboards/bench.yaml":  grafanaDashboards,
-				"/etc/grafana/dashboards/dashboard.json":           dashboard,
+				"/etc/grafana/provisioning/datasources/e2e.yaml": grafanaSources,
+				"/etc/grafana/provisioning/dashboards/e2e.yaml":  grafanaDashboards,
+				"/etc/grafana/dashboards/dashboard.json":         dashboard,
 			},
 		},
 	}
@@ -198,7 +198,7 @@ func startMonitoring(ctx context.Context, root *ca) (*monitoring, error) {
 	return m, nil
 }
 
-// monitoring is the bench's view of the monitoring: Prometheus's,
+// monitoring is the e2e test's view of the monitoring: Prometheus's,
 // Alertmanager's and Grafana's APIs, and the notifications the receiver got.
 type monitoring struct {
 	http      *http.Client
@@ -216,7 +216,7 @@ type notification struct {
 }
 
 // receive serves the receiver of alertmanager.yaml, https://alerts.example.com/hook,
-// on the bench network's gateway, with a certificate of the company CA.
+// on the e2e network's gateway, with a certificate of the company CA.
 func (m *monitoring) receive(root *ca) error {
 	cert, key, err := root.serverCert(receiverName)
 	if err != nil {
@@ -233,9 +233,9 @@ func (m *monitoring) receive(root *ca) error {
 	}
 	server := &http.Server{ReadHeaderTimeout: 10 * time.Second, Handler: http.HandlerFunc(m.notified)}
 	go func() {
-		// It serves until the bench ends.
+		// It serves until the e2e test ends.
 		if err := server.Serve(listener); err != nil {
-			say(os.Stderr, "bench: the receiver: %v\n", err)
+			say(os.Stderr, "e2e: the receiver: %v\n", err)
 		}
 	}()
 	return nil

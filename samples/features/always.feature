@@ -1,6 +1,6 @@
 @always
 Feature: What always holds
-  The bench runs this scenario after every scenario, passed or failed, with
+  The e2e test runs this scenario after every scenario, passed or failed, with
   the same steps. Reading and writing are what the client, the application
   outside the cluster, gets through pgfallback over the whole scenario. A
   scenario's own "writing is healthy < N s" sets N for that scenario; every

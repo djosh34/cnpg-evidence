@@ -2,8 +2,8 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -14,13 +14,14 @@ import (
 
 	gherkin "github.com/cucumber/gherkin/go/v42"
 	messages "github.com/cucumber/messages/go/v34"
+	"go.yaml.in/yaml/v3"
 )
 
 func TestParseLog(t *testing.T) {
 	log := parseLog(strings.Join([]string{
 		"1000 1100 read k3s-1.example.test:5432 ok 10.42.0.5 recovery=false",
 		"1000 1200 write k3s-1.example.test:5432 ok 17 10.42.0.5",
-		"client: creating bench_writes: no route",
+		"client: creating e2e_writes: no route",
 		"1250 1300 write k3s-2.example.test:5433 fail ERROR: cannot execute INSERT in a read-only transaction",
 		"1300 1310 connect k3s-3.example.test:5432 ok ",
 		"1500 1600 writes - stopped ",
@@ -43,7 +44,7 @@ func TestParseLog(t *testing.T) {
 	if stopped, ok := log.writesStopped(); !ok || stopped.UnixMilli() != 1500 {
 		t.Errorf("writes stopped: got %v %v, want 1500", stopped.UnixMilli(), ok)
 	}
-	if log.tail != "client: creating bench_writes: no route" {
+	if log.tail != "client: creating e2e_writes: no route" {
 		t.Errorf("tail: got %q", log.tail)
 	}
 }
@@ -150,8 +151,8 @@ func TestNewPrimary(t *testing.T) {
 
 // Every line of the feature files in samples/features binds to exactly one
 // line shape, every "is", "has been" and verb line is in the vocabulary, and
-// every alert line names a role. Each scenario has its own tag, and
-// scenarios.sh lists them all.
+// every alert line names a role. Each scenario has its own tag, and the
+// matrix of e2e.yml names them all.
 func TestFeaturesUseTheVocabulary(t *testing.T) {
 	shapes := map[string]*regexp.Regexp{
 		"is": regexp.MustCompile(isLine), "since": regexp.MustCompile(sinceLine), "verb": regexp.MustCompile(verbLine),
@@ -218,11 +219,33 @@ func TestFeaturesUseTheVocabulary(t *testing.T) {
 			t.Errorf("the tag @%s is on more than one scenario", tags[i])
 		}
 	}
-	listed, err := exec.Command("bash", "scenarios.sh").Output()
+	listed, err := workflowScenarios()
 	if err != nil {
-		t.Fatalf("scenarios.sh: %v", err)
+		t.Fatal(err)
 	}
-	if got, want := strings.Fields(string(listed)), tags; !slices.Equal(got, want) {
-		t.Errorf("scenarios.sh lists %v, the feature files have %v", got, want)
+	slices.Sort(listed)
+	if !slices.Equal(listed, tags) {
+		t.Errorf("e2e.yml runs %v, the feature files have %v", listed, tags)
 	}
+}
+
+// workflowScenarios are the scenarios of the matrix of e2e.yml.
+func workflowScenarios() ([]string, error) {
+	data, err := os.ReadFile("../.github/workflows/e2e.yml")
+	if err != nil {
+		return nil, err
+	}
+	var workflow struct {
+		Jobs map[string]struct {
+			Strategy struct {
+				Matrix struct {
+					Scenario []string `yaml:"scenario"`
+				} `yaml:"matrix"`
+			} `yaml:"strategy"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(data, &workflow); err != nil {
+		return nil, fmt.Errorf("e2e.yml: %w", err)
+	}
+	return workflow.Jobs["scenario"].Strategy.Matrix.Scenario, nil
 }

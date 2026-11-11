@@ -1,9 +1,10 @@
-# Only what bench/Dockerfile copies.
+# Only what e2e/Dockerfile copies. It is the only image built from the
+# repository root.
 *
 !go.mod
 !go.sum
 !pgfallback/
-!bench/
+!e2e/
 !scripts/
 scripts/**/*.test.sh
 scripts/lib/test.sh

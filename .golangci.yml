@@ -1,5 +1,5 @@
-# golangci-lint v2.15.0 settings for the root module and bench/: every
-# ignored error is a finding. The ci.yml jobs lint and bench-go run it and
+# golangci-lint v2.15.0 settings for the root module and e2e/: every
+# ignored error is a finding. The ci.yml jobs lint and e2e-go run it and
 # fail on any nolint comment, which no setting can turn off.
 version: "2"
 linters:

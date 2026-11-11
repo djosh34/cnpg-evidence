@@ -11,7 +11,7 @@
 # evaluator; rules.yaml counts an instance whose newest sample is 30 s behind
 # the others' as reporting nothing.
 #
-# The names below are the bench's: the upstream URL otel.example.test, the
+# The names below are the e2e test's: the upstream URL otel.example.test, the
 # node names k3s-<n>.example.test, which the company CA issues and the
 # instances' server certificate names, and the ClusterIssuer company-acme.
 # Replace them with a cluster's own.

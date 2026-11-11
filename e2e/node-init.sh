@@ -1,5 +1,5 @@
 #!/bin/sh
-# The first process of each node container that the bench starts, in place
+# The first process of each node container that a run starts, in place
 # of k3s itself. It runs "k3s server" with its arguments and starts it again
 # 5 s after it exits, as k3s's systemd unit does (Restart=always,
 # KillMode=process). So the node's pods keep running while k3s is down, as on
@@ -24,12 +24,12 @@ if [ -f "$cgroup/cgroup.controllers" ]; then
   done
 fi
 
-# The manifests of the mounted k3s directory, which k3s applies. k3s makes
+# The manifests of samples/k3s, which k3s applies. k3s makes
 # its server directory 700 when it creates it.
 server=/var/lib/rancher/k3s/server
 mkdir -p "$server/manifests"
 chmod 700 "$server"
-for manifest in /bench/k3s/manifests/*.yaml; do
+for manifest in /e2e/k3s/manifests/*.yaml; do
   if [ -f "$manifest" ]; then
     cp "$manifest" "$server/manifests/"
   fi

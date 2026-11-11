@@ -1,7 +1,7 @@
-// Command client is the application host of the bench. It gets its own
+// Command client is the application host of the e2e test. It gets its own
 // certificate from the company CA by ACME, then reads and writes through
-// pgfallback, as an application outside the cluster does, until it gets
-// SIGTERM. It prints one line per event on stdout:
+// pgfallback, as an application outside the cluster does, until it is
+// killed. It prints one line per event on stdout:
 //
 //	<start unix ms> <end unix ms> <what> <address> <result> <detail>
 //
@@ -91,13 +91,13 @@ const (
 	certDir = "/tmp/certs"
 )
 
-const createTable = `CREATE TABLE IF NOT EXISTS bench_writes (
+const createTable = `CREATE TABLE IF NOT EXISTS e2e_writes (
 	n bigint PRIMARY KEY,
 	at timestamptz NOT NULL DEFAULT now()
 )`
 
 const (
-	insertRow = `INSERT INTO bench_writes (n) VALUES ($1) RETURNING host(inet_server_addr())`
+	insertRow = `INSERT INTO e2e_writes (n) VALUES ($1) RETURNING host(inet_server_addr())`
 	readRow   = `SELECT host(inet_server_addr()), pg_is_in_recovery()`
 )
 
@@ -127,8 +127,6 @@ func run() error {
 		return errors.New("-name, -acme, -ca and -hosts are needed")
 	}
 	hosts := strings.Split(*hostList, ",")
-	ctx, stop := signal.NotifyContext(app, syscall.SIGTERM, syscall.SIGINT)
-	defer stop()
 
 	if err := obtainCertificate(*name, *directory, *caFile); err != nil {
 		return fmt.Errorf("certificate of %s: %w", *name, err)
@@ -136,12 +134,12 @@ func run() error {
 	// Reads and writes each have their own pool, so writes that wait for a
 	// standby to confirm their commit cannot take every connection from the
 	// reads.
-	readPool, err := newPool(ctx, hosts, "read")
+	readPool, err := newPool(app, hosts, "read")
 	if err != nil {
 		return err
 	}
 	defer readPool.Close()
-	writePool, err := newPool(ctx, hosts, "write")
+	writePool, err := newPool(app, hosts, "write")
 	if err != nil {
 		return err
 	}
@@ -154,24 +152,23 @@ func run() error {
 		}
 		alone = append(alone, cc)
 	}
-	if err := ensureTable(ctx, writePool); err != nil {
+	if err := ensureTable(app, writePool); err != nil {
 		return err
 	}
 
 	stopWrites := make(chan os.Signal, 1)
 	signal.Notify(stopWrites, syscall.SIGUSR1)
 	var loops sync.WaitGroup
-	loops.Go(func() { every250ms(ctx, nil, func() { read(readPool) }) })
+	loops.Go(func() { every250ms(nil, func() { read(readPool) }) })
 	if *writes {
 		loops.Go(func() {
-			if every250ms(ctx, stopWrites, func() { write(writePool) }) {
-				now := time.Now()
-				logLine(now, now, "writes", "-", "stopped", "")
-			}
+			every250ms(stopWrites, func() { write(writePool) })
+			now := time.Now()
+			logLine(now, now, "writes", "-", "stopped", "")
 		})
 	}
 	for _, cc := range alone {
-		loops.Go(func() { every250ms(ctx, nil, func() { connectAlone(cc) }) })
+		loops.Go(func() { every250ms(nil, func() { connectAlone(cc) }) })
 	}
 	loops.Wait()
 	return nil
@@ -352,7 +349,7 @@ func ensureTable(ctx context.Context, pool *pgxpool.Pool) error {
 		if err == nil {
 			return nil
 		}
-		warn("client: creating bench_writes: %s", oneLine(err))
+		warn("client: creating e2e_writes: %s", oneLine(err))
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -362,10 +359,10 @@ func ensureTable(ctx context.Context, pool *pgxpool.Pool) error {
 }
 
 // every250ms starts attempt every 0.25 s, each in its own goroutine, until
-// ctx ends or stop gets a signal, and returns once every attempt it started
-// has ended, with whether stop ended it. The attempts are not canceled: each
-// ends within attemptTimeout and logs what it got.
-func every250ms(ctx context.Context, stop <-chan os.Signal, attempt func()) bool {
+// stop gets a signal, and returns once every attempt it started has ended.
+// A nil stop never does. The attempts are not canceled: each ends within
+// attemptTimeout and logs what it got.
+func every250ms(stop <-chan os.Signal, attempt func()) {
 	var attempts sync.WaitGroup
 	defer attempts.Wait()
 	tick := time.NewTicker(every)
@@ -373,10 +370,8 @@ func every250ms(ctx context.Context, stop <-chan os.Signal, attempt func()) bool
 	for {
 		attempts.Go(attempt)
 		select {
-		case <-ctx.Done():
-			return false
 		case <-stop:
-			return true
+			return
 		case <-tick.C:
 		}
 	}

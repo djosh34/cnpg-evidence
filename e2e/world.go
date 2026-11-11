@@ -10,15 +10,15 @@ import (
 )
 
 // world is everything one run starts: the network, the services outside
-// k3s, the three nodes, and the releases of the mounted directory on them.
-// Nothing of it outlives the bench's container.
+// k3s, the three nodes, and the releases of samples/ on them.
+// Nothing of it outlives the e2e test's container.
 type world struct {
 	root    *ca
 	bao     *openbao
 	mon     *monitoring
 	cluster chartValues // of the cluster's release
 
-	built time.Time // when the bench started to build it
+	built time.Time // when the e2e test started to build it
 }
 
 func newWorld(ctx context.Context) (*world, error) {
@@ -30,6 +30,10 @@ func newWorld(ctx context.Context) (*world, error) {
 		return nil, err
 	}
 	w := &world{root: root, built: time.Now()}
+	logf("building the client image")
+	if err := buildClient(ctx); err != nil {
+		return nil, err
+	}
 	logf("starting the DNS, the company CA, the store and the monitoring")
 	if err := startDNS(ctx); err != nil {
 		return nil, err

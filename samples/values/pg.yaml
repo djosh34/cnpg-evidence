@@ -1,4 +1,4 @@
-# The bench's values for the release pg, on top of desired.yaml. The company
+# The e2e test's values for the release pg, on top of desired.yaml. The company
 # CA approves only the node names, and the store has a certificate of that CA.
 issuer:
   kind: ClusterIssuer

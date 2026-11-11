@@ -5,13 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/cucumber/godog"
@@ -23,13 +21,10 @@ var scenarioTag = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 // runScenario runs the one scenario tagged @<name> of the feature files, on
 // its own new cluster, then always.feature. It returns the exit code.
 func runScenario(name string, res *results) int {
-	format := "progress"
-	if res.dir != "" {
-		format += ",cucumber:" + res.path("cucumber.json") + ",junit:" + res.path("junit.xml")
-	}
+	format := "progress,cucumber:" + res.path("cucumber.json") + ",junit:" + res.path("junit.xml")
 	ran := 0
 	suite := godog.TestSuite{
-		Name: "bench",
+		Name: "e2e",
 		ScenarioInitializer: func(sc *godog.ScenarioContext) {
 			s := &scenario{
 				results: res, writes: true,
@@ -49,17 +44,17 @@ func runScenario(name string, res *results) int {
 		},
 		Options: &godog.Options{
 			Format: format, Output: io.Discard, Strict: true, NoColors: true,
-			Paths: []string{filepath.Join(benchDir, "features")},
+			Paths: []string{filepath.Join(samplesDir, "features")},
 			Tags:  "@" + name + " && ~@always",
 		},
 	}
 	status := suite.Run()
 	switch {
 	case ran == 0:
-		say(os.Stderr, "bench: %s: @%s\n", errNoScenario, name)
+		say(os.Stderr, "e2e: %s: @%s\n", errNoScenario, name)
 		return 2
 	case ran > 1:
-		say(os.Stderr, "bench: %d scenarios have the tag @%s; a run runs one\n", ran, name)
+		say(os.Stderr, "e2e: %d scenarios have the tag @%s; a run runs one\n", ran, name)
 		return 2
 	case status != 0:
 		logf("FAILED: %s", name)
@@ -71,7 +66,7 @@ func runScenario(name string, res *results) int {
 
 // setUp builds the scenario's cluster and names the instances.
 func (s *scenario) setUp(sn *godog.Scenario) error {
-	logf("scenario %q: a new cluster from the mounted directory", sn.Name)
+	logf("scenario %q: a new cluster from samples/", sn.Name)
 	var err error
 	if s.w, err = newWorld(s.ctx); err != nil {
 		return err
@@ -159,54 +154,21 @@ func dumpState(ctx context.Context) string {
 	return state
 }
 
-// The optional results mount. A run writes into a new directory there.
-const resultsMount = "/results"
+// Where a run writes its files, in a new directory. TestScenario copies
+// them out at the end.
+const resultsDir = "/results"
 
 type results struct {
-	dir string // empty when /results is not mounted
+	dir string
 }
 
 func newResults(scenario string) (*results, error) {
-	switch _, err := os.Stat(resultsMount); {
-	case errors.Is(err, fs.ErrNotExist):
-		return &results{}, nil
-	case err != nil:
-		return nil, err
-	}
-	r := &results{dir: filepath.Join(resultsMount, scenario+"-"+time.Now().UTC().Format("20060102-150405"))}
-	if err := os.MkdirAll(r.dir, 0o755); err != nil {
-		return nil, err
-	}
-	// The owner of /results can then delete what a killed run leaves in it.
-	return r, r.own()
+	r := &results{dir: filepath.Join(resultsDir, scenario+"-"+time.Now().UTC().Format("20060102-150405"))}
+	return r, os.MkdirAll(r.dir, 0o755)
 }
 
 func (r *results) path(name string) string { return filepath.Join(r.dir, name) }
 
 func (r *results) write(name, content string) error {
-	if r.dir == "" {
-		return nil
-	}
 	return os.WriteFile(r.path(name), []byte(content), 0o644)
-}
-
-// own gives the run's files the owner of /results.
-func (r *results) own() error {
-	if r.dir == "" {
-		return nil
-	}
-	info, err := os.Stat(resultsMount)
-	if err != nil {
-		return err
-	}
-	owner, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		return fmt.Errorf("no owner of %s", resultsMount)
-	}
-	return filepath.WalkDir(r.dir, func(path string, _ fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		return os.Lchown(path, int(owner.Uid), int(owner.Gid))
-	})
 }

@@ -38,14 +38,14 @@ func readReleases(file string) ([]release, error) {
 }
 
 // installCharts installs the releases of charts/releases.yaml in their
-// order. The charts are copied out of the read-only mounted directory first,
-// since helm dependency build writes the values charts' dependencies next to
-// them. Each release gets its values files from the mounted directory, then
+// order. helm dependency build writes the values charts' dependencies next
+// to them, so the charts are copied out of /samples first and /samples stays
+// as samples/ is. Each release gets its values files from /samples, then
 // values/<release>.yaml when it exists. It returns the chart and values of
 // the cluster's release.
 func installCharts(ctx context.Context) (chartValues, error) {
 	charts := filepath.Join(workDir, "charts")
-	if err := os.CopyFS(charts, os.DirFS(filepath.Join(benchDir, "charts"))); err != nil {
+	if err := os.CopyFS(charts, os.DirFS(filepath.Join(samplesDir, "charts"))); err != nil {
 		return chartValues{}, fmt.Errorf("copying the charts: %w", err)
 	}
 	releases, err := readReleases(filepath.Join(charts, "releases.yaml"))
@@ -60,9 +60,9 @@ func installCharts(ctx context.Context) (chartValues, error) {
 		}
 		var values []string
 		for _, v := range r.Values {
-			values = append(values, "--values", filepath.Join(benchDir, v))
+			values = append(values, "--values", filepath.Join(samplesDir, v))
 		}
-		own := filepath.Join(benchDir, "values", r.Name+".yaml")
+		own := filepath.Join(samplesDir, "values", r.Name+".yaml")
 		switch _, err := os.Stat(own); {
 		case err == nil:
 			values = append(values, "--values", own)
@@ -85,7 +85,7 @@ func installCharts(ctx context.Context) (chartValues, error) {
 	return cluster, nil
 }
 
-// chartValues are the directory of a release's chart in the bench's copy,
+// chartValues are the directory of a release's chart in the e2e test's copy,
 // and its --values arguments.
 type chartValues struct {
 	chart  string
@@ -132,7 +132,7 @@ func spreadK3sServices(ctx context.Context) error {
 	return nil
 }
 
-// secret is a Secret the bench makes before the charts, with what only the
+// secret is a Secret the e2e test makes before the charts, with what only the
 // run knows: the EAB key and the CA of the company CA, and the store's keys.
 type secret struct {
 	namespace, name string

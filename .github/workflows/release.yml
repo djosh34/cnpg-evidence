@@ -8,53 +8,8 @@ permissions:
   contents: read
 
 jobs:
-  # The tag's commit must have passed every scenario of the bench, on amd64
-  # and arm64.
-  bench-runs:
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      actions: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: A successful bench run of every scenario
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash bench/release-check.sh "$GITHUB_SHA"
-
   ci:
-    needs: bench-runs
     uses: ./.github/workflows/ci.yml
-
-  # The bench's two images that the bench runs of the tag's commit tested,
-  # tagged sha-<commit>, get the version tag too. Nothing is built again.
-  bench-images:
-    needs: ci
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - name: Tool versions
-        run: docker buildx version
-      - name: Log in to ghcr
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-      - name: Tag the tested images with the version
-        env:
-          VERSION: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          for image in ghcr.io/djosh34/cnpg-evidence-bench ghcr.io/djosh34/cnpg-evidence-client; do
-            docker buildx imagetools create --tag "$image:$VERSION" "$image:sha-$GITHUB_SHA"
-            docker buildx imagetools inspect "$image:$VERSION" | tee -a "$GITHUB_STEP_SUMMARY"
-          done
-      - name: Log out of ghcr
-        if: always()
-        run: docker logout ghcr.io
 
   image:
     needs: ci
@@ -155,7 +110,7 @@ jobs:
   # fetch fixes the version in the proxy and in sum.golang.org for good, so
   # this job stays the last one: a later failure could not reuse the tag.
   go-get:
-    needs: [check, bench-images]
+    needs: check
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

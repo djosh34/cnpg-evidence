@@ -1,6 +1,9 @@
 name: e2e
 
-# Runs only on demand.
+# Runs on demand: every scenario of samples/features on amd64 and on arm64,
+# each in its own job with ./e2e.sh. Each job uploads the run's files, also
+# when the scenario failed. A Go test of e2e/ checks that the list below has
+# every scenario.
 on:
   workflow_dispatch:
 
@@ -8,7 +11,51 @@ permissions:
   contents: read
 
 jobs:
-  e2e:
-    runs-on: ubuntu-24.04
+  scenario:
+    name: ${{ matrix.scenario }} on ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        scenario:
+          - backup-restore
+          - evidence
+          - exporter-node-loss
+          - fence
+          - host-check
+          - lag-after-primary-change
+          - lag-and-stall
+          - one-node-left
+          - pgfallback-drain
+          - pgfallback-primary-node-loss
+          - pgfallback-replica-node-loss
+          - primary-node-loss
+          - quiet-failover
+          - quiet-rewind
+          - rejoin-from-archive
+          - replica-down-long
+          - replica-node-loss
+          - replica-not-streaming
+          - replica-restart-during-primary-loss
+          - rollout
+          - store-hang
+          - store-refuse
+          - switchover
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 100
     steps:
-      - run: echo "no scenarios yet"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: e2e/go.mod
+          cache-dependency-path: e2e/go.sum
+      - name: Scenario
+        run: ./e2e.sh ${{ matrix.scenario }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: ${{ matrix.scenario }}-${{ runner.arch }}
+          path: results/
+          if-no-files-found: warn

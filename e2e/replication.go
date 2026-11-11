@@ -186,7 +186,7 @@ func replay(action string) func(context.Context, *scenario, args) error {
 }
 
 func rowTable(ctx context.Context, pod string) error {
-	_, err := psql(ctx, pod, "postgres", "create table if not exists bench_row (at timestamptz not null default now())")
+	_, err := psql(ctx, pod, "postgres", "create table if not exists e2e_row (at timestamptz not null default now())")
 	return err
 }
 
@@ -198,7 +198,7 @@ func longCommit(ctx context.Context, _ *scenario, a args) error {
 		return err
 	}
 	_, err := psql(ctx, pod, "postgres", fmt.Sprintf(
-		"begin; select pg_sleep(%d); insert into bench_row default values; commit", n))
+		"begin; select pg_sleep(%d); insert into e2e_row default values; commit", n))
 	return err
 }
 
@@ -214,7 +214,7 @@ func startCommit(ctx context.Context, s *scenario, a args) error {
 		return err
 	}
 	s.commit = inBackground(ctx, "kubectl", "exec", "-n", namespace, pod, "-c", "postgres", "--",
-		"psql", "-U", "postgres", "-d", "postgres", "-XqAt", "-v", "ON_ERROR_STOP=1", "-c", "insert into bench_row default values")
+		"psql", "-U", "postgres", "-d", "postgres", "-XqAt", "-v", "ON_ERROR_STOP=1", "-c", "insert into e2e_row default values")
 	return nil
 }
 

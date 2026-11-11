@@ -97,10 +97,10 @@ jobs:
           "$RUNNER_TEMP/golangci-lint" config verify
           "$RUNNER_TEMP/golangci-lint" run ./...
 
-  # The bench and its client (bench/): vet, tests, among them that each
-  # scenario has its own tag, golangci-lint v2.15.0 with no nolint comment,
-  # and shellcheck on its scripts.
-  bench-go:
+  # The e2e runner and its client (e2e/): vet, tests, among them that each
+  # scenario has its own tag and is in e2e.yml, golangci-lint v2.15.0 with no
+  # nolint comment, and shellcheck on its scripts and e2e.sh.
+  e2e-go:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -108,8 +108,8 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: bench/go.mod
-          cache-dependency-path: bench/go.sum
+          go-version-file: e2e/go.mod
+          cache-dependency-path: e2e/go.sum
       - name: golangci-lint v2.15.0
         run: |
           set -euo pipefail
@@ -123,16 +123,16 @@ jobs:
           ./golangci-lint version
           shellcheck --version
       - name: Vet and test
-        working-directory: bench
+        working-directory: e2e
         run: |
           set -euo pipefail
           go vet ./...
           go test ./...
-      - name: No nolint in the bench
+      - name: No nolint in e2e/
         run: |
           set -euo pipefail
           status=0
-          grep -rin --include='*.go' nolint bench || status=$?
+          grep -rin --include='*.go' nolint e2e || status=$?
           if ((status == 0)); then
             echo "lint: nolint comments are not allowed" >&2
             exit 1
@@ -141,13 +141,13 @@ jobs:
             exit "$status"
           fi
       - name: Lint
-        working-directory: bench
+        working-directory: e2e
         run: |
           set -euo pipefail
           "$RUNNER_TEMP/golangci-lint" config verify
           "$RUNNER_TEMP/golangci-lint" run ./...
       - name: shellcheck
-        run: shellcheck bench/*.sh
+        run: shellcheck e2e.sh e2e/*.sh
 
   # pgfallback against PostgreSQL 18 in docker: a primary and three standbys,
   # behind TCP proxies the tests stop and start.

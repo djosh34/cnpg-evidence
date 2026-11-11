@@ -1,3 +1,5 @@
 .DS_Store
 samples/charts/cnpg-*/charts/
 samples/charts/cnpg-*/Chart.lock
+# What ./e2e.sh copies out of each run.
+results/
