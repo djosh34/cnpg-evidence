@@ -185,17 +185,10 @@ func (s *scenario) is(thing, word, n, after, forN string) error {
 		return s.measure(key, w, n, after, forN)
 	}
 	check := func(ctx context.Context) error { return w.state(ctx, s, a) }
-	switch {
-	case forN != "":
+	if forN != "" {
 		return s.holdsFor(forN, check)
-	case n != "":
-		deadline, err := s.deadline(n, after)
-		if err != nil {
-			return err
-		}
-		return poll(s.ctx, deadline, check)
 	}
-	return check(s.ctx)
+	return s.within(n, after, check)
 }
 
 // since: "<thing> has been <word> since the <event>", a check of the whole
@@ -251,14 +244,7 @@ func (s *scenario) alert(name, verb, who, n, after string) error {
 	case "has not fired":
 		check = s.alertIs(key, false, true)
 	}
-	if n == "" {
-		return check(s.ctx)
-	}
-	deadline, err := s.deadline(n, after)
-	if err != nil {
-		return err
-	}
-	return poll(s.ctx, deadline, check)
+	return s.within(n, after, check)
 }
 
 // alertPod is the pod an alert line names: an instance by its role, or ""
@@ -323,14 +309,7 @@ func (s *scenario) alertmanager(verb, name, who, n, after string) error {
 			return err
 		}
 	}
-	if n == "" {
-		return check(s.ctx)
-	}
-	deadline, err := s.deadline(n, after)
-	if err != nil {
-		return err
-	}
-	return poll(s.ctx, deadline, check)
+	return s.within(n, after, check)
 }
 
 // verb: "<thing> starts", "stops", "runs" or "passes".
@@ -452,6 +431,19 @@ func (s *scenario) holdsFor(n string, check func(context.Context) error) error {
 		case <-time.After(2 * time.Second):
 		}
 	}
+}
+
+// within checks now without a limit, or waits until the check holds, by N s
+// from now or N s after a named event.
+func (s *scenario) within(n, after string, check func(context.Context) error) error {
+	if n == "" {
+		return check(s.ctx)
+	}
+	deadline, err := s.deadline(n, after)
+	if err != nil {
+		return err
+	}
+	return poll(s.ctx, deadline, check)
 }
 
 // deadline is N s from now, or N s after a named event.

@@ -118,19 +118,10 @@ func (s *scenario) table(name string) string {
 	return table
 }
 
-// What the state dump of a failed scenario shows.
-var stateCommands = [][]string{
-	{"docker", "ps", "-a"},
-	{"docker", "logs", "--tail", "30", "dns"},
-	{"docker", "logs", "--tail", "30", "acme"},
-	{"docker", "logs", "--tail", "30", "s3"},
-	{"docker", "logs", "--tail", "30", "client"},
-	{"docker", "logs", "--tail", "30", "otel"},
-	{"docker", "logs", "--tail", "30", "prometheus"},
-	{"docker", "logs", "--tail", "30", "alertmanager"},
-	{"docker", "logs", "--tail", "30", "k3s-1"},
-	{"docker", "logs", "--tail", "30", "k3s-2"},
-	{"docker", "logs", "--tail", "30", "k3s-3"},
+// What the state dump of a failed scenario shows: the end of each
+// container's log, then the cluster.
+var stateCommands = append(containerLogs("dns", "acme", "s3", "client", "otel", "prometheus", "alertmanager", "grafana",
+	"k3s-1", "k3s-2", "k3s-3"), [][]string{
 	{"kubectl", "get", "nodes", "-o", "wide"},
 	{"kubectl", "get", "pods", "-A", "-o", "wide"},
 	{"kubectl", "get", "clusters,backups,certificates,certificaterequests,orders,challenges", "-A"},
@@ -139,6 +130,14 @@ var stateCommands = [][]string{
 	{"kubectl", "get", "events", "-A", "--sort-by=.lastTimestamp"},
 	{"kubectl", "logs", "-n", "cnpg-system", "-l", "app.kubernetes.io/name=cloudnative-pg", "--tail=100", "--prefix"},
 	{"kubectl", "logs", "-n", "otel", "-l", "app.kubernetes.io/instance=otel", "--tail=20", "--prefix"},
+}...)
+
+func containerLogs(names ...string) [][]string {
+	commands := [][]string{{"docker", "ps", "-a"}}
+	for _, name := range names {
+		commands = append(commands, []string{"docker", "logs", "--tail", "30", name})
+	}
+	return commands
 }
 
 func dumpState(ctx context.Context) string {

@@ -42,12 +42,12 @@ bash bench/host.sh
 
 1. Checks the inotify limit.
 2. Makes an ext4 filesystem of 40 GB in a sparse file and starts its own dockerd on it, so every host gives the cluster the same empty disk.
-3. Starts, through testcontainers-go, the containers outside k3s, on one network at fixed addresses:
+3. Starts the containers outside k3s with `docker run`, on one network at fixed addresses. The files a container needs are written in the bench and mounted read-only:
    - `dns`: CoreDNS, which names every container below.
    - `acme.example.test`: OpenBao as the company CA. The run makes a new root. OpenBao serves ACME with an EAB key required, checks each name with http-01, and signs only the approved names, the nodes and the client, for server and client auth.
-   - `s3.example.test`: versitygw with TLS, with a certificate of that CA.
+   - `s3.example.test`: versitygw with TLS, with a certificate of that CA. Its posix backend keeps each bucket as a directory, which the bench makes first.
    - The monitoring, as [Monitoring](#monitoring) says: `otel.example.test`, `prometheus.example.test`, `alertmanager.example.test` and `grafana.example.test`.
-4. Starts three k3s servers with embedded etcd, `k3s-1.example.test` to `k3s-3.example.test`, one after another. Each runs [`bench/node-init.sh`](../bench/node-init.sh), which starts k3s again when it exits, so the pods outlive k3s as on a VM. Each gets [`k3s/config.yaml`](../samples/k3s/config.yaml) and the files of `k3s/manifests/`.
+4. Starts three k3s servers with embedded etcd, `k3s-1.example.test` to `k3s-3.example.test`, one after another, each with the mounted `k3s/` directory read-only. Each runs [`bench/node-init.sh`](../bench/node-init.sh), which copies the files of `k3s/manifests/` where k3s applies them, then runs k3s with [`k3s/config.yaml`](../samples/k3s/config.yaml) and starts it again when it exits, so the pods outlive k3s as on a VM.
 5. Runs one CoreDNS and metrics-server pod per node, as [samples.md](samples.md) says.
 6. Makes the Secrets that only the run knows: the EAB key and CA of the company CA, `client-ca`, the store's CA `s3-ca`, and `backup-creds`.
 7. Installs the releases of [`charts/releases.yaml`](../samples/charts/releases.yaml) in order: `helm dependency build --skip-refresh` on the chart, then `helm upgrade --install --wait` with the release's values files and `values/<release>.yaml`. The charts are copied out of the mounted directory first.

@@ -38,8 +38,10 @@ func writeRow(ctx context.Context, _ *scenario, _ args) error {
 	if err != nil {
 		return err
 	}
-	_, err = psql(ctx, primary, "postgres",
-		"create table if not exists bench_row (at timestamptz not null default now()); insert into bench_row default values")
+	if err := rowTable(ctx, primary); err != nil {
+		return err
+	}
+	_, err = psql(ctx, primary, "postgres", "insert into bench_row default values")
 	return err
 }
 
