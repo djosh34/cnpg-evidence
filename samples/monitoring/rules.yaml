@@ -261,8 +261,9 @@ groups:
       # in the last 15 s. A collector lost with its node sends no stale
       # marker, and its last sample, which may have caught a commit waiting,
       # would otherwise count for the evaluator's lookback; when its last two
-      # samples both caught sessions waiting, the alert can fire once. Each series on its own: an instance that comes back
-      # under a new address has a new series.
+      # samples both caught sessions waiting, the alert can fire once. Each
+      # series on its own: an instance that comes back under a new address has
+      # a new series.
       - alert: CNPGWritesBlocked
         expr: |
           max by (namespace, cluster, pod) (
