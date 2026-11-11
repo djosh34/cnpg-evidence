@@ -28,9 +28,14 @@ opened=(
   libpci.so.3 libva.so.2 libva-drm.so.2 libwayland-client.so.0 libxcb-shm.so.0
 )
 
-# Docs are on, since some RPMs ship their licence text as a doc file.
+# Docs are on, since some RPMs ship their licence text as a doc file. The
+# upgrade first brings every RPM of the base image to the version of the
+# UBI9 repositories, which may no longer have the base image's own; dnf
+# reinstall skips such an RPM and still succeeds. cpio, bzip2 and xz are for
+# source_texts, installed now so that no library changes after it is copied.
 dnf=(dnf -y --setopt=install_weak_deps=False --setopt=tsflags=)
-"${dnf[@]}" install "${packages[@]}" >&2
+"${dnf[@]}" upgrade >&2
+"${dnf[@]}" install "${packages[@]}" cpio bzip2 xz >&2
 
 mkdir -p "$payload/lib" "$payload/licenses/rpm"
 
@@ -124,21 +129,15 @@ libdrm_notice() {
 
 # Each RPM's texts go into licenses/rpm/<RPM>/. Some RPMs keep them in a
 # sibling RPM of the same source RPM, such as libX11 in libX11-common, so the
-# siblings' texts count too. A sibling that was not reinstalled lists texts
-# that the base image stripped; those are skipped. An RPM with no text gets
-# those of its upstream source, from the UBI9 source RPM, and libdrm the
-# notice in its sources.
+# siblings' texts count too. An RPM with no text gets those of its upstream
+# source, from the UBI9 source RPM, and libdrm the notice in its sources.
 # licenses/rpms.txt names the licence and the project URL of every RPM, and
 # the RPMs that still have no text: their source has no licence file either.
-"${dnf[@]}" install cpio bzip2 xz >&2
 no_text=()
 for rpm in "${rpms[@]}"; do
   source=$(rpm -q --qf '%{SOURCERPM}' "$rpm")
   mapfile -t siblings < <(rpm -qa --qf '%{NAME} %{SOURCERPM}\n' | awk -v s="$source" '$2 == s { print $1 }')
   for text in $(licence_texts "${siblings[@]}" | sed '/^(contains no files)$/d' | sort -u); do
-    if [ ! -e "$text" ]; then
-      continue
-    fi
     dest=$payload/licenses/rpm/$rpm/$(basename "$(dirname "$text")")/$(basename "$text")
     mkdir -p "$(dirname "$dest")"
     cp -L "$text" "$dest"
