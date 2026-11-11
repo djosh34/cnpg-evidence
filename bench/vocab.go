@@ -230,7 +230,7 @@ func postgresRestarted(ctx context.Context, s *scenario, a args) error {
 // nonePromoted: no promotion has started; the target primary is still the
 // primary.
 func nonePromoted(ctx context.Context, s *scenario, _ args) error {
-	target, err := status(ctx, clusterName, "targetPrimary")
+	target, err := clusterStatus(ctx, clusterName, "targetPrimary")
 	if err != nil {
 		return err
 	}
@@ -456,7 +456,7 @@ func (s *scenario) acknowledgedOn(ctx context.Context, cluster string) error {
 	if len(acked) == 0 && s.writes {
 		return errors.New("the client got no write acknowledged")
 	}
-	primary, err := status(ctx, cluster, "currentPrimary")
+	primary, err := clusterStatus(ctx, cluster, "currentPrimary")
 	if err != nil {
 		return err
 	}
@@ -501,7 +501,7 @@ func writingBack(ctx context.Context, s *scenario, from time.Time) (time.Time, e
 	if !s.writes {
 		return time.Time{}, errors.New("the scenario has no writes")
 	}
-	primary, err := status(ctx, clusterName, "currentPrimary")
+	primary, err := clusterStatus(ctx, clusterName, "currentPrimary")
 	if err != nil {
 		return time.Time{}, err
 	}

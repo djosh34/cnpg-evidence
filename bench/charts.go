@@ -41,51 +41,53 @@ func readReleases(file string) ([]release, error) {
 // order. The charts are copied out of the read-only mounted directory first,
 // since helm dependency build writes the values charts' dependencies next to
 // them. Each release gets its values files from the mounted directory, then
-// values/<release>.yaml when it exists. It returns the cluster's release.
-func installCharts(ctx context.Context) (installed, error) {
+// values/<release>.yaml when it exists. It returns the chart and values of
+// the cluster's release.
+func installCharts(ctx context.Context) (chartValues, error) {
 	charts := filepath.Join(workDir, "charts")
 	if err := os.CopyFS(charts, os.DirFS(filepath.Join(benchDir, "charts"))); err != nil {
-		return installed{}, fmt.Errorf("copying the charts: %w", err)
+		return chartValues{}, fmt.Errorf("copying the charts: %w", err)
 	}
 	releases, err := readReleases(filepath.Join(charts, "releases.yaml"))
 	if err != nil {
-		return installed{}, err
+		return chartValues{}, err
 	}
-	var cluster installed
+	var cluster chartValues
 	for _, r := range releases {
-		this := installed{chart: filepath.Join(charts, r.Chart)}
-		if _, err := helm(ctx, 5*time.Minute, "dependency", "build", "--skip-refresh", this.chart); err != nil {
-			return installed{}, err
+		chart := filepath.Join(charts, r.Chart)
+		if _, err := helm(ctx, 5*time.Minute, "dependency", "build", "--skip-refresh", chart); err != nil {
+			return chartValues{}, err
 		}
+		var values []string
 		for _, v := range r.Values {
-			this.values = append(this.values, "--values", filepath.Join(benchDir, v))
+			values = append(values, "--values", filepath.Join(benchDir, v))
 		}
 		own := filepath.Join(benchDir, "values", r.Name+".yaml")
 		switch _, err := os.Stat(own); {
 		case err == nil:
-			this.values = append(this.values, "--values", own)
+			values = append(values, "--values", own)
 		case !errors.Is(err, fs.ErrNotExist):
-			return installed{}, err
+			return chartValues{}, err
 		}
 		logf("installing %s from charts/%s", r.Name, r.Chart)
-		args := append([]string{"upgrade", "--install", r.Name, this.chart, "--namespace", r.Namespace,
-			"--create-namespace", "--wait", "--timeout", "15m"}, this.values...)
+		args := append([]string{"upgrade", "--install", r.Name, chart, "--namespace", r.Namespace,
+			"--create-namespace", "--wait", "--timeout", "15m"}, values...)
 		if _, err := helm(ctx, 16*time.Minute, args...); err != nil {
-			return installed{}, err
+			return chartValues{}, err
 		}
 		if r.Name == clusterRelease {
-			cluster = this
+			cluster = chartValues{chart: chart, values: values}
 		}
 	}
 	if cluster.chart == "" {
-		return installed{}, fmt.Errorf("charts/releases.yaml has no release %s", clusterRelease)
+		return chartValues{}, fmt.Errorf("charts/releases.yaml has no release %s", clusterRelease)
 	}
 	return cluster, nil
 }
 
-// installed is a release as installCharts installed it: the directory of
-// its chart in the bench's copy, and its --values arguments.
-type installed struct {
+// chartValues are the directory of a release's chart in the bench's copy,
+// and its --values arguments.
+type chartValues struct {
 	chart  string
 	values []string
 }

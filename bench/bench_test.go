@@ -202,8 +202,10 @@ func TestFeaturesUseTheVocabulary(t *testing.T) {
 		}
 	}
 	slices.Sort(tags)
-	if twice := slices.Compact(slices.Clone(tags)); len(twice) != len(tags) {
-		t.Errorf("a tag is on more than one scenario: %v", tags)
+	for i := 1; i < len(tags); i++ {
+		if tags[i] == tags[i-1] {
+			t.Errorf("the tag @%s is on more than one scenario", tags[i])
+		}
 	}
 	listed, err := exec.Command("bash", "scenarios.sh").Output()
 	if err != nil {

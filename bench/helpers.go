@@ -51,7 +51,8 @@ func poll(ctx context.Context, deadline time.Time, check func(context.Context) e
 }
 
 // callJSON sends req and decodes the JSON answer into out, when out is not
-// nil. An answer other than 2xx is an error with its body.
+// nil. An answer other than 2xx, or an empty one where out wants JSON, is an
+// error.
 func callJSON(client *http.Client, req *http.Request, out any) error {
 	resp, err := client.Do(req)
 	if err != nil {
@@ -64,10 +65,13 @@ func callJSON(client *http.Client, req *http.Request, out any) error {
 	if resp.StatusCode/100 != 2 {
 		return fmt.Errorf("%s %s: %s: %s", req.Method, req.URL.Redacted(), resp.Status, bytes.TrimSpace(data))
 	}
-	if out == nil || len(data) == 0 {
+	if out == nil {
 		return nil
 	}
-	return json.Unmarshal(data, out)
+	if err := json.Unmarshal(data, out); err != nil {
+		return fmt.Errorf("%s %s: %w", req.Method, req.URL.Redacted(), err)
+	}
+	return nil
 }
 
 // logf prints a line of the run's progress.

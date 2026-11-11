@@ -46,8 +46,8 @@ func psql(ctx context.Context, pod, db, sql string) (string, error) {
 		"psql", "-U", "postgres", "-d", db, "-XqAt", "-v", "ON_ERROR_STOP=1", "-c", sql)
 }
 
-// status is a field of the status of a cluster, such as currentPrimary.
-func status(ctx context.Context, cluster, field string) (string, error) {
+// clusterStatus is a field of the status of a cluster, such as currentPrimary.
+func clusterStatus(ctx context.Context, cluster, field string) (string, error) {
 	return kubectl(ctx, "get", "cluster", cluster, "-n", namespace, "-o", "jsonpath={.status."+field+"}")
 }
 
@@ -66,21 +66,21 @@ func instances(ctx context.Context, cluster string) ([]string, error) {
 // healthy: the cluster has three ready instances, the phase healthy, and two
 // replicas streaming from the primary.
 func healthy(ctx context.Context, cluster string) error {
-	ready, err := status(ctx, cluster, "readyInstances")
+	ready, err := clusterStatus(ctx, cluster, "readyInstances")
 	if err != nil {
 		return err
 	}
 	if ready != "3" {
 		return fmt.Errorf("ready instances: %q", ready)
 	}
-	phase, err := status(ctx, cluster, "phase")
+	phase, err := clusterStatus(ctx, cluster, "phase")
 	if err != nil {
 		return err
 	}
 	if phase != "Cluster in healthy state" {
 		return fmt.Errorf("phase: %q", phase)
 	}
-	primary, err := status(ctx, cluster, "currentPrimary")
+	primary, err := clusterStatus(ctx, cluster, "currentPrimary")
 	if err != nil {
 		return err
 	}
@@ -97,7 +97,7 @@ func healthy(ctx context.Context, cluster string) error {
 // isPrimary: pod is the cluster's current primary and out of recovery. An
 // empty pod means any instance but not.
 func isPrimary(ctx context.Context, pod, not string) (string, error) {
-	primary, err := status(ctx, clusterName, "currentPrimary")
+	primary, err := clusterStatus(ctx, clusterName, "currentPrimary")
 	if err != nil {
 		return "", err
 	}

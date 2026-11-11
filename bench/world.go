@@ -16,7 +16,7 @@ type world struct {
 	root    *ca
 	bao     *openbao
 	mon     *monitoring
-	cluster installed // the cluster's release
+	cluster chartValues // of the cluster's release
 
 	built time.Time // when the bench started to build it
 }
@@ -105,7 +105,7 @@ func backupCompleted(ctx context.Context, name string) error {
 // roles names the instances: the primary, and the replicas by pod name.
 // Until a change of primary, a replica is replica 1.
 func roles(ctx context.Context) (map[string]string, error) {
-	primary, err := status(ctx, clusterName, "currentPrimary")
+	primary, err := clusterStatus(ctx, clusterName, "currentPrimary")
 	if err != nil {
 		return nil, err
 	}

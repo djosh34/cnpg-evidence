@@ -96,7 +96,7 @@ func cutOff(ctx context.Context, _ *scenario, a args) error {
 	if err := podFirewall(ctx, pod, "-I"); err != nil {
 		return err
 	}
-	primary, err := status(ctx, clusterName, "currentPrimary")
+	primary, err := clusterStatus(ctx, clusterName, "currentPrimary")
 	if err != nil {
 		return err
 	}
@@ -141,7 +141,7 @@ func podFirewall(ctx context.Context, pod, op string) error {
 
 // notStreaming: the instance is not in the primary's pg_stat_replication.
 func notStreaming(ctx context.Context, _ *scenario, a args) error {
-	primary, err := status(ctx, clusterName, "currentPrimary")
+	primary, err := clusterStatus(ctx, clusterName, "currentPrimary")
 	if err != nil {
 		return err
 	}
@@ -235,7 +235,7 @@ func replicaLagHealthy(ctx context.Context, s *scenario, _ args) error {
 	if s.holding.IsZero() {
 		return errors.New(`the replica lag takes "for N s"`)
 	}
-	primary, err := status(ctx, clusterName, "currentPrimary")
+	primary, err := clusterStatus(ctx, clusterName, "currentPrimary")
 	if err != nil {
 		return err
 	}

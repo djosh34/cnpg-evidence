@@ -34,7 +34,7 @@ type walNeed struct {
 // writeRow writes one row on the primary: one WAL record, outside the
 // client.
 func writeRow(ctx context.Context, _ *scenario, _ args) error {
-	primary, err := status(ctx, clusterName, "currentPrimary")
+	primary, err := clusterStatus(ctx, clusterName, "currentPrimary")
 	if err != nil {
 		return err
 	}
@@ -175,7 +175,7 @@ func neededWALGone(ctx context.Context, s *scenario, a args) error {
 // which opens its node's read port.
 func caughtUp(ctx context.Context, s *scenario, a args) error {
 	pod := a.pods[0]
-	primary, err := status(ctx, clusterName, "currentPrimary")
+	primary, err := clusterStatus(ctx, clusterName, "currentPrimary")
 	if err != nil {
 		return err
 	}
