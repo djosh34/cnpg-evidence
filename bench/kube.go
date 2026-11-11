@@ -40,11 +40,24 @@ func command(ctx context.Context, stdin io.Reader, name string, args ...string) 
 	return strings.TrimSuffix(stdout.String(), "\n"), nil
 }
 
-// kubectl runs kubectl with a time limit of 30 s.
+// kubectl runs kubectl with a time limit of 30 s. The API server rejects
+// requests while etcd elects a new leader, as after a node is killed; such a
+// request is tried again for up to 30 s.
 func kubectl(ctx context.Context, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	return command(ctx, nil, "kubectl", args...)
+	end := time.Now().Add(30 * time.Second)
+	for {
+		once, cancel := context.WithTimeout(ctx, 30*time.Second)
+		out, err := command(once, nil, "kubectl", args...)
+		cancel()
+		if err == nil || !strings.Contains(err.Error(), "etcdserver: leader changed") || time.Now().After(end) {
+			return out, err
+		}
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
 }
 
 // psql runs SQL as postgres on an instance, in database db.
