@@ -433,8 +433,8 @@ func rolePrimary(ctx context.Context, s *scenario, a args) error {
 }
 
 // noneLost: every write the client got acknowledged is in e2e_writes on
-// the primary. It stops the client first, so every write it started has
-// ended.
+// the primary. It kills the client first; a write the kill cuts off was
+// never acknowledged, so it need not be there.
 func noneLost(ctx context.Context, s *scenario, _ args) error {
 	if !s.clientRan {
 		return errors.New("the client did not run: the scenario has no When line")

@@ -9,7 +9,7 @@
 # Without a scenario, it lists the scenarios and exits with 2.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
-if (($# != 1)); then
+if (($# != 1)) || [[ -z $1 ]]; then
   echo "usage: ./e2e.sh <scenario>, one of:" >&2
   grep -ho '^ *@[a-z0-9-]*' samples/features/*.feature | tr -d ' @' | grep -vx always | sort
   exit 2

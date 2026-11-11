@@ -38,10 +38,10 @@ func readReleases(file string) ([]release, error) {
 }
 
 // installCharts installs the releases of charts/releases.yaml in their
-// order. The charts are copied out of /samples first, since helm dependency
-// build writes the values charts' dependencies next to them. Each release
-// gets its values files from /samples, then values/<release>.yaml when it
-// exists. It returns the chart and values of
+// order. helm dependency build writes the values charts' dependencies next
+// to them, so the charts are copied out of /samples first and /samples stays
+// as samples/ is. Each release gets its values files from /samples, then
+// values/<release>.yaml when it exists. It returns the chart and values of
 // the cluster's release.
 func installCharts(ctx context.Context) (chartValues, error) {
 	charts := filepath.Join(workDir, "charts")
