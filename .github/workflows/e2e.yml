@@ -1,0 +1,14 @@
+name: e2e
+
+# Runs only on demand.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "no scenarios yet"
