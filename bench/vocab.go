@@ -487,7 +487,7 @@ func writingDown(ctx context.Context, s *scenario, _ args, from time.Time) error
 		return err
 	}
 	for _, line := range log.lines {
-		if line.what == "write" && line.ok() && line.start >= from.UnixMilli() {
+		if line.what == "write" && line.ok() && !line.startedBefore(from) {
 			return fmt.Errorf("a write sent %s after the event was acknowledged: %s", seconds(time.UnixMilli(line.start).Sub(from)), line.detail)
 		}
 	}
@@ -517,7 +517,7 @@ func writingBack(ctx context.Context, s *scenario, from time.Time) (time.Time, e
 	for _, line := range log.lines {
 		_, server := line.write()
 		end := time.UnixMilli(line.end)
-		if line.what == "write" && line.ok() && server == ip && line.start >= from.UnixMilli() &&
+		if line.what == "write" && line.ok() && server == ip && !line.startedBefore(from) &&
 			(first.IsZero() || end.Before(first)) {
 			first = end
 		}

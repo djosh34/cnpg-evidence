@@ -184,20 +184,21 @@ func (l clientLog) writesStopped() (time.Time, bool) {
 // longestGap is the longest time from from to to without an ok line of
 // what, by the time each ended: the application got its answer then.
 func (l clientLog) longestGap(what string, from, to time.Time) time.Duration {
-	ends := []int64{from.UnixMilli()}
+	ends := []time.Time{from}
 	for _, line := range l.lines {
-		if line.what == what && line.ok() && line.end >= from.UnixMilli() && line.end <= to.UnixMilli() {
-			ends = append(ends, line.end)
+		end := time.UnixMilli(line.end)
+		if line.what == what && line.ok() && !end.Before(from) && !end.After(to) {
+			ends = append(ends, end)
 		}
 	}
 	// Attempts run side by side, so their lines need not come in order.
-	slices.Sort(ends)
-	ends = append(ends, to.UnixMilli())
-	var gap int64
+	slices.SortFunc(ends, time.Time.Compare)
+	ends = append(ends, to)
+	var gap time.Duration
 	for i := 1; i < len(ends); i++ {
-		gap = max(gap, ends[i]-ends[i-1])
+		gap = max(gap, ends[i].Sub(ends[i-1]))
 	}
-	return time.Duration(gap) * time.Millisecond
+	return gap
 }
 
 // acknowledged are the n of every acknowledged write.
@@ -213,6 +214,10 @@ func (l clientLog) acknowledged() []string {
 }
 
 func (line logLine) ok() bool { return line.result == "ok" }
+
+// startedBefore: the line started before t. A line's times are whole ms, t
+// need not be.
+func (line logLine) startedBefore(t time.Time) bool { return time.UnixMilli(line.start).Before(t) }
 
 // port is the port of the address the client connected to, or 0.
 func (line logLine) port() int {

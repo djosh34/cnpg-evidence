@@ -77,6 +77,17 @@ func TestLongestGap(t *testing.T) {
 	}
 }
 
+// An event a fraction of a ms after a line started comes after the line.
+func TestStartedBefore(t *testing.T) {
+	line := logLine{start: 1000}
+	if !line.startedBefore(time.UnixMilli(1000).Add(500 * time.Microsecond)) {
+		t.Error("a line at 1000 ms did not start before 1000.5 ms")
+	}
+	if line.startedBefore(time.UnixMilli(1000)) {
+		t.Error("a line at 1000 ms started before 1000 ms")
+	}
+}
+
 func TestReadReleases(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "releases.yaml")
