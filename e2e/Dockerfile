@@ -60,4 +60,6 @@ COPY scripts/ /opt/cnpg-evidence/scripts/
 COPY e2e/client/Dockerfile /opt/cnpg-evidence/client/
 COPY --from=build /out/client /opt/cnpg-evidence/client/
 COPY --from=build /out/e2e /usr/local/bin/e2e
+# There even for a run that stops before it writes, so the copy-out works.
+RUN mkdir /results
 ENTRYPOINT ["e2e"]
