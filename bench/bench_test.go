@@ -3,8 +3,10 @@ package main
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -137,7 +139,8 @@ func TestNewPrimary(t *testing.T) {
 
 // Every line of the feature files in samples/features binds to exactly one
 // line shape, every "is", "has been" and verb line is in the vocabulary, and
-// every alert line names a role.
+// every alert line names a role. Each scenario has its own tag, and
+// scenarios.sh lists them all.
 func TestFeaturesUseTheVocabulary(t *testing.T) {
 	shapes := map[string]*regexp.Regexp{
 		"is": regexp.MustCompile(isLine), "since": regexp.MustCompile(sinceLine), "verb": regexp.MustCompile(verbLine),
@@ -154,6 +157,7 @@ func TestFeaturesUseTheVocabulary(t *testing.T) {
 	}}
 	id := 0
 	newID := func() string { id++; return strconv.Itoa(id) }
+	var tags []string
 	for _, file := range files {
 		f, err := os.Open(file)
 		if err != nil {
@@ -164,6 +168,11 @@ func TestFeaturesUseTheVocabulary(t *testing.T) {
 			t.Fatalf("%s: %v", file, err)
 		}
 		for _, pickle := range gherkin.Pickles(*doc, file, newID) {
+			for _, tag := range pickle.Tags {
+				if tag.Name != "@always" {
+					tags = append(tags, strings.TrimPrefix(tag.Name, "@"))
+				}
+			}
 			for _, step := range pickle.Steps {
 				var matched []string
 				for name, re := range shapes {
@@ -191,5 +200,16 @@ func TestFeaturesUseTheVocabulary(t *testing.T) {
 				}
 			}
 		}
+	}
+	slices.Sort(tags)
+	if twice := slices.Compact(slices.Clone(tags)); len(twice) != len(tags) {
+		t.Errorf("a tag is on more than one scenario: %v", tags)
+	}
+	listed, err := exec.Command("bash", "scenarios.sh").Output()
+	if err != nil {
+		t.Fatalf("scenarios.sh: %v", err)
+	}
+	if got, want := strings.Fields(string(listed)), tags; !slices.Equal(got, want) {
+		t.Errorf("scenarios.sh lists %v, the feature files have %v", got, want)
 	}
 }

@@ -13,9 +13,10 @@ import (
 // k3s, the three nodes, and the releases of the mounted directory on them.
 // Nothing of it outlives the bench's container.
 type world struct {
-	root *ca
-	bao  *openbao
-	mon  *monitoring
+	root    *ca
+	bao     *openbao
+	mon     *monitoring
+	cluster installed // the cluster's release
 
 	built time.Time // when the bench started to build it
 }
@@ -57,7 +58,7 @@ func newWorld(ctx context.Context) (*world, error) {
 	if err := createSecrets(ctx, runSecrets(root, key)); err != nil {
 		return nil, err
 	}
-	if err := installCharts(ctx); err != nil {
+	if w.cluster, err = installCharts(ctx); err != nil {
 		return nil, err
 	}
 	logf("waiting up to 15 min for the cluster to be healthy")

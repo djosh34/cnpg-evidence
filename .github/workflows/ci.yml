@@ -97,9 +97,9 @@ jobs:
           "$RUNNER_TEMP/golangci-lint" config verify
           "$RUNNER_TEMP/golangci-lint" run ./...
 
-  # The bench and its client (bench/): vet, tests and golangci-lint v2.15.0,
-  # with no nolint comment, shellcheck on its scripts, and the list of
-  # scenarios.
+  # The bench and its client (bench/): vet, tests, among them that each
+  # scenario has its own tag, golangci-lint v2.15.0 with no nolint comment,
+  # and shellcheck on its scripts.
   bench-go:
     runs-on: ubuntu-24.04
     steps:
@@ -148,14 +148,6 @@ jobs:
           "$RUNNER_TEMP/golangci-lint" run ./...
       - name: shellcheck
         run: shellcheck bench/*.sh
-      - name: The scenarios, each tag once
-        run: |
-          set -euo pipefail
-          tags=$(bash bench/scenarios.sh)
-          echo "$tags"
-          [[ -n $tags ]] || { echo "no scenario" >&2; exit 1; }
-          twice=$(uniq -d <<<"$tags")
-          [[ -z $twice ]] || { echo "tags of more than one scenario: $twice" >&2; exit 1; }
 
   # pgfallback against PostgreSQL 18 in docker: a primary and three standbys,
   # behind TCP proxies the tests stop and start.

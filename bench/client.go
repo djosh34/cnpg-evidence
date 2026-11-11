@@ -106,7 +106,7 @@ func readClientLog(ctx context.Context) (clientLog, error) {
 // One line of the client's log: "<start ms> <end ms> <what> <address>
 // <result> <detail>", as bench/client/main.go describes it.
 type logLine struct {
-	start, end time.Time
+	start, end int64  // unix ms
 	what       string // read, write, connect, read-attempt, write-attempt or writes
 	address    string // the <host>:<port> the client connected to, or -
 	result     string // ok or fail; started or worked for an attempt; stopped for writes
@@ -144,7 +144,7 @@ func parseLine(text string) (logLine, bool) {
 	if err1 != nil || err2 != nil {
 		return logLine{}, false
 	}
-	line := logLine{start: time.UnixMilli(start), end: time.UnixMilli(end), what: fields[2], address: fields[3], result: fields[4]}
+	line := logLine{start: start, end: end, what: fields[2], address: fields[3], result: fields[4]}
 	if len(fields) == 6 {
 		line.detail = fields[5]
 	}
@@ -154,8 +154,8 @@ func parseLine(text string) (logLine, bool) {
 // first is the end of the first ok line of what.
 func (l clientLog) first(what string) (time.Time, bool) {
 	for _, line := range l.lines {
-		if line.what == what && line.result == "ok" {
-			return line.end, true
+		if line.what == what && line.ok() {
+			return time.UnixMilli(line.end), true
 		}
 	}
 	return time.Time{}, false
@@ -164,7 +164,7 @@ func (l clientLog) first(what string) (time.Time, bool) {
 // connected: a connect to address alone worked.
 func (l clientLog) connected(address string) bool {
 	for _, line := range l.lines {
-		if line.what == "connect" && line.address == address && line.result == "ok" {
+		if line.what == "connect" && line.address == address && line.ok() {
 			return true
 		}
 	}
@@ -175,7 +175,7 @@ func (l clientLog) connected(address string) bool {
 func (l clientLog) writesStopped() (time.Time, bool) {
 	for _, line := range l.lines {
 		if line.what == "writes" && line.result == "stopped" {
-			return line.start, true
+			return time.UnixMilli(line.start), true
 		}
 	}
 	return time.Time{}, false
@@ -184,32 +184,47 @@ func (l clientLog) writesStopped() (time.Time, bool) {
 // longestGap is the longest time from from to to without an ok line of
 // what, by the time each ended: the application got its answer then.
 func (l clientLog) longestGap(what string, from, to time.Time) time.Duration {
-	ends := []time.Time{from}
+	ends := []int64{from.UnixMilli()}
 	for _, line := range l.lines {
-		if line.what == what && line.result == "ok" && !line.end.Before(from) && !line.end.After(to) {
+		if line.what == what && line.ok() && line.end >= from.UnixMilli() && line.end <= to.UnixMilli() {
 			ends = append(ends, line.end)
 		}
 	}
 	// Attempts run side by side, so their lines need not come in order.
-	slices.SortFunc(ends, time.Time.Compare)
-	ends = append(ends, to)
-	var gap time.Duration
+	slices.Sort(ends)
+	ends = append(ends, to.UnixMilli())
+	var gap int64
 	for i := 1; i < len(ends); i++ {
-		gap = max(gap, ends[i].Sub(ends[i-1]))
+		gap = max(gap, ends[i]-ends[i-1])
 	}
-	return gap
+	return time.Duration(gap) * time.Millisecond
 }
 
 // acknowledged are the n of every acknowledged write.
 func (l clientLog) acknowledged() []string {
 	var ns []string
 	for _, line := range l.lines {
-		if line.what == "write" && line.result == "ok" {
+		if line.what == "write" && line.ok() {
 			n, _ := line.write()
 			ns = append(ns, n)
 		}
 	}
 	return ns
+}
+
+func (line logLine) ok() bool { return line.result == "ok" }
+
+// port is the port of the address the client connected to, or 0.
+func (line logLine) port() int {
+	_, port, err := net.SplitHostPort(line.address)
+	if err != nil {
+		return 0
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // write is the n of an acknowledged write and the server's own address.

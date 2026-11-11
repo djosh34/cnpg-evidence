@@ -75,29 +75,6 @@ func pgfallbackKept(ctx context.Context, s *scenario, _ args, from time.Time) er
 	return errors.Join(err, s.results.write("pgfallback.md", report))
 }
 
-// One line of the log, in ms.
-type entry struct {
-	start, end int64
-	what       string // read, write, connect, read-attempt or write-attempt
-	addr       string
-	result     string
-	detail     string
-}
-
-func (e entry) ok() bool { return e.result == "ok" }
-
-func (e entry) port() int {
-	_, port, err := net.SplitHostPort(e.addr)
-	if err != nil {
-		return 0
-	}
-	n, err := strconv.Atoi(port)
-	if err != nil {
-		return 0
-	}
-	return n
-}
-
 // rwState is whether rw takes connections from time at on.
 type rwState struct {
 	at int64
@@ -109,7 +86,7 @@ type rwState struct {
 // that failed counts from its start, since the address did not take a
 // connection tried then; a connect that waits for its timeout is known to
 // fail only at its end.
-func rwTimeline(connects []entry) []rwState {
+func rwTimeline(connects []logLine) []rwState {
 	type probe struct {
 		at   int64
 		addr string
@@ -117,7 +94,7 @@ func rwTimeline(connects []entry) []rwState {
 	}
 	probes := make([]probe, len(connects))
 	for i, e := range connects {
-		probes[i] = probe{at: known(e), addr: e.addr, ok: e.ok()}
+		probes[i] = probe{at: known(e), addr: e.address, ok: e.ok()}
 	}
 	slices.SortStableFunc(probes, func(a, b probe) int { return cmp.Compare(a.at, b.at) })
 	last := map[string]bool{}
@@ -136,7 +113,7 @@ func rwTimeline(connects []entry) []rwState {
 }
 
 // known is when a connect alone tells its result, as rwTimeline counts it.
-func known(e entry) int64 {
+func known(e logLine) int64 {
 	if e.ok() {
 		return e.end
 	}
@@ -202,7 +179,7 @@ func stateAt(states []rwState, t int64) (rwState, bool) {
 // to before until: when it started and when it worked, and false when there
 // is none. pgfallback runs one attempt at a time per pool, so the attempt
 // that worked is the one that started last before.
-func workedAttempt(attempts []entry, pool string, since, until int64) (int64, int64, bool) {
+func workedAttempt(attempts []logLine, pool string, since, until int64) (int64, int64, bool) {
 	what := pool + "-attempt"
 	for _, e := range attempts {
 		if e.what != what || e.result != "worked" || e.end < since || e.end >= until {
@@ -224,9 +201,8 @@ func workedAttempt(attempts []entry, pool string, since, until int64) (int64, in
 // connection string.
 func fallbackReport(log clientLog, eventTime time.Time, rwAddrs, pools []string) (string, error) {
 	event := eventTime.UnixMilli()
-	var connects, attempts, ops []entry
-	for _, l := range log.lines {
-		e := entry{start: l.start.UnixMilli(), end: l.end.UnixMilli(), what: l.what, addr: l.address, result: l.result, detail: l.detail}
+	var connects, attempts, ops []logLine
+	for _, e := range log.lines {
 		switch {
 		case e.what == "connect":
 			connects = append(connects, e)
@@ -236,7 +212,7 @@ func fallbackReport(log clientLog, eventTime time.Time, rwAddrs, pools []string)
 			ops = append(ops, e)
 		}
 	}
-	byEnd := func(a, b entry) int { return cmp.Compare(a.end, b.end) }
+	byEnd := func(a, b logLine) int { return cmp.Compare(a.end, b.end) }
 	slices.SortStableFunc(connects, byEnd)
 	slices.SortStableFunc(attempts, byEnd)
 	slices.SortStableFunc(ops, byEnd)
@@ -249,9 +225,9 @@ func fallbackReport(log clientLog, eventTime time.Time, rwAddrs, pools []string)
 	down, back := spells(states, event, secs)
 	row("rw took no connection", down)
 	for _, a := range rwAddrs {
-		var alone []entry
+		var alone []logLine
 		for _, e := range connects {
-			if e.addr == a {
+			if e.address == a {
 				alone = append(alone, e)
 			}
 		}
@@ -293,7 +269,7 @@ func fallbackReport(log clientLog, eventTime time.Time, rwAddrs, pools []string)
 	}
 
 	// Reads and writes on a read address.
-	var lastRead *entry
+	var lastRead *logLine
 	var wrong []string
 	for i, e := range ops {
 		if e.port() != readPort {
@@ -316,7 +292,7 @@ func fallbackReport(log clientLog, eventTime time.Time, rwAddrs, pools []string)
 		}
 		if e.start > limit {
 			wrong = append(wrong, fmt.Sprintf("%s on %s at %s, %.1f s after rw was back at %s, limit %.1f s",
-				e.what, e.addr, secs(e.start), float64(e.start-s.at)/1000, secs(s.at), float64(limit-s.at)/1000))
+				e.what, e.address, secs(e.start), float64(e.start-s.at)/1000, secs(s.at), float64(limit-s.at)/1000))
 		}
 	}
 	const lastOnRead = "last read or write on a read address once rw was back"
@@ -329,7 +305,7 @@ func fallbackReport(log clientLog, eventTime time.Time, rwAddrs, pools []string)
 		row(lastOnRead, "none")
 	default:
 		row(lastOnRead, fmt.Sprintf("%s, %.1f s after rw was back: %s on %s", secs(lastRead.end), float64(lastRead.end-back)/1000,
-			lastRead.what, lastRead.addr))
+			lastRead.what, lastRead.address))
 	}
 	row("reads and writes on a read address that rw should have taken", strconv.Itoa(len(wrong)))
 	if len(wrong) > 0 {
@@ -338,7 +314,7 @@ func fallbackReport(log clientLog, eventTime time.Time, rwAddrs, pools []string)
 
 	// The end: the last read and write worked on rw.
 	for _, pool := range pools {
-		var last *entry
+		var last *logLine
 		for i := range ops {
 			if ops[i].what == pool {
 				last = &ops[i]
@@ -350,7 +326,7 @@ func fallbackReport(log clientLog, eventTime time.Time, rwAddrs, pools []string)
 	}
 
 	failures := failureLines(ops, secs)
-	row("failed reads and writes", strconv.Itoa(len(slices.DeleteFunc(slices.Clone(ops), entry.ok))))
+	row("failed reads and writes", strconv.Itoa(len(slices.DeleteFunc(slices.Clone(ops), logLine.ok))))
 
 	lines := []string{"| pgfallback, seconds after the event | |", "|---|---|"}
 	lines = append(lines, rows...)
@@ -375,7 +351,7 @@ func fallbackReport(log clientLog, eventTime time.Time, rwAddrs, pools []string)
 // "never failed", or the first failure that was still running at the event
 // or started later, and the end of the first success after the last
 // failure.
-func worksAgain(ops []entry, what string, event int64, secs func(int64) string) string {
+func worksAgain(ops []logLine, what string, event int64, secs func(int64) string) string {
 	var firstFail, lastFail int64 = -1, -1
 	for _, e := range ops {
 		if e.what == what && e.end >= event && !e.ok() {
@@ -399,11 +375,11 @@ func worksAgain(ops []entry, what string, event int64, secs func(int64) string) 
 // failureLines lists every failed read and write, in the order they
 // started. Consecutive failures of the reads or of the writes with the same
 // address and error are one line.
-func failureLines(ops []entry, secs func(int64) string) []string {
+func failureLines(ops []logLine, secs func(int64) string) []string {
 	byStart := slices.Clone(ops)
-	slices.SortStableFunc(byStart, func(a, b entry) int { return cmp.Compare(a.start, b.start) })
+	slices.SortStableFunc(byStart, func(a, b logLine) int { return cmp.Compare(a.start, b.start) })
 	type group struct {
-		first, last entry
+		first, last logLine
 		n           int
 	}
 	var groups []*group
@@ -413,7 +389,7 @@ func failureLines(ops []entry, secs func(int64) string) []string {
 			delete(open, e.what)
 			continue
 		}
-		if g := open[e.what]; g != nil && g.last.addr == e.addr && g.last.detail == e.detail {
+		if g := open[e.what]; g != nil && g.last.address == e.address && g.last.detail == e.detail {
 			g.last = e
 			g.n++
 			continue
@@ -428,7 +404,7 @@ func failureLines(ops []entry, secs func(int64) string) []string {
 		if g.n > 1 {
 			when = fmt.Sprintf("%d times, started from %s to %s", g.n, secs(g.first.start), secs(g.last.start))
 		}
-		lines = append(lines, fmt.Sprintf("- %s on %s, %s: `` %s ``", g.first.what, g.first.addr, when, g.first.detail))
+		lines = append(lines, fmt.Sprintf("- %s on %s, %s: `` %s ``", g.first.what, g.first.address, when, g.first.detail))
 	}
 	return lines
 }
