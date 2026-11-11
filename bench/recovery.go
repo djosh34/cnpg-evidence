@@ -34,12 +34,14 @@ type walNeed struct {
 // writeRow writes one row on the primary: one WAL record, outside the
 // client.
 func writeRow(ctx context.Context, _ *scenario, _ args) error {
-	primary, err := clusterField(ctx, "currentPrimary")
+	primary, err := clusterStatus(ctx, clusterName, "currentPrimary")
 	if err != nil {
 		return err
 	}
-	_, err = psql(ctx, primary, "postgres",
-		"create table if not exists bench_row (at timestamptz not null default now()); insert into bench_row default values")
+	if err := rowTable(ctx, primary); err != nil {
+		return err
+	}
+	_, err = psql(ctx, primary, "postgres", "insert into bench_row default values")
 	return err
 }
 
@@ -173,7 +175,7 @@ func neededWALGone(ctx context.Context, s *scenario, a args) error {
 // which opens its node's read port.
 func caughtUp(ctx context.Context, s *scenario, a args) error {
 	pod := a.pods[0]
-	primary, err := clusterField(ctx, "currentPrimary")
+	primary, err := clusterStatus(ctx, clusterName, "currentPrimary")
 	if err != nil {
 		return err
 	}
@@ -240,8 +242,8 @@ func idleAfterSwitch(ctx context.Context, _ *scenario, a args) error {
 // changeImage: the cluster's release gets the instance image of
 // values/new-image.yaml. CNPG restarts every instance on it, the primary
 // last, in place.
-func changeImage(ctx context.Context, _ *scenario, _ args) error {
-	return upgradeCluster(ctx, "--values", filepath.Join(benchDir, newImageValues))
+func changeImage(ctx context.Context, s *scenario, _ args) error {
+	return s.upgradeCluster(ctx, "--values", filepath.Join(benchDir, newImageValues))
 }
 
 // onNewImage: every instance runs the image of values/new-image.yaml and is
@@ -283,8 +285,8 @@ func onNewImage(ctx context.Context, _ *scenario, _ args) error {
 }
 
 // setWalKeepSize: the cluster's release gets wal_keep_size N MB.
-func setWalKeepSize(ctx context.Context, _ *scenario, a args) error {
-	return upgradeCluster(ctx, "--set", fmt.Sprintf("cluster.walKeepSize=%dMB", a.ns[0]))
+func setWalKeepSize(ctx context.Context, s *scenario, a args) error {
+	return s.upgradeCluster(ctx, "--set", fmt.Sprintf("cluster.walKeepSize=%dMB", a.ns[0]))
 }
 
 func walKeepSizeIs(ctx context.Context, _ *scenario, a args) error {
@@ -313,10 +315,25 @@ func backupDone(ctx context.Context, _ *scenario, _ args) error {
 	return backupCompleted(ctx, scenarioBackup)
 }
 
-// restore installs pg-restore, a new cluster restored from the cluster's
-// backups and WAL in the store.
-func restore(ctx context.Context, _ *scenario, _ args) error {
-	return installRestore(ctx, restoredCluster)
+// upgradeCluster changes the cluster's release: helm upgrade with the values
+// it has, and more.
+func (s *scenario) upgradeCluster(ctx context.Context, more ...string) error {
+	args := append([]string{"upgrade", clusterRelease, s.w.cluster.chart, "--namespace", namespace, "--reuse-values"}, more...)
+	_, err := helm(ctx, 5*time.Minute, args...)
+	return err
+}
+
+// restore installs the cluster's chart with the cluster's values as
+// pg-restore, a new cluster that restores the cluster's backups and WAL from
+// the store, as docs/samples.md says. It gets its own rw LoadBalancer and no
+// read LoadBalancer.
+func restore(ctx context.Context, s *scenario, _ args) error {
+	args := append([]string{"install", restoredCluster, s.w.cluster.chart, "--namespace", namespace}, s.w.cluster.values...)
+	args = append(args, "--set", "cluster.name="+restoredCluster, "--set", "recovery.enabled=true",
+		"--set", "recovery.sourceCluster="+clusterName, "--set", "rwLoadBalancer.name="+restoredCluster+"-rw-lb",
+		"--set", "readLoadBalancer=null")
+	_, err := helm(ctx, 5*time.Minute, args...)
+	return err
 }
 
 func restoreHealthy(ctx context.Context, _ *scenario, _ args) error {
@@ -379,7 +396,7 @@ func breakStore(how string) func(context.Context, *scenario, args) error {
 		}
 		var err error
 		if how == "stopped" {
-			err = stopStore(ctx, s.w.nw)
+			err = stopStore(ctx)
 		} else {
 			err = pauseStore(ctx)
 		}

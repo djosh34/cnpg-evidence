@@ -1,9 +1,12 @@
 package main
 
 import (
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -74,6 +77,17 @@ func TestLongestGap(t *testing.T) {
 	}
 }
 
+// An event a fraction of a ms after a line started comes after the line.
+func TestStartedBefore(t *testing.T) {
+	line := logLine{start: 1000}
+	if !line.startedBefore(time.UnixMilli(1000).Add(500 * time.Microsecond)) {
+		t.Error("a line at 1000 ms did not start before 1000.5 ms")
+	}
+	if line.startedBefore(time.UnixMilli(1000)) {
+		t.Error("a line at 1000 ms started before 1000 ms")
+	}
+}
+
 func TestReadReleases(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "releases.yaml")
@@ -136,7 +150,8 @@ func TestNewPrimary(t *testing.T) {
 
 // Every line of the feature files in samples/features binds to exactly one
 // line shape, every "is", "has been" and verb line is in the vocabulary, and
-// every alert line names a role.
+// every alert line names a role. Each scenario has its own tag, and
+// scenarios.sh lists them all.
 func TestFeaturesUseTheVocabulary(t *testing.T) {
 	shapes := map[string]*regexp.Regexp{
 		"is": regexp.MustCompile(isLine), "since": regexp.MustCompile(sinceLine), "verb": regexp.MustCompile(verbLine),
@@ -153,16 +168,22 @@ func TestFeaturesUseTheVocabulary(t *testing.T) {
 	}}
 	id := 0
 	newID := func() string { id++; return strconv.Itoa(id) }
+	var tags []string
 	for _, file := range files {
 		f, err := os.Open(file)
 		if err != nil {
 			t.Fatal(err)
 		}
 		doc, err := gherkin.ParseGherkinDocument(f, newID)
-		if err := closeWith(err, f); err != nil {
+		if err := errors.Join(err, f.Close()); err != nil {
 			t.Fatalf("%s: %v", file, err)
 		}
 		for _, pickle := range gherkin.Pickles(*doc, file, newID) {
+			for _, tag := range pickle.Tags {
+				if tag.Name != "@always" {
+					tags = append(tags, strings.TrimPrefix(tag.Name, "@"))
+				}
+			}
 			for _, step := range pickle.Steps {
 				var matched []string
 				for name, re := range shapes {
@@ -190,5 +211,18 @@ func TestFeaturesUseTheVocabulary(t *testing.T) {
 				}
 			}
 		}
+	}
+	slices.Sort(tags)
+	for i := 1; i < len(tags); i++ {
+		if tags[i] == tags[i-1] {
+			t.Errorf("the tag @%s is on more than one scenario", tags[i])
+		}
+	}
+	listed, err := exec.Command("bash", "scenarios.sh").Output()
+	if err != nil {
+		t.Fatalf("scenarios.sh: %v", err)
+	}
+	if got, want := strings.Fields(string(listed)), tags; !slices.Equal(got, want) {
+		t.Errorf("scenarios.sh lists %v, the feature files have %v", got, want)
 	}
 }

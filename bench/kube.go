@@ -1,18 +1,12 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"os"
-	"os/exec"
 	"slices"
 	"strings"
 	"time"
-
-	"github.com/testcontainers/testcontainers-go"
 )
 
 // The cluster the chart makes, as samples/desired.yaml names it, and its
@@ -25,21 +19,6 @@ const (
 
 var kubeconfig = workDir + "/kubeconfig"
 
-// command runs a program with the bench's kubeconfig and returns its output
-// without the last newline. A failure's error holds its output.
-func command(ctx context.Context, stdin io.Reader, name string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Env = append(os.Environ(), "KUBECONFIG="+kubeconfig)
-	cmd.Stdin = stdin
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err,
-			strings.TrimSpace(stderr.String()+" "+stdout.String()))
-	}
-	return strings.TrimSuffix(stdout.String(), "\n"), nil
-}
-
 // kubectl runs kubectl with a time limit of 30 s per try. The API server
 // rejects requests while etcd elects a new leader, as after a node is
 // killed, and applies none of them; such a request is tried again until 30 s
@@ -48,7 +27,7 @@ func kubectl(ctx context.Context, args ...string) (string, error) {
 	end := time.Now().Add(30 * time.Second)
 	for {
 		once, cancel := context.WithTimeout(ctx, 30*time.Second)
-		out, err := command(once, nil, "kubectl", args...)
+		out, err := command(once, "kubectl", args...)
 		cancel()
 		if err == nil || !strings.Contains(err.Error(), "etcdserver: leader changed") || time.Now().After(end) {
 			return out, err
@@ -67,12 +46,8 @@ func psql(ctx context.Context, pod, db, sql string) (string, error) {
 		"psql", "-U", "postgres", "-d", db, "-XqAt", "-v", "ON_ERROR_STOP=1", "-c", sql)
 }
 
-func clusterField(ctx context.Context, field string) (string, error) {
-	return fieldOf(ctx, clusterName, field)
-}
-
-// fieldOf is a field of the status of a cluster.
-func fieldOf(ctx context.Context, cluster, field string) (string, error) {
+// clusterStatus is a field of the status of a cluster, such as currentPrimary.
+func clusterStatus(ctx context.Context, cluster, field string) (string, error) {
 	return kubectl(ctx, "get", "cluster", cluster, "-n", namespace, "-o", "jsonpath={.status."+field+"}")
 }
 
@@ -91,21 +66,21 @@ func instances(ctx context.Context, cluster string) ([]string, error) {
 // healthy: the cluster has three ready instances, the phase healthy, and two
 // replicas streaming from the primary.
 func healthy(ctx context.Context, cluster string) error {
-	ready, err := fieldOf(ctx, cluster, "readyInstances")
+	ready, err := clusterStatus(ctx, cluster, "readyInstances")
 	if err != nil {
 		return err
 	}
 	if ready != "3" {
 		return fmt.Errorf("ready instances: %q", ready)
 	}
-	phase, err := fieldOf(ctx, cluster, "phase")
+	phase, err := clusterStatus(ctx, cluster, "phase")
 	if err != nil {
 		return err
 	}
 	if phase != "Cluster in healthy state" {
 		return fmt.Errorf("phase: %q", phase)
 	}
-	primary, err := fieldOf(ctx, cluster, "currentPrimary")
+	primary, err := clusterStatus(ctx, cluster, "currentPrimary")
 	if err != nil {
 		return err
 	}
@@ -122,7 +97,7 @@ func healthy(ctx context.Context, cluster string) error {
 // isPrimary: pod is the cluster's current primary and out of recovery. An
 // empty pod means any instance but not.
 func isPrimary(ctx context.Context, pod, not string) (string, error) {
-	primary, err := clusterField(ctx, "currentPrimary")
+	primary, err := clusterStatus(ctx, clusterName, "currentPrimary")
 	if err != nil {
 		return "", err
 	}
@@ -139,46 +114,7 @@ func isPrimary(ctx context.Context, pod, not string) (string, error) {
 	return primary, nil
 }
 
-// poll runs check every 2 s until it holds or the deadline passes. A check
-// that started in time but held only after the deadline fails too.
-func poll(ctx context.Context, deadline time.Time, check func(context.Context) error) error {
-	for {
-		err := check(ctx)
-		late := time.Now().After(deadline)
-		switch {
-		case err == nil && late:
-			return errors.New("it held only after the limit")
-		case err == nil:
-			return nil
-		case late:
-			return fmt.Errorf("not within the limit: %w", err)
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(2 * time.Second):
-		}
-	}
-}
-
-// file is a file to copy into a container before it starts.
-func file(path, content string) testcontainers.ContainerFile {
-	return testcontainers.ContainerFile{Reader: strings.NewReader(content), ContainerFilePath: path, FileMode: 0o644}
-}
-
-// closeWith closes c and joins its error to err.
-func closeWith(err error, c io.Closer) error {
-	return errors.Join(err, c.Close())
-}
-
-// logf prints a line of the run's progress.
-func logf(format string, args ...any) {
-	say(os.Stdout, "== %s %s\n", time.Now().UTC().Format(time.TimeOnly), fmt.Sprintf(format, args...))
-}
-
-// say prints to w. A run that cannot print cannot report, so it stops.
-func say(w io.Writer, format string, args ...any) {
-	if _, err := fmt.Fprintf(w, format, args...); err != nil {
-		os.Exit(2)
-	}
+// nodeOf is the node an instance runs on.
+func nodeOf(ctx context.Context, pod string) (string, error) {
+	return kubectl(ctx, "get", "pod", pod, "-n", namespace, "-o", "jsonpath={.spec.nodeName}")
 }

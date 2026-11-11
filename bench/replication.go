@@ -24,7 +24,7 @@ type background struct {
 func inBackground(ctx context.Context, name string, args ...string) *background {
 	b := &background{done: make(chan struct{})}
 	go func() {
-		_, b.err = command(ctx, nil, name, args...)
+		_, b.err = command(ctx, name, args...)
 		close(b.done)
 	}()
 	return b
@@ -96,7 +96,7 @@ func cutOff(ctx context.Context, _ *scenario, a args) error {
 	if err := podFirewall(ctx, pod, "-I"); err != nil {
 		return err
 	}
-	primary, err := clusterField(ctx, "currentPrimary")
+	primary, err := clusterStatus(ctx, clusterName, "currentPrimary")
 	if err != nil {
 		return err
 	}
@@ -123,25 +123,25 @@ func podFirewall(ctx context.Context, pod, op string) error {
 	if err != nil {
 		return err
 	}
-	id, err := command(ctx, nil, "docker", "exec", node, "crictl", "pods", "-q", "--namespace", namespace, "--name", "^"+pod+"$", "--state", "ready")
+	id, err := command(ctx, "docker", "exec", node, "crictl", "pods", "-q", "--namespace", namespace, "--name", "^"+pod+"$", "--state", "ready")
 	if err != nil {
 		return err
 	}
 	if !sandboxID.MatchString(id) {
 		return fmt.Errorf("no single ready pod sandbox of %s on %s: %q", pod, node, id)
 	}
-	pid, err := command(ctx, nil, "docker", "exec", node, "crictl", "inspectp", "-o", "go-template", "--template", "{{.info.pid}}", id)
+	pid, err := command(ctx, "docker", "exec", node, "crictl", "inspectp", "-o", "go-template", "--template", "{{.info.pid}}", id)
 	if err != nil {
 		return err
 	}
-	_, err = command(ctx, nil, "docker", "exec", node, "nsenter", "--net=/proc/"+pid+"/ns/net",
+	_, err = command(ctx, "docker", "exec", node, "nsenter", "--net=/proc/"+pid+"/ns/net",
 		"iptables", op, "OUTPUT", "-p", "tcp", "--dport", "5432", "-j", "REJECT", "--reject-with", "tcp-reset")
 	return err
 }
 
 // notStreaming: the instance is not in the primary's pg_stat_replication.
 func notStreaming(ctx context.Context, _ *scenario, a args) error {
-	primary, err := clusterField(ctx, "currentPrimary")
+	primary, err := clusterStatus(ctx, clusterName, "currentPrimary")
 	if err != nil {
 		return err
 	}
@@ -235,7 +235,7 @@ func replicaLagHealthy(ctx context.Context, s *scenario, _ args) error {
 	if s.holding.IsZero() {
 		return errors.New(`the replica lag takes "for N s"`)
 	}
-	primary, err := clusterField(ctx, "currentPrimary")
+	primary, err := clusterStatus(ctx, clusterName, "currentPrimary")
 	if err != nil {
 		return err
 	}

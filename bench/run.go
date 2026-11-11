@@ -92,9 +92,9 @@ func (s *scenario) tearDown(sn *godog.Scenario, err error) error {
 		logf("always.feature")
 		err = errors.Join(err, s.runAlways())
 	}
-	if s.cl != nil {
+	if s.clientRan {
 		err = errors.Join(err, s.stopClient(s.ctx))
-		log, logErr := s.cl.rawLog(s.ctx)
+		log, logErr := rawClientLog(s.ctx)
 		err = errors.Join(err, logErr, s.results.write("client.log", log))
 	}
 	table := s.table(sn.Name)
@@ -128,6 +128,7 @@ var stateCommands = [][]string{
 	{"docker", "logs", "--tail", "30", "otel"},
 	{"docker", "logs", "--tail", "30", "prometheus"},
 	{"docker", "logs", "--tail", "30", "alertmanager"},
+	{"docker", "logs", "--tail", "30", "grafana"},
 	{"docker", "logs", "--tail", "30", "k3s-1"},
 	{"docker", "logs", "--tail", "30", "k3s-2"},
 	{"docker", "logs", "--tail", "30", "k3s-3"},

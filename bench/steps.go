@@ -73,9 +73,9 @@ type scenario struct {
 	marks map[string]time.Time    // when each named event happened
 	last  string                  // the last named event
 
-	cl          *client
-	clientEnded time.Time
-	writes      bool // false after "Given no writes"
+	clientRan   bool      // the client was started
+	clientEnded time.Time // when the bench stopped it
+	writes      bool      // false after "Given no writes"
 
 	down     []string // the nodes killed and not started again
 	downPods []string // the instances on them
@@ -111,14 +111,13 @@ type row struct {
 func (s *scenario) beforeStep(ctx context.Context, st *godog.Step) (context.Context, error) {
 	s.kind, s.stepStart, s.detail = st.Type, time.Now(), ""
 	logf("%s %s", keyword(st.Type), st.Text)
-	if st.Type == messages.PickleStepType_ACTION && s.cl == nil {
+	if st.Type == messages.PickleStepType_ACTION && !s.clientRan {
 		if s.w == nil {
 			return ctx, errors.New("the cluster did not start")
 		}
 		logf("starting the client, writes %t", s.writes)
-		cl, err := s.w.startClient(ctx, s.writes)
-		s.cl = cl
-		if err != nil {
+		s.clientRan = true
+		if err := s.w.startClient(ctx, s.writes); err != nil {
 			return ctx, fmt.Errorf("the client: %w", err)
 		}
 	}
@@ -186,17 +185,10 @@ func (s *scenario) is(thing, word, n, after, forN string) error {
 		return s.measure(key, w, n, after, forN)
 	}
 	check := func(ctx context.Context) error { return w.state(ctx, s, a) }
-	switch {
-	case forN != "":
+	if forN != "" {
 		return s.holdsFor(forN, check)
-	case n != "":
-		deadline, err := s.deadline(n, after)
-		if err != nil {
-			return err
-		}
-		return poll(s.ctx, deadline, check)
 	}
-	return check(s.ctx)
+	return s.within(n, after, check)
 }
 
 // since: "<thing> has been <word> since the <event>", a check of the whole
@@ -252,14 +244,7 @@ func (s *scenario) alert(name, verb, who, n, after string) error {
 	case "has not fired":
 		check = s.alertIs(key, false, true)
 	}
-	if n == "" {
-		return check(s.ctx)
-	}
-	deadline, err := s.deadline(n, after)
-	if err != nil {
-		return err
-	}
-	return poll(s.ctx, deadline, check)
+	return s.within(n, after, check)
 }
 
 // alertPod is the pod an alert line names: an instance by its role, or ""
@@ -324,14 +309,7 @@ func (s *scenario) alertmanager(verb, name, who, n, after string) error {
 			return err
 		}
 	}
-	if n == "" {
-		return check(s.ctx)
-	}
-	deadline, err := s.deadline(n, after)
-	if err != nil {
-		return err
-	}
-	return poll(s.ctx, deadline, check)
+	return s.within(n, after, check)
 }
 
 // verb: "<thing> starts", "stops", "runs" or "passes".
@@ -356,7 +334,7 @@ func (s *scenario) pass(n, after string) error {
 
 // noWrites: "Given no writes", the only scenarios whose client never writes.
 func (s *scenario) noWrites() error {
-	if s.cl != nil {
+	if s.clientRan {
 		return errors.New("no writes must come before the first event")
 	}
 	s.writes = false
@@ -453,6 +431,19 @@ func (s *scenario) holdsFor(n string, check func(context.Context) error) error {
 		case <-time.After(2 * time.Second):
 		}
 	}
+}
+
+// within checks now without a limit, or waits until the check holds, by N s
+// from now or N s after a named event.
+func (s *scenario) within(n, after string, check func(context.Context) error) error {
+	if n == "" {
+		return check(s.ctx)
+	}
+	deadline, err := s.deadline(n, after)
+	if err != nil {
+		return err
+	}
+	return poll(s.ctx, deadline, check)
 }
 
 // deadline is N s from now, or N s after a named event.

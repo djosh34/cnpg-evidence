@@ -5,15 +5,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"os"
+	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/testcontainers/testcontainers-go"
 )
 
 // The application host: the client image, outside k3s, with its own name
@@ -26,34 +24,32 @@ const (
 // The client image the bench starts, set when the bench image is built.
 var clientImage = os.Getenv("BENCH_CLIENT_IMAGE")
 
-type client struct {
-	c *testcontainers.DockerContainer
-}
-
 // startClient starts the client with a new EAB key. It returns once the
 // client has read and, when it writes, written.
-func startClient(ctx context.Context, nw *testcontainers.DockerNetwork, root *ca, key eab, writes bool) (*client, error) {
+func (w *world) startClient(ctx context.Context, writes bool) error {
 	if clientImage == "" {
-		return nil, fmt.Errorf("BENCH_CLIENT_IMAGE is not set")
+		return errors.New("BENCH_CLIENT_IMAGE is not set")
+	}
+	key, err := w.bao.newEAB(ctx)
+	if err != nil {
+		return err
 	}
 	hosts := make([]string, nodeCount)
 	for i := range nodeCount {
 		hosts[i] = nodeHost(i)
 	}
-	c, err := start(ctx, testcontainers.ContainerRequest{
-		Name:  "client",
-		Image: clientImage,
-		Cmd: []string{"-name", clientName, "-acme", acmeDirectory, "-ca", "/ca.crt",
+	err = container{
+		name: "client", ip: clientIP, image: clientImage,
+		opts: []string{"--env", "EAB_KID=" + key.id, "--env", "EAB_HMAC=" + key.key},
+		args: []string{"-name", clientName, "-acme", acmeDirectory, "-ca", "/ca.crt",
 			"-hosts", strings.Join(hosts, ","), "-writes=" + strconv.FormatBool(writes)},
-		Env:   map[string]string{"EAB_KID": key.id, "EAB_HMAC": key.key},
-		Files: []testcontainers.ContainerFile{file("/ca.crt", string(root.certPEM))},
-	}, on(nw, clientIP, clientName))
+		files: map[string]string{"/ca.crt": string(w.root.certPEM)},
+	}.run(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	cl := &client{c: c}
-	err = poll(ctx, time.Now().Add(2*time.Minute), func(ctx context.Context) error {
-		log, err := cl.log(ctx)
+	return poll(ctx, time.Now().Add(2*time.Minute), func(ctx context.Context) error {
+		log, err := readClientLog(ctx)
 		if err != nil {
 			return err
 		}
@@ -70,21 +66,16 @@ func startClient(ctx context.Context, nw *testcontainers.DockerNetwork, root *ca
 		}
 		return nil
 	})
-	return cl, err
 }
 
 // stopWrites makes the client stop writing, and returns once every write it
 // started has ended: no write is acknowledged after this.
-func (cl *client) stopWrites(ctx context.Context) error {
-	code, _, err := cl.c.Exec(ctx, []string{"kill", "-USR1", "1"})
-	if err == nil && code != 0 {
-		err = fmt.Errorf("kill -USR1 in the client: exit code %d", code)
-	}
-	if err != nil {
+func stopWrites(ctx context.Context) error {
+	if _, err := command(ctx, "docker", "exec", "client", "kill", "-USR1", "1"); err != nil {
 		return err
 	}
 	return poll(ctx, time.Now().Add(30*time.Second), func(ctx context.Context) error {
-		log, err := cl.log(ctx)
+		log, err := readClientLog(ctx)
 		if err != nil {
 			return err
 		}
@@ -95,23 +86,17 @@ func (cl *client) stopWrites(ctx context.Context) error {
 	})
 }
 
-// stop stops the client; it ends the reads and writes it has started.
-func (cl *client) stop(ctx context.Context) error {
-	limit := 20 * time.Second
-	return cl.c.Stop(ctx, &limit)
-}
-
-func (cl *client) rawLog(ctx context.Context) (string, error) {
-	r, err := cl.c.Logs(ctx)
+// rawClientLog is what the client printed, on stdout and stderr.
+func rawClientLog(ctx context.Context) (string, error) {
+	out, err := exec.CommandContext(ctx, "docker", "logs", "client").CombinedOutput()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("docker logs client: %w: %s", err, out)
 	}
-	data, err := io.ReadAll(r)
-	return string(data), closeWith(err, r)
+	return string(out), nil
 }
 
-func (cl *client) log(ctx context.Context) (clientLog, error) {
-	raw, err := cl.rawLog(ctx)
+func readClientLog(ctx context.Context) (clientLog, error) {
+	raw, err := rawClientLog(ctx)
 	if err != nil {
 		return clientLog{}, err
 	}
@@ -121,7 +106,7 @@ func (cl *client) log(ctx context.Context) (clientLog, error) {
 // One line of the client's log: "<start ms> <end ms> <what> <address>
 // <result> <detail>", as bench/client/main.go describes it.
 type logLine struct {
-	start, end time.Time
+	start, end int64  // unix ms
 	what       string // read, write, connect, read-attempt, write-attempt or writes
 	address    string // the <host>:<port> the client connected to, or -
 	result     string // ok or fail; started or worked for an attempt; stopped for writes
@@ -159,7 +144,7 @@ func parseLine(text string) (logLine, bool) {
 	if err1 != nil || err2 != nil {
 		return logLine{}, false
 	}
-	line := logLine{start: time.UnixMilli(start), end: time.UnixMilli(end), what: fields[2], address: fields[3], result: fields[4]}
+	line := logLine{start: start, end: end, what: fields[2], address: fields[3], result: fields[4]}
 	if len(fields) == 6 {
 		line.detail = fields[5]
 	}
@@ -169,8 +154,8 @@ func parseLine(text string) (logLine, bool) {
 // first is the end of the first ok line of what.
 func (l clientLog) first(what string) (time.Time, bool) {
 	for _, line := range l.lines {
-		if line.what == what && line.result == "ok" {
-			return line.end, true
+		if line.what == what && line.ok() {
+			return time.UnixMilli(line.end), true
 		}
 	}
 	return time.Time{}, false
@@ -179,7 +164,7 @@ func (l clientLog) first(what string) (time.Time, bool) {
 // connected: a connect to address alone worked.
 func (l clientLog) connected(address string) bool {
 	for _, line := range l.lines {
-		if line.what == "connect" && line.address == address && line.result == "ok" {
+		if line.what == "connect" && line.address == address && line.ok() {
 			return true
 		}
 	}
@@ -190,7 +175,7 @@ func (l clientLog) connected(address string) bool {
 func (l clientLog) writesStopped() (time.Time, bool) {
 	for _, line := range l.lines {
 		if line.what == "writes" && line.result == "stopped" {
-			return line.start, true
+			return time.UnixMilli(line.start), true
 		}
 	}
 	return time.Time{}, false
@@ -201,8 +186,9 @@ func (l clientLog) writesStopped() (time.Time, bool) {
 func (l clientLog) longestGap(what string, from, to time.Time) time.Duration {
 	ends := []time.Time{from}
 	for _, line := range l.lines {
-		if line.what == what && line.result == "ok" && !line.end.Before(from) && !line.end.After(to) {
-			ends = append(ends, line.end)
+		end := time.UnixMilli(line.end)
+		if line.what == what && line.ok() && !end.Before(from) && !end.After(to) {
+			ends = append(ends, end)
 		}
 	}
 	// Attempts run side by side, so their lines need not come in order.
@@ -219,12 +205,31 @@ func (l clientLog) longestGap(what string, from, to time.Time) time.Duration {
 func (l clientLog) acknowledged() []string {
 	var ns []string
 	for _, line := range l.lines {
-		if line.what == "write" && line.result == "ok" {
+		if line.what == "write" && line.ok() {
 			n, _ := line.write()
 			ns = append(ns, n)
 		}
 	}
 	return ns
+}
+
+func (line logLine) ok() bool { return line.result == "ok" }
+
+// startedBefore: the line started before t. A line's times are whole ms, t
+// need not be.
+func (line logLine) startedBefore(t time.Time) bool { return time.UnixMilli(line.start).Before(t) }
+
+// port is the port of the address the client connected to, or 0.
+func (line logLine) port() int {
+	_, port, err := net.SplitHostPort(line.address)
+	if err != nil {
+		return 0
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // write is the n of an acknowledged write and the server's own address.
