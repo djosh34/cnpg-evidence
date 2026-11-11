@@ -15,14 +15,21 @@ import (
 
 func TestParseLog(t *testing.T) {
 	log := parseLog(strings.Join([]string{
-		"1000 1100 read ok 10.42.0.5 recovery=false",
-		"1000 1200 write ok 17 10.42.0.5",
+		"1000 1100 read k3s-1.example.test:5432 ok 10.42.0.5 recovery=false",
+		"1000 1200 write k3s-1.example.test:5432 ok 17 10.42.0.5",
 		"client: creating bench_writes: no route",
-		"1250 1300 write fail ERROR: cannot execute INSERT in a read-only transaction",
-		"1500 1600 writes stopped ",
+		"1250 1300 write k3s-2.example.test:5433 fail ERROR: cannot execute INSERT in a read-only transaction",
+		"1300 1310 connect k3s-3.example.test:5432 ok ",
+		"1500 1600 writes - stopped ",
 	}, "\n"))
-	if len(log.lines) != 4 {
-		t.Fatalf("lines: got %d, want 4", len(log.lines))
+	if len(log.lines) != 5 {
+		t.Fatalf("lines: got %d, want 5", len(log.lines))
+	}
+	if n, server := log.lines[1].write(); n != "17" || server != "10.42.0.5" {
+		t.Errorf("write: got %q %q, want 17 10.42.0.5", n, server)
+	}
+	if !log.connected("k3s-3.example.test:5432") || log.connected("k3s-1.example.test:5432") {
+		t.Error("connected: want only k3s-3.example.test:5432")
 	}
 	if got := log.acknowledged(); len(got) != 1 || got[0] != "17" {
 		t.Errorf("acknowledged: got %v, want [17]", got)
@@ -41,12 +48,12 @@ func TestParseLog(t *testing.T) {
 func TestLongestGap(t *testing.T) {
 	ms := func(n int64) time.Time { return time.UnixMilli(n) }
 	log := parseLog(strings.Join([]string{
-		"0 1000 read ok a",
+		"0 1000 read h:5432 ok a",
 		// Attempts run side by side: this one ended last but is logged first.
-		"2000 9000 read ok a",
-		"3000 3500 read ok a",
-		"4000 4100 read fail timeout",
-		"4000 4200 write ok 1 a",
+		"2000 9000 read h:5432 ok a",
+		"3000 3500 read h:5432 ok a",
+		"4000 4100 read - fail timeout",
+		"4000 4200 write h:5432 ok 1 a",
 	}, "\n"))
 	tests := []struct {
 		name     string
@@ -135,6 +142,7 @@ func TestFeaturesUseTheVocabulary(t *testing.T) {
 		"is": regexp.MustCompile(isLine), "since": regexp.MustCompile(sinceLine), "verb": regexp.MustCompile(verbLine),
 		"pass": regexp.MustCompile(passLine), "alert": regexp.MustCompile(alertLine),
 		"alertmanager": regexp.MustCompile(amLine), "quiet": regexp.MustCompile(quietLine),
+		"table": regexp.MustCompile(tableLine),
 	}
 	files, err := filepath.Glob("../samples/features/*.feature")
 	if err != nil || len(files) == 0 {

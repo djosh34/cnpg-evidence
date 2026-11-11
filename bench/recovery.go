@@ -337,17 +337,26 @@ func noneLostInRestore(ctx context.Context, s *scenario, _ args) error {
 	return s.acknowledgedOn(ctx, restoredCluster)
 }
 
-// restoreCompliant: every instance of pg-restore reported each of the four
-// checks of the compliance query as 0 in the last 30 s.
+// restoreCompliant and compliant: every instance of the cluster, pg-restore
+// or the cluster's own, reported each of the four checks of the compliance
+// query as 0 in the last 30 s.
 func restoreCompliant(ctx context.Context, s *scenario, _ args) error {
-	pods, err := instances(ctx, restoredCluster)
+	return s.compliant(ctx, restoredCluster)
+}
+
+func compliant(ctx context.Context, s *scenario, _ args) error {
+	return s.compliant(ctx, clusterName)
+}
+
+func (s *scenario) compliant(ctx context.Context, cluster string) error {
+	pods, err := instances(ctx, cluster)
 	if err != nil {
 		return err
 	}
 	if len(pods) != nodeCount {
-		return fmt.Errorf("instances of %s: %v", restoredCluster, pods)
+		return fmt.Errorf("instances of %s: %v", cluster, pods)
 	}
-	selector := fmt.Sprintf(`namespace=%q, cluster=%q`, namespace, restoredCluster)
+	selector := fmt.Sprintf(`namespace=%q, cluster=%q`, namespace, cluster)
 	zero, err := s.w.mon.pods(ctx, fmt.Sprintf(`count by (pod) (
 		(cnpg_compliance_violations{%s} == 0)
 		and on (pod, rule, check) (time() - timestamp(cnpg_compliance_violations{%s}) < 30)) == 4`, selector, selector))

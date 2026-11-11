@@ -4,3 +4,7 @@
 !go.sum
 !pgfallback/
 !bench/
+!scripts/
+scripts/**/*.test.sh
+scripts/lib/test.sh
+scripts/test.sh

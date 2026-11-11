@@ -60,6 +60,20 @@ var vocabulary = map[string]word{
 	"the store | stopped":                      {event: breakStore("stopped")},
 	"the store | paused":                       {event: breakStore("paused")},
 	"the store | starts":                       {event: storeStarts},
+	"<role>'s node | drained":                  {mark: "drain", event: drainNode},
+	"the node | uncordoned":                    {mark: "uncordon", event: uncordon},
+	"<role> | cut off":                         {event: cutOff},
+	"<role> | reconnected":                     {event: reconnect},
+	"replay on <role> | paused":                {event: replay("pause")},
+	"replay on <role> | resumed":               {event: replay("resume")},
+	"replay on <role> and <role> | paused":     {event: replay("pause")},
+	"replay on <role> and <role> | resumed":    {event: replay("resume")},
+	"a <n> s statement | committed on <role>":  {event: longCommit},
+	"a commit | started on <role>":             {event: startCommit},
+	"desired.sh | runs":                        {event: runDesired},
+	"evidence.sh | runs":                       {event: runEvidence},
+	"prove.sh | runs":                          {event: runProve},
+	"host-check.sh | runs":                     {event: runHostCheck},
 
 	// States.
 	"the cluster | healthy":                          {state: clusterHealthy},
@@ -85,10 +99,19 @@ var vocabulary = map[string]word{
 	"the alerts | healthy":                           {state: alertsHealthy},
 	"the dashboard | healthy":                        {state: dashboardHealthy},
 	"the exporters | healthy":                        {state: exportersAnswer},
+	"the drain | done":                               {state: drainDone},
+	"<role> | not streaming":                         {state: notStreaming},
+	"<role>'s metrics | arriving":                    {state: metricsArriving},
+	"the commit | done":                              {state: commitDone},
+	"the replica lag | healthy":                      {state: replicaLagHealthy},
+	"compliance | healthy":                           {state: compliant},
+	"evidence.sh | passes":                           {state: evidencePasses},
+	"prove.sh | passes":                              {state: provePasses},
 
 	// Since an event.
 	"the exporters of <role> and <role> | healthy": {since: exportersKept},
-	"writing | down": {since: writingDown},
+	"writing | down":       {since: writingDown},
+	"pgfallback | healthy": {since: pgfallbackKept},
 
 	// Measures, on the client: the longest time without a successful read,
 	// and without an acknowledged write while the client writes.
@@ -382,6 +405,9 @@ func exportersKept(ctx context.Context, s *scenario, a args, from time.Time) err
 // stopWriting: the client stops writing and goes on reading. The write
 // measure ends here.
 func stopWriting(ctx context.Context, s *scenario, _ args) error {
+	if !s.writes {
+		return errors.New("the scenario has no writes to stop: it says \"Given no writes\"")
+	}
 	return s.cl.stopWrites(ctx)
 }
 
@@ -489,7 +515,7 @@ func writingBack(ctx context.Context, s *scenario, from time.Time) (time.Time, e
 	}
 	var first time.Time
 	for _, line := range log.lines {
-		_, server, _ := strings.Cut(line.detail, " ")
+		_, server := line.write()
 		if line.what == "write" && line.result == "ok" && server == ip && !line.start.Before(from) &&
 			(first.IsZero() || line.end.Before(first)) {
 			first = line.end

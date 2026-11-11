@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       scenarios:
-        description: Scenarios to run, separated by spaces
+        description: Scenarios to run, separated by spaces, or all
         type: string
         default: switchover
 
@@ -27,17 +27,31 @@ jobs:
     outputs:
       scenarios: ${{ steps.plan.outputs.scenarios }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Scenarios
         id: plan
         env:
           SCENARIOS: ${{ inputs.scenarios }}
         run: |
           set -euo pipefail
-          scenarios=$(jq -cn --arg s "$SCENARIOS" '$s | split(" ") | map(select(. != ""))')
-          if [[ $scenarios == '[]' ]]; then
+          known=$(bash bench/scenarios.sh)
+          read -ra wanted <<<"$SCENARIOS"
+          if [[ ${wanted[*]} == all ]]; then
+            mapfile -t wanted <<<"$known"
+          fi
+          if ((${#wanted[@]} == 0)); then
             echo "no scenario given" >&2
             exit 1
           fi
+          for s in "${wanted[@]}"; do
+            if ! grep -qxF -- "$s" <<<"$known"; then
+              echo "no scenario $s; the scenarios: $(paste -sd ' ' <<<"$known")" >&2
+              exit 1
+            fi
+          done
+          scenarios=$(printf '%s\n' "${wanted[@]}" | sort -u | jq -cRn '[inputs]')
           echo "scenarios=$scenarios" | tee -a "$GITHUB_OUTPUT"
 
   images:
@@ -120,7 +134,7 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          for table in results/*/timing.md; do
+          for table in results/*/timing.md results/*/pgfallback.md; do
             cat "$table" >>"$GITHUB_STEP_SUMMARY"
           done
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

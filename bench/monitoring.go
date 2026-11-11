@@ -358,6 +358,27 @@ func (m *monitoring) pods(ctx context.Context, promql string) (map[string]bool, 
 	return pods, nil
 }
 
+// values are the values of a query's result by its pod label.
+func (m *monitoring) values(ctx context.Context, promql string) (map[string]float64, error) {
+	result, err := m.query(ctx, promql, false)
+	if err != nil {
+		return nil, err
+	}
+	values := map[string]float64{}
+	for _, s := range result {
+		text, ok := s.Value[1].(string)
+		if !ok {
+			return nil, fmt.Errorf("query %s: the value of %v is not a string", promql, s.Metric)
+		}
+		v, err := strconv.ParseFloat(text, 64)
+		if err != nil {
+			return nil, fmt.Errorf("query %s: %w", promql, err)
+		}
+		values[s.Metric["pod"]] = v
+	}
+	return values, nil
+}
+
 // firing are the alerts that fire now, and fired those that fired since
 // from, each as "<alertname> <pod>".
 func (m *monitoring) firing(ctx context.Context) (map[string]bool, error) {
