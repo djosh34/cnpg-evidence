@@ -95,7 +95,7 @@ A replica whose WAL receiver does not run, for example while there is no primary
 
 ### Writes blocked
 
-The chart's query reports `cnpg_sync_replication_waiting`: the sessions that wait right now for a standby to confirm their commit (`wait_event = 'SyncRep'` in `pg_stat_activity`). Every commit waits for one other instance, so while no standby confirms, every write waits; reads still work. `CNPGWritesBlocked` fires when sessions wait at every scrape for 10 s, and only while the instance's samples arrive, two in the last 15 s: the last sample of a collector lost with its node, which may have caught a commit waiting, does not count. A long statement does not count: a session counts only while its commit waits, so a commit that waits a moment after a long statement does not fire it.
+The chart's query reports `cnpg_sync_replication_waiting`: the sessions that wait right now for a standby to confirm their commit (`wait_event = 'SyncRep'` in `pg_stat_activity`). Every commit waits for one other instance, so while no standby confirms, every write waits; reads still work. `CNPGWritesBlocked` fires when sessions wait at every scrape for 10 s, and counts each series only while its samples arrive, two in the last 15 s: the last sample of a collector lost with its node, which may have caught a commit waiting, does not count. When its last two samples both caught one, a commit waited 5 s or more, and the alert can fire once. A long statement does not count: a session counts only while its commit waits, so a commit that waits a moment after a long statement does not fire it.
 
 ### Data disks
 

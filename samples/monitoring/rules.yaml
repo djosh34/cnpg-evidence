@@ -257,14 +257,19 @@ groups:
     rules:
       # Sessions on the primary that wait for a synchronous standby to confirm
       # their commit, from the chart's query: every commit waits while no
-      # standby confirms. Only while the instance's samples arrive: two in the
-      # last 15 s. A collector lost with its node sends no stale marker, and
-      # its last sample, which may have caught a commit waiting, would
-      # otherwise count for the evaluator's lookback.
+      # standby confirms. A series counts only while its samples arrive: two
+      # in the last 15 s. A collector lost with its node sends no stale
+      # marker, and its last sample, which may have caught a commit waiting,
+      # would otherwise count for the evaluator's lookback; when its last two
+      # samples both caught one, a commit waited 5 s or more, and the alert
+      # can fire once. Each series on its own: an instance that comes back
+      # under a new address has a new series.
       - alert: CNPGWritesBlocked
         expr: |
-          max by (namespace, cluster, pod) (cnpg_sync_replication_waiting) > 0
-          and on (namespace, pod) count_over_time(cnpg_sync_replication_waiting[15s]) > 1
+          max by (namespace, cluster, pod) (
+            cnpg_sync_replication_waiting
+            and count_over_time(cnpg_sync_replication_waiting[15s]) > 1
+          ) > 0
           and on (namespace, cluster) cnpg_sample:database
         for: 10s
         labels:

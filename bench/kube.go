@@ -40,9 +40,10 @@ func command(ctx context.Context, stdin io.Reader, name string, args ...string) 
 	return strings.TrimSuffix(stdout.String(), "\n"), nil
 }
 
-// kubectl runs kubectl with a time limit of 30 s. The API server rejects
-// requests while etcd elects a new leader, as after a node is killed; such a
-// request is tried again for up to 30 s.
+// kubectl runs kubectl with a time limit of 30 s per try. The API server
+// rejects requests while etcd elects a new leader, as after a node is
+// killed, and applies none of them; such a request is tried again until 30 s
+// after the first try, so a call can take up to about 60 s.
 func kubectl(ctx context.Context, args ...string) (string, error) {
 	end := time.Now().Add(30 * time.Second)
 	for {
@@ -54,7 +55,7 @@ func kubectl(ctx context.Context, args ...string) (string, error) {
 		}
 		select {
 		case <-ctx.Done():
-			return "", ctx.Err()
+			return "", errors.Join(err, ctx.Err())
 		case <-time.After(2 * time.Second):
 		}
 	}
