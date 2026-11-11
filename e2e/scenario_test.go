@@ -42,9 +42,9 @@ func TestScenario(t *testing.T) {
 		testcontainers.WithHostConfigModifier(func(h *moby.HostConfig) { h.Privileged = true }),
 		testcontainers.WithCmd(*scenarioFlag),
 		testcontainers.WithLogConsumers(&testcontainers.StdoutLogConsumer{}),
-		// Its clock starts once the container runs, after the image build. It
-		// ends at least 15 min before go test's -timeout, which leaves the
-		// build and the copy-out of the results their time.
+		// Its clock starts once the container runs, after the image build, so
+		// the 15 min it leaves before go test's -timeout are for the build
+		// and the copy-out of the results.
 		testcontainers.WithWaitStrategyAndDeadline(time.Until(deadline)-15*time.Minute, wait.ForExit()),
 	)
 	testcontainers.CleanupContainer(t, c)
