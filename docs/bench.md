@@ -113,7 +113,7 @@ An alert line names an instance by its role, or `the cluster` for an alert of th
 | `wal_keep_size is <n>MB on every instance` | `show wal_keep_size` gives it on every instance. |
 | `<n> MB of WAL is written on <role>` | Rows of about 1 KB, then a truncate, on the instance until it has written that much WAL. An instance that is down then needs the WAL file the instance was writing when it started. |
 | `the WAL <role> needs is gone from <role>` | After two checkpoints, that WAL file is no longer in the second instance's `pg_wal`. |
-| `<role> is caught up` | The instance streams and has replayed the primary's WAL up to where it was a moment before. The timing table gives how far behind it was when its pod turned ready. |
+| `<role> is caught up` | The instance's pod has turned ready, and the instance streams and has replayed the primary's WAL up to where it was a moment before. The timing table gives how far behind it was when its pod turned ready. |
 | `<role>'s WAL is switched` | `pg_switch_wal()` on the instance. |
 | `<role>'s WAL is archived` | The instance has archived the WAL file it switched away from. |
 | `<role>'s WAL is waiting for the store` | The instance has WAL files marked `.ready` that wait for the store. |

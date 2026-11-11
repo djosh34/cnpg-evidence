@@ -167,9 +167,10 @@ func neededWALGone(ctx context.Context, s *scenario, a args) error {
 	return nil
 }
 
-// caughtUp: the instance streams and has replayed the primary's WAL up to
-// where it was a moment ago. The timing table gives how far behind it was
-// when its pod first turned ready, which opens its node's read port.
+// caughtUp: the instance's pod has turned ready, and the instance streams
+// and has replayed the primary's WAL up to where it was a moment ago. The
+// timing table gives how far behind it was when its pod first turned ready,
+// which opens its node's read port.
 func caughtUp(ctx context.Context, s *scenario, a args) error {
 	pod := a.pods[0]
 	primary, err := clusterField(ctx, "currentPrimary")
@@ -193,6 +194,9 @@ func caughtUp(ctx context.Context, s *scenario, a args) error {
 			}
 			s.detail = behind + " MB behind when its pod turned ready"
 		}
+	}
+	if s.detail == "" {
+		return fmt.Errorf("the pod of %s is not ready", pod)
 	}
 	out, err := psql(ctx, pod, "postgres", fmt.Sprintf(
 		"select status = 'streaming' and pg_last_wal_replay_lsn() >= '%s' from pg_stat_wal_receiver", lsn))
