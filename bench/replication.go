@@ -225,12 +225,16 @@ func commitDone(_ context.Context, s *scenario, _ args) error {
 	return s.commit.finished()
 }
 
-// replicaLagHealthy: the chart's cnpg_replica_lag_seconds of each replica
-// is under 1 s, in its sample of the last 30 s. The timing table gives the
+// replicaLagHealthy: with "for N s", the chart's cnpg_replica_lag_seconds
+// of each replica stays under 1 s in every sample taken since the line
+// started, and every replica has one after 30 s. The timing table gives the
 // most each instance reported since the last event, of it and of CNPG's own
 // cnpg_pg_replication_lag, which reports minutes on a caught-up replica for
 // up to 5 min after its PostgreSQL restarts.
 func replicaLagHealthy(ctx context.Context, s *scenario, _ args) error {
+	if s.holding.IsZero() {
+		return errors.New(`the replica lag takes "for N s"`)
+	}
 	primary, err := clusterField(ctx, "currentPrimary")
 	if err != nil {
 		return err
@@ -240,22 +244,23 @@ func replicaLagHealthy(ctx context.Context, s *scenario, _ args) error {
 		return err
 	}
 	selector := fmt.Sprintf(`namespace=%q, cluster=%q`, namespace, clusterName)
-	lag := "cnpg_replica_lag_seconds{" + selector + "}"
-	now, err := s.w.mon.values(ctx, fmt.Sprintf(`%s and time() - timestamp(%s) < 30`, lag, lag))
+	held := time.Since(s.holding)
+	most, err := s.w.mon.values(ctx, fmt.Sprintf(`max by (pod) (max_over_time(cnpg_replica_lag_seconds{%s}[%dms]))`,
+		selector, max(held.Milliseconds(), 1)))
 	if err != nil {
 		return err
 	}
 	for _, pod := range slices.DeleteFunc(pods, func(p string) bool { return p == primary }) {
-		value, ok := now[pod]
+		value, ok := most[pod]
 		switch {
-		case !ok:
-			return fmt.Errorf("no cnpg_replica_lag_seconds of %s in the last 30 s", pod)
-		case value >= 1:
-			return fmt.Errorf("cnpg_replica_lag_seconds of %s is %.1f s", pod, value)
+		case !ok && held > 30*time.Second:
+			return fmt.Errorf("no cnpg_replica_lag_seconds of %s in the %s since the line started", pod, seconds(held))
+		case ok && value >= 1:
+			return fmt.Errorf("cnpg_replica_lag_seconds of %s was %.1f s", pod, value)
 		}
 	}
 	window := int(time.Since(s.marks[s.last]).Seconds()) + 1
-	var most []string
+	var report []string
 	for _, metric := range []string{"cnpg_replica_lag_seconds", "cnpg_pg_replication_lag"} {
 		values, err := s.w.mon.values(ctx, fmt.Sprintf(`max by (pod) (max_over_time(%s{%s}[%ds]))`, metric, selector, window))
 		if err != nil {
@@ -265,8 +270,8 @@ func replicaLagHealthy(ctx context.Context, s *scenario, _ args) error {
 		for _, pod := range slices.Sorted(maps.Keys(values)) {
 			each = append(each, fmt.Sprintf("%s %.1f", pod, values[pod]))
 		}
-		most = append(most, metric+" "+strings.Join(each, ", "))
+		report = append(report, metric+" "+strings.Join(each, ", "))
 	}
-	s.detail = "most since the " + s.last + ": " + strings.Join(most, "; ")
+	s.detail = "most since the " + s.last + ": " + strings.Join(report, "; ")
 	return nil
 }

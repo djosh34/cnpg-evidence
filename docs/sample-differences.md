@@ -1264,7 +1264,7 @@ After a node loss the bench uses the API server of a node that runs, by its addr
 
 ## No SELinux, no secrets encryption, low ports open
 
-The bench's nodes run without `--selinux` and without `--secrets-encryption`, and docker sets `ip_unprivileged_port_start` to 0 in their network namespaces. `host-check.sh` fails five checks there: `selinux`, `k3s-secrets` and `low-ports` for these reasons, `postgres-account` because the k3s image has no `getent`, and `dir-modes`. The `host-check` scenario expects exactly these failures, with the values in its table.
+The bench's nodes run without `--selinux` and without `--secrets-encryption`, and docker sets `ip_unprivileged_port_start` to 0 in their network namespaces. `host-check.sh` fails four checks there: `selinux`, `k3s-secrets` and `low-ports` for these reasons, and `postgres-account` because the k3s image has no `getent`. `k3s-secrets` also finds `/var/lib/rancher/k3s/server` at mode 755: the bench copies `k3s/manifests/` into it before k3s starts, and k3s makes the directory 700 only when it creates it. The `host-check` scenario expects exactly these failures, with the values in its table.
 
 [../samples/features/host-check.feature](../samples/features/host-check.feature)
 

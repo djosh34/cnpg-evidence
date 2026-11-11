@@ -13,10 +13,10 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/cucumber/godog"
 	messages "github.com/cucumber/messages/go/v34"
-	"go.yaml.in/yaml/v3"
 )
 
 // The words of the vocabulary about the scripts of the repository:
@@ -62,19 +62,11 @@ func script(ctx context.Context, stdin, path string, args ...string) (scriptRun,
 	return runScript(ctx, stdin, "bash", append([]string{filepath.Join(scriptsDir, path)}, args...)...)
 }
 
-// desiredValues are the values of desired.yaml in the mounted directory, as
+// desiredValues are the values of the cluster's release, desired.yaml of
+// the mounted directory with the bench's own values/pg.yaml on top, as
 // JSON, which the scripts take on stdin.
-func desiredValues() (string, error) {
-	data, err := os.ReadFile(filepath.Join(benchDir, "desired.yaml"))
-	if err != nil {
-		return "", err
-	}
-	var values any
-	if err := yaml.Unmarshal(data, &values); err != nil {
-		return "", fmt.Errorf("desired.yaml: %w", err)
-	}
-	out, err := json.Marshal(values)
-	return string(out), err
+func desiredValues(ctx context.Context) (string, error) {
+	return helm(ctx, time.Minute, "get", "values", clusterRelease, "--namespace", namespace, "--output", "json")
 }
 
 // clientCA writes the CA certificates of the Secret client-ca, which may
@@ -101,7 +93,7 @@ func (s *scenario) keep(key, file string, r scriptRun) error {
 // runDesired: desired.sh makes the desired documents of evidence.sh and
 // prove.sh.
 func runDesired(ctx context.Context, s *scenario, _ args) error {
-	values, err := desiredValues()
+	values, err := desiredValues(ctx)
 	if err != nil {
 		return err
 	}
@@ -129,7 +121,7 @@ func runDesired(ctx context.Context, s *scenario, _ args) error {
 
 // runEvidence: evidence.sh, from the bench, with the CA of client-ca.
 func runEvidence(ctx context.Context, s *scenario, _ args) error {
-	values, err := desiredValues()
+	values, err := desiredValues(ctx)
 	if err != nil {
 		return err
 	}
@@ -172,7 +164,7 @@ func evidencePasses(_ context.Context, s *scenario, _ args) error {
 // runProve: prove.sh as root on every node, which the bench sees through
 // /proc/<pid>/root of the node's container.
 func runProve(ctx context.Context, s *scenario, _ args) error {
-	values, err := desiredValues()
+	values, err := desiredValues(ctx)
 	if err != nil {
 		return err
 	}

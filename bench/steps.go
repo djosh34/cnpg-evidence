@@ -96,7 +96,8 @@ type scenario struct {
 	inAlways bool           // always.feature runs
 
 	stepStart time.Time
-	detail    string // what the line running measured, for the timing table
+	holding   time.Time // when the "for N s" line running started
+	detail    string    // what the line running measured, for the timing table
 	rows      []row
 }
 
@@ -436,7 +437,9 @@ func (s *scenario) holdsFor(n string, check func(context.Context) error) error {
 	if err != nil {
 		return err
 	}
-	end := time.Now().Add(time.Duration(secs) * time.Second)
+	s.holding = time.Now()
+	defer func() { s.holding = time.Time{} }()
+	end := s.holding.Add(time.Duration(secs) * time.Second)
 	for {
 		if err := check(s.ctx); err != nil {
 			return fmt.Errorf("it stopped holding %s before the end: %w", seconds(time.Until(end)), err)

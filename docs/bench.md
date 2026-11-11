@@ -164,9 +164,9 @@ An alert line names an instance by its role, or `the cluster` for an alert of th
 | `<role> is reconnected` | That rule is gone. |
 | `<role> is not streaming` | The instance is not in the primary's `pg_stat_replication`. |
 | `<role>'s metrics are arriving` | Prometheus has a sample of `cnpg_collector_up` 1 of the instance from the last 30 s. |
-| `the replica lag is healthy` | The chart's `cnpg_replica_lag_seconds` of each replica, in its sample of the last 30 s, is under 1 s. With `for N s`, through N s. The timing table gives the most each instance reported since the last event, of it and of CNPG's own `cnpg_pg_replication_lag`. |
+| `the replica lag is healthy for N s` | The chart's `cnpg_replica_lag_seconds` of each replica stays under 1 s in every sample taken in those N s. The timing table gives the most each instance reported since the last event, of it and of CNPG's own `cnpg_pg_replication_lag`. |
 | `compliance is healthy` | Every instance reported each of the four compliance checks as 0 in the last 30 s. |
-| `desired.sh runs` | [desired.sh](desired.md) makes the desired documents of `evidence.sh`, with the `client-ca` Secret's certificates as `--ca`, and of `prove.sh`, from `desired.yaml` of the mounted directory. |
+| `desired.sh runs` | [desired.sh](desired.md) makes the desired documents of `evidence.sh`, with the `client-ca` Secret's certificates as `--ca`, and of `prove.sh`. The three scripts get the values of the cluster's release on stdin, `helm get values`: `desired.yaml` with `values/pg.yaml` on top. |
 | `evidence.sh runs`, `evidence.sh passes` | [evidence.sh](evidence.md) from the bench, with the `client-ca` Secret's certificates as `--ca`; it found no violation. |
 | `prove.sh runs`, `prove.sh passes` | [prove.sh](prove.md) as root on every node, which the bench sees through `/proc/<pid>/root` of the node's container; on every node it passed, with every probe of the desired document and its value, and no other. |
 | `host-check.sh runs` | [host-check.sh](host-check.md) as root on every node, with the static bash and jq of the bench image copied onto the node. |
