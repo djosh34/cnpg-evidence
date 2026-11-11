@@ -39,7 +39,8 @@ Feature: A broken store
     A paused store takes connections and never answers. barman-cloud sets no
     connect timeout, so each call to it waits about 60 s for the TLS
     handshake (docs/samples.md). The cluster then has no primary for
-    minutes, and the alerts of a cluster without a primary may fire.
+    minutes, each instance can be down for over 5 minutes, and the alerts of
+    that may fire.
 
     When the store is paused
     And the primary's WAL is switched
@@ -65,6 +66,8 @@ Feature: A broken store
     Then writing is healthy < 900 s
     And CNPGDatabaseDown may fire for the cluster
     And CNPGReplicaDown may fire for the primary
+    And CNPGReplicaDown may fire for replica 1
+    And CNPGReplicaDown may fire for replica 2
     And CNPGReplicaLag may fire for the primary
     And CNPGReplicaLag may fire for replica 1
     And CNPGReplicaLag may fire for replica 2

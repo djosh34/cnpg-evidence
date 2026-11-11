@@ -661,6 +661,18 @@ CNPG gives a stopping instance's smart shutdown 180 s by default (`smartShutdown
 
 A smart shutdown waits for every session to close, and a connection pool never closes its sessions by itself. A primary that stops, in a rollout or a switchover, would then hold writes for up to 180 s before the fast shutdown. With 0, it ends open sessions at once. A rollout for a parameter that needs a restart then stops writes for about 6 s, and a switchover for about 11 s, also with a pooled session open. A commit that is still waiting for its standby then ends with the warning that it committed locally but might not have been replicated; it stays committed.
 
+## The old primary gets 30 s to stop in a switchover
+
+CNPG gives the old primary of a switchover 3600 s by default (`switchoverDelay`) to stop and archive its WAL, then stops it at once. The sample sets 30.
+
+```yaml
+  switchoverDelay: 30
+```
+
+[../samples/charts/cnpg-cluster/templates/cluster.yaml](../samples/charts/cnpg-cluster/templates/cluster.yaml)
+
+The new primary is promoted only once the old one has stopped. Against a store over TLS that never answers, each archive call waits about 60 s in the TLS handshake, which barman-cloud does not limit, and the old primary took 11 minutes to stop. With 30 s, the new primary took a write about 610 s after the switchover; the rest is the promotion's and the replicas' own calls to the store. A working store archives the last WAL within a few seconds, so 30 s does not cut a normal switchover short. WAL the old primary could not archive stays in its `pg_wal` until it rejoins, and CNPG archives it before the rewind; the new primary already holds every confirmed commit.
+
 ## No app database, app role or app Secret
 
 CNPG's `initdb` creates a database `app`, a role `app` that owns it, and a `<cluster>-app` Secret with its password by default. The sample's chart bootstraps with `database: postgres`, `owner: postgres` and a placeholder Secret `<cluster>-bootstrap`, for `initdb` and for `recovery` alike.

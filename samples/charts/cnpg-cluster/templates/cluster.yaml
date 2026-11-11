@@ -29,9 +29,13 @@ spec:
   # holding the primary lease, and the next switchover then never ends
   # (docs/samples.md). A stopping instance ends open sessions at once instead
   # of waiting up to 180 s for them. A rollout for a parameter that needs a
-  # restart stops writes for about 6 s, a switchover for about 11 s.
+  # restart stops writes for about 6 s, a switchover for about 11 s. In a
+  # switchover the old primary gets 30 s, not CNPG's 3600 s, to archive its
+  # WAL before it stops: a store that never answers holds each archive call
+  # for about 60 s (docs/samples.md).
   primaryUpdateMethod: restart
   smartShutdownTimeout: 0
+  switchoverDelay: 30
 
   # No replication slots: a slot keeps WAL for an instance that is gone until
   # the disk is full. A replica that falls behind reads the WAL its primary
