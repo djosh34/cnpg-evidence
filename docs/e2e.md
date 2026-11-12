@@ -86,7 +86,7 @@ What runs outside k3s in production runs as a container next to the k3s nodes, n
 | cert-manager, with a ClusterIssuer of the company CA | `acme.example.test`: OpenBao as the company CA, serving ACME |
 | The CNPG operator and the barman-cloud plugin | `s3.example.test`: versitygw as the S3 store, with TLS |
 | The CNPG cluster `pg` | `otel`, `prometheus`, `alertmanager`, `grafana` `.example.test`: the [monitoring](monitoring.md) |
-| The OTel collectors | `orders-app.test`: the client, reading and writing through [pgfallback](pgfallback.md) |
+| The OTel collectors | `orders-app.test`: the client, reading and writing through [pgfallback](https://github.com/djosh34/pgfallback) |
 
 1. Checks the inotify limit and starts its own dockerd.
 2. Builds the `client` image, then creates the outside containers, copies their files in with `docker cp`, and starts them. The company CA gets a new root on every run.

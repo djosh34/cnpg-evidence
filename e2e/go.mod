@@ -2,14 +2,11 @@ module github.com/djosh34/cnpg-evidence/e2e
 
 go 1.27.2
 
-// The client is built against the pgfallback package of this checkout.
-replace github.com/djosh34/cnpg-evidence => ..
-
 require (
 	github.com/cucumber/gherkin/go/v42 v42.0.0
 	github.com/cucumber/godog v0.16.0
 	github.com/cucumber/messages/go/v34 v34.2.0
-	github.com/djosh34/cnpg-evidence v0.0.0-00010101000000-000000000000
+	github.com/djosh34/pgfallback v0.1.0
 	github.com/go-acme/lego/v4 v4.35.2
 	github.com/jackc/pgx/v5 v5.12.0
 	github.com/moby/moby/api v1.56.1

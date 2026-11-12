@@ -150,7 +150,7 @@ k3s servicelb opens each LoadBalancer's port on every node.
 - **rw, 5432:** every node forwards it to the primary.
 - **read, `readLoadBalancer.port`:** `selectorType: r` with `externalTrafficPolicy: Local`. A node forwards it only to its own instance, primary or replica, while that instance is ready. A node without one refuses the port, so a client moves on at once.
 
-Neither opens a NodePort. The read LoadBalancer still has a `healthCheckNodePort`, which answers over HTTP and does not lead to PostgreSQL. A client outside the cluster uses rw first and the read port only while no rw address takes a connection; [pgfallback](pgfallback.md) does that for pgx and GORM.
+Neither opens a NodePort. The read LoadBalancer still has a `healthCheckNodePort`, which answers over HTTP and does not lead to PostgreSQL. A client outside the cluster uses rw first and the read port only while no rw address takes a connection; [pgfallback](https://github.com/djosh34/pgfallback) does that for pgx and GORM.
 
 ## Writes, reads and failover
 
