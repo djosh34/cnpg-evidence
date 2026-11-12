@@ -1,7 +1,8 @@
 // Command client is the application host of the e2e test. It gets its own
 // certificate from the company CA by ACME, then reads and writes through
 // pgfallback, as an application outside the cluster does, until it is
-// killed. It prints one line per event on stdout:
+// killed. pgfallback is https://github.com/djosh34/pgfallback. It prints one
+// line per event on stdout:
 //
 //	<start unix ms> <end unix ms> <what> <address> <result> <detail>
 //
@@ -68,7 +69,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/djosh34/cnpg-evidence/pgfallback"
+	"github.com/djosh34/pgfallback"
 )
 
 const (

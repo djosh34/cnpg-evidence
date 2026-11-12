@@ -7,9 +7,6 @@
 
 FROM golang:1.27-alpine@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18 AS build
 WORKDIR /src
-# The client builds against the pgfallback package of this checkout.
-COPY go.mod go.sum ./
-COPY pgfallback/ pgfallback/
 COPY e2e/go.mod e2e/go.sum e2e/
 RUN cd e2e && go mod download
 COPY e2e/ e2e/

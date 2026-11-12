@@ -58,11 +58,10 @@ Each script prints one JSON document on stdout and logs on stderr. Exit 0 means 
 
 | Path | What it is |
 |---|---|
-| `e2e.sh`, `e2e/` | Runs a scenario: the Go test, the code inside the container, the client and `inotify.sh` ([e2e.md](docs/e2e.md)) |
+| `e2e.sh`, `e2e/` | Runs a scenario: the Go test, the code inside the container, the client, which uses [pgfallback](https://github.com/djosh34/pgfallback), and `inotify.sh` ([e2e.md](docs/e2e.md)) |
 | `samples/` | The charts, values, k3s settings, monitoring and scenarios ([samples.md](docs/samples.md), [monitoring.md](docs/monitoring.md)) |
 | `scripts/` | The evidence scripts and their tests |
 | `report/` | `cnpg-report`: the page that draws the images, its build and tests ([report/README.md](report/README.md)) |
-| `pgfallback/` | A Go package for pgx and GORM that falls back to the read port while no primary answers ([pgfallback.md](docs/pgfallback.md)) |
 | `.github/workflows/` | `ci.yml` on every pull request and push to `main`; `e2e.yml`, every scenario on demand; `release.yml` on a pushed tag |
 
 Licence: Apache License 2.0.

@@ -1,9 +1,6 @@
 # Only what e2e/Dockerfile copies. It is the only image built from the
 # repository root.
 *
-!go.mod
-!go.sum
-!pgfallback/
 !e2e/
 !scripts/
 scripts/**/*.test.sh
