@@ -33,7 +33,8 @@ func buildClient(ctx context.Context) error {
 }
 
 // startClient starts the client with a new EAB key. It returns once the
-// client has read and, when it writes, written.
+// client has read and, when it writes, written. In a variant run the client
+// reads and writes through GORM on rw only, without pgfallback.
 func (w *world) startClient(ctx context.Context, writes bool) error {
 	key, err := w.bao.newEAB(ctx)
 	if err != nil {
@@ -43,11 +44,15 @@ func (w *world) startClient(ctx context.Context, writes bool) error {
 	for i := range nodeCount {
 		hosts[i] = nodeHost(i)
 	}
+	args := []string{"-name", clientName, "-acme", acmeDirectory, "-ca", "/ca.crt",
+		"-hosts", strings.Join(hosts, ","), "-writes=" + strconv.FormatBool(writes)}
+	if variant != "" {
+		args = append(args, "-gorm")
+	}
 	err = container{
 		name: "client", ip: clientIP, image: clientImage,
-		opts: []string{"--entrypoint", "/client", "--env", "EAB_KID=" + key.id, "--env", "EAB_HMAC=" + key.key},
-		args: []string{"-name", clientName, "-acme", acmeDirectory, "-ca", "/ca.crt",
-			"-hosts", strings.Join(hosts, ","), "-writes=" + strconv.FormatBool(writes)},
+		opts:  []string{"--entrypoint", "/client", "--env", "EAB_KID=" + key.id, "--env", "EAB_HMAC=" + key.key},
+		args:  args,
 		files: map[string]string{"/ca.crt": string(w.root.certPEM)},
 	}.run(ctx)
 	if err != nil {

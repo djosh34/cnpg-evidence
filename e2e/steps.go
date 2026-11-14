@@ -360,7 +360,8 @@ func (s *scenario) event(key string, w word, a args) error {
 // measure checks a measure over the whole scenario against the line's
 // limit. For writing, a scenario's own line sets the limit that
 // always.feature then uses; every other limit of always.feature holds for
-// every scenario.
+// every scenario. In a variant run, reading takes the limit writing had
+// last.
 func (s *scenario) measure(key string, w word, n, after, forN string) error {
 	if n == "" || after != "" || forN != "" {
 		return fmt.Errorf("%s takes only a limit, < N s", key)
@@ -370,11 +371,17 @@ func (s *scenario) measure(key string, w word, n, after, forN string) error {
 		return err
 	}
 	switch own, ok := s.limits[key]; {
+	case w.writingLimit && variant != "":
+		if limit, ok = s.limits["writing | healthy"]; !ok {
+			return fmt.Errorf("in a variant run, %s takes the limit of writing; a writing line must come first", key)
+		}
 	case !w.scenarioLimit:
 	case !s.inAlways:
 		s.limits[key] = limit
 	case ok:
 		limit = own
+	default:
+		s.limits[key] = limit
 	}
 	got, err := w.longest(s.ctx, s)
 	if err != nil {

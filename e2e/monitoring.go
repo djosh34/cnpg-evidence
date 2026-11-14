@@ -107,7 +107,7 @@ providers:
 // startMonitoring starts the receiver and the four containers, and returns
 // once each answers.
 func startMonitoring(ctx context.Context, root *ca) (*monitoring, error) {
-	dir := filepath.Join(samplesDir, "monitoring")
+	dir := filepath.Join(settingsDir(), "monitoring")
 	read := func(name string) (string, error) {
 		data, err := os.ReadFile(filepath.Join(dir, name))
 		return string(data), err

@@ -24,7 +24,7 @@ if [ -f "$cgroup/cgroup.controllers" ]; then
   done
 fi
 
-# The manifests of samples/k3s, which k3s applies. k3s makes
+# The manifests of k3s/ of the run's settings, which k3s applies. k3s makes
 # its server directory 700 when it creates it.
 server=/var/lib/rancher/k3s/server
 mkdir -p "$server/manifests"

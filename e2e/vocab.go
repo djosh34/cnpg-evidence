@@ -36,6 +36,9 @@ type word struct {
 	back    func(context.Context, *scenario, time.Time) (time.Time, error)
 	// A measure whose limit in always.feature a scenario's own line sets.
 	scenarioLimit bool
+	// A measure that takes the limit of writing in a variant run, whose
+	// client reads on rw only: its reads stop when its writes do.
+	writingLimit bool
 }
 
 var vocabulary = map[string]word{
@@ -115,7 +118,7 @@ var vocabulary = map[string]word{
 
 	// Measures, on the client: the longest time without a successful read,
 	// and without an acknowledged write while the client writes.
-	"reading | healthy": {longest: longestReadGap},
+	"reading | healthy": {longest: longestReadGap, writingLimit: true},
 	"writing | healthy": {longest: longestWriteGap, back: writingBack, scenarioLimit: true},
 }
 
