@@ -58,9 +58,11 @@ A variant run differs from a samples run in three ways:
 What the run adds to a variant's settings is only what a run alone knows:
 
 - **The CA root:** the company CA gets a new root on every run, in the Secrets below and in the client.
-- **The run Secrets**, made before the charts: `company-acme-eab` (the EAB key of the ClusterIssuer) and `company-ca` in `cert-manager`; `client-ca`, `s3-ca` and `backup-creds` (the store's keys) in `databases`; `company-ca` in `otel`.
+- **The run Secrets**, made before the charts: `company-acme-eab` (the EAB key of the samples' ClusterIssuer) and `company-ca` in `cert-manager`; `client-ca`, `s3-ca`, `company-ca` and `backup-creds` (the store's keys) in `databases`; `company-ca` in `otel`. For a variant with one Issuer per Certificate, also an EAB key per Issuer, since a key is good for one ACME account: `pg-server-acme-eab`, `pg-replication-acme-eab`, `pg-restore-server-acme-eab` and `pg-restore-replication-acme-eab` in `databases`, and `otel-client-acme-eab` in `otel`. An EAB Secret has `keyID` and `secret`.
 - **The test endpoints:** the containers outside k3s, by the names in [What a run does](#what-a-run-does). A variant's values name them as the samples do: `https://acme.example.test/v1/pki/acme/directory` and `https://s3.example.test` in [`samples/values/`](../samples/values), `otel.example.test:4317` in the collector's chart, the node names `k3s-1.example.test` to `k3s-3.example.test`, and the client `orders-app.test` in `desired.yaml`.
-- **The nodes:** each node's `--node-ip`, `--tls-san`, `--resolv-conf` and join address, and one CoreDNS, metrics-server and Traefik pod per node, as in step 4 below.
+- **The nodes:** each node's `--node-ip`, `--tls-san`, `--resolv-conf` and join address, and one CoreDNS pod per node, as in step 4 below. Traefik runs as the variant's `k3s/manifests` say, and metrics-server as k3s has it.
+
+[`variants/first-list`](../variants/first-list) applies the [base and the first list](go-live/README.md) of `docs/go-live/`, and leaves every other setting at the CNPG, chart or k3s default. It keeps the samples' image, since the list's uid item needs an image whose `postgres` is not CNPG's uid 26, and what the docker nodes need.
 
 On GitHub, give the variant as the workflow's input:
 
@@ -124,7 +126,7 @@ What runs outside k3s in production runs as a container next to the k3s nodes, n
 | Inside k3s | Outside k3s, as containers |
 |---|---|
 | k3s: CoreDNS, Traefik, local-path, metrics-server | `dns`: CoreDNS for every name below |
-| cert-manager, with a ClusterIssuer of the company CA | `acme.example.test`: OpenBao as the company CA, serving ACME |
+| cert-manager, with a ClusterIssuer of the company CA, or an Issuer per Certificate | `acme.example.test`: OpenBao as the company CA, serving ACME |
 | The CNPG operator and the barman-cloud plugin | `s3.example.test`: versitygw as the S3 store, with TLS |
 | The CNPG cluster `pg` | `otel`, `prometheus`, `alertmanager`, `grafana` `.example.test`: the [monitoring](monitoring.md) |
 | The OTel collectors | `orders-app.test`: the client, reading and writing through [pgfallback](https://github.com/djosh34/pgfallback), or GORM in a variant run |
@@ -132,7 +134,7 @@ What runs outside k3s in production runs as a container next to the k3s nodes, n
 1. Checks the inotify limit and starts its own dockerd.
 2. Builds the `client` image, then creates the outside containers, copies their files in with `docker cp`, and starts them. The company CA gets a new root on every run.
 3. Starts three k3s servers with embedded etcd, `k3s-1.example.test` to `k3s-3.example.test`, with [`samples/k3s/`](../samples/k3s) or the variant's `k3s/`. Each node runs [`e2e/node-init.sh`](../e2e/node-init.sh), which restarts k3s when it exits, so the pods outlive k3s as they do under systemd.
-4. Runs one CoreDNS, metrics-server and Traefik pod per node, as [samples.md](samples.md#one-pod-per-node) says.
+4. Runs one CoreDNS, metrics-server and Traefik pod per node, as [samples.md](samples.md#one-pod-per-node) says; for a variant, only CoreDNS, as the [first list](go-live/README.md#failover-happens-by-itself) says.
 5. Makes the Secrets only the run knows, then installs the releases of [`samples/charts/releases.yaml`](../samples/charts/releases.yaml), or of the variant's, in order.
 6. Waits until the cluster is healthy, takes a first backup, and waits until Prometheus has every source's metrics. It then names the instances: the primary, replica 1 and replica 2.
 7. Runs the scenario. Its first When line starts the client.

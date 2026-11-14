@@ -41,7 +41,7 @@ spec:
   # secretName, commonName, dnsNames, usages as before
 ```
 
-cert-manager uses the external account binding only to register the account. Afterwards the account key in `privateKeySecretRef` is enough. If that account key Secret is lost, cert-manager registers a new account and needs a valid EAB key again. The [cluster chart](../../samples/charts/cnpg-cluster) has one `issuer` value for both of its Certificates; give each its own.
+cert-manager uses the external account binding only to register the account. Afterwards the account key in `privateKeySecretRef` is enough. If that account key Secret is lost, cert-manager registers a new account and needs a valid EAB key again. The [cluster chart](../../samples/charts/cnpg-cluster) has one `issuer` value for both of its Certificates; give each its own, as the first-list variant's [`certificates.yaml`](../../variants/first-list/charts/cnpg-cluster/templates/certificates.yaml) does.
 
 Check that every Certificate names its own Issuer:
 
@@ -55,7 +55,7 @@ kubectl get certificate -A -o custom-columns=NS:.metadata.namespace,NAME:.metada
 
 **What changes.** Traefik listens on port 80 only. cert-manager's http-01 challenges need nothing else, and k3s's Traefik does not redirect 80 to 443. Traefik still builds its default certificate in memory; it is served only if someone adds a TLS route (an IngressRoute with `tls`, or an Ingress with `traefik.ingress.kubernetes.io/router.tls`), so who may write routes decides that.
 
-**How.** Add `ports.websecure: null` to the `valuesContent` of the existing HelmChartConfig `traefik`, on every server in `/var/lib/rancher/k3s/server/manifests/`. If there is none, create `traefik-config.yaml` there with this content. A second file with another HelmChartConfig `traefik` replaces the first one's values instead of adding to them. The sample [`traefik-config.yaml`](../../samples/k3s/manifests/traefik-config.yaml) does not have this line.
+**How.** Add `ports.websecure: null` to the `valuesContent` of the existing HelmChartConfig `traefik`, on every server in `/var/lib/rancher/k3s/server/manifests/`. If there is none, create `traefik-config.yaml` there with this content. A second file with another HelmChartConfig `traefik` replaces the first one's values instead of adding to them. The sample [`traefik-config.yaml`](../../samples/k3s/manifests/traefik-config.yaml) does not have this line; the [first-list variant's](../../variants/first-list/k3s/manifests/traefik-config.yaml) does.
 
 ```yaml
 apiVersion: helm.cattle.io/v1

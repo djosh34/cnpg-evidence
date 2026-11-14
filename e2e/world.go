@@ -55,11 +55,13 @@ func newWorld(ctx context.Context) (*world, error) {
 	if err := spreadK3sServices(ctx); err != nil {
 		return nil, err
 	}
-	key, err := w.bao.newEAB(ctx)
-	if err != nil {
-		return nil, err
+	keys := make([]eab, len(eabSecrets))
+	for i := range keys {
+		if keys[i], err = w.bao.newEAB(ctx); err != nil {
+			return nil, err
+		}
 	}
-	if err := createSecrets(ctx, runSecrets(root, key)); err != nil {
+	if err := createSecrets(ctx, runSecrets(root, keys)); err != nil {
 		return nil, err
 	}
 	if w.cluster, err = installCharts(ctx); err != nil {

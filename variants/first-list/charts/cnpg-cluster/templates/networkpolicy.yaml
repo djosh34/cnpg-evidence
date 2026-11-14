@@ -1,0 +1,72 @@
+{{- $c := .Values.cluster }}
+{{- $n := .Values.network }}
+{{- /* Every node's pod range, read from the cluster; a new node needs a helm upgrade. */}}
+{{- $nodes := (lookup "v1" "Node" "" "").items }}
+{{- if not $nodes }}
+{{- fail "no nodes found: render against the cluster (helm upgrade, or helm template --dry-run=server)" }}
+{{- end }}
+# One ingress policy for the instance pods: 5432 from outside the cluster and the
+# other nodes, 5432 and 8000 between the cluster's pods, 8000 from the operator and
+# 9187 from the OTel namespace. NetworkPolicy does not filter the pod's own node.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $c.name }}-ingress
+  namespace: {{ $c.namespace }}
+spec:
+  # Instances and their bootstrap and join Job pods; podRole would miss the Jobs.
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: {{ $c.name }}
+  policyTypes: [Ingress]
+  ingress:
+    # The cluster's own pods: replication, join, pg_rewind (5432) and /failsafe (8000).
+    - from:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: {{ $c.name }}
+      ports:
+        - {protocol: TCP, port: 5432}
+        - {protocol: TCP, port: 8000}
+    # The operator calls the instance status API on 8000.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $n.operatorNamespace }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: cloudnative-pg
+      ports:
+        - {protocol: TCP, port: 8000}
+    # The OTel collectors scrape metrics on 9187.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $n.otelNamespace }}
+      ports:
+        - {protocol: TCP, port: 9187}
+    # Clients from outside the cluster on 5432, through the rw LoadBalancer.
+    - from:
+        # Any address that is not a pod.
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              {{- range $nodes }}
+              - {{ .spec.podCIDR }}
+              {{- end }}
+        # externalTrafficPolicy Cluster, client entered on another node: its flannel.1
+        # address, the network address of its podCIDR.
+        {{- range $nodes }}
+        - ipBlock:
+            cidr: {{ first (splitList "/" .spec.podCIDR) }}/32
+        {{- end }}
+        # externalTrafficPolicy Local, client entered on another node through klipper-lb.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              svccontroller.k3s.cattle.io/svcname: {{ .Values.rwLoadBalancer.name }}
+              svccontroller.k3s.cattle.io/svcnamespace: {{ $c.namespace }}
+      ports:
+        - {protocol: TCP, port: 5432}

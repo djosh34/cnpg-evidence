@@ -1,0 +1,48 @@
+{{- $name := "otel-client" }}
+{{- $ns := .Release.Namespace }}
+{{- $acme := .Values.client.acme }}
+{{- $eabName := printf "%s-acme-eab" $name }}
+{{- $eab := lookup "v1" "Secret" $ns $eabName }}
+{{- if not $eab }}
+{{- fail (printf "the Secret %s with the EAB key (keyID and secret) is missing in %s" $eabName $ns) }}
+{{- end }}
+# The Issuer of the collectors' client certificate, with its own ACME account.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+spec:
+  acme:
+    server: {{ $acme.server }}
+    {{- with $acme.caSecret }}
+    {{- $ca := lookup "v1" "Secret" $ns . }}
+    caBundle: {{ required (printf "the Secret %s with ca.crt is missing" .) (dig "data" "ca.crt" "" $ca) }}
+    {{- end }}
+    privateKeySecretRef:
+      name: {{ $name }}-acme-account
+    externalAccountBinding:
+      keyID: {{ dig "data" "keyID" "" $eab | b64dec }}
+      keySecretRef:
+        name: {{ $eabName }}
+        key: secret
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: {{ $acme.ingressClassName }}
+---
+# The collectors' client certificate for the upstream URL, from the
+# company CA. The CA issues only approved names, so it names the nodes.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+spec:
+  secretName: {{ $name }}
+  commonName: {{ first .Values.client.dnsNames }}
+  dnsNames: {{ toJson .Values.client.dnsNames }}
+  usages: [client auth]
+  issuerRef:
+    kind: Issuer
+    name: {{ $name }}
