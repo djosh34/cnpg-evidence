@@ -62,7 +62,7 @@ What the run adds to a variant's settings is only what a run alone knows:
 - **The test endpoints:** the containers outside k3s, by the names in [What a run does](#what-a-run-does). A variant's values name them as the samples do: `https://acme.example.test/v1/pki/acme/directory` and `https://s3.example.test` in [`samples/values/`](../samples/values), `otel.example.test:4317` in the collector's chart, the node names `k3s-1.example.test` to `k3s-3.example.test`, and the client `orders-app.test` in `desired.yaml`.
 - **The nodes:** each node's `--node-ip`, `--tls-san`, `--resolv-conf` and join address, and one CoreDNS pod per node, as in step 4 below. Traefik runs as the variant's `k3s/manifests` say, and metrics-server as k3s has it.
 
-[`variants/first-list`](../variants/first-list) applies the [base and the first list](go-live/README.md) of `docs/go-live/`, and leaves every other setting at the CNPG, chart or k3s default. It also keeps the samples' image, since the list's uid item needs an image whose `postgres` is not CNPG's uid 26, and what the docker nodes need. As for the samples, the run's first backup stands in for a schedule.
+[`variants/first-list`](../variants/first-list) applies the [base and the first list](go-live/README.md) of `docs/go-live/`, and leaves every other setting at the CNPG, chart or k3s default. It also keeps the samples' image (the list's uid item needs an image whose `postgres` is not CNPG's uid 26) and what the docker nodes need. As for the samples, the run's first backup stands in for a schedule.
 
 On GitHub, give the variant as the workflow's input:
 

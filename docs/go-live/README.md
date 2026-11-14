@@ -3,7 +3,7 @@
 What a running k3s and CNPG setup needs before a new production cluster takes traffic, in order of importance. Each link leads to the details: the problem, how behaviour changes, and what to change or check. Some items are checks of settings that are already right by default: they are listed because nothing else notices when a chart or a person changes them.
 
 It assumes:
-- a cluster with [the base](#the-base) below, such as three k3s servers, CNPG 1.30.1 and synchronous replication. The promises about commits below rest on it;
+- a cluster with [the base](#the-base) below: three k3s servers, CNPG 1.30.1, synchronous replication and the rest. The promises about commits below rest on it;
 - a new cluster that imports the old one's databases;
 - clients outside the cluster that list every node, set a short `connect_timeout`, and treat a COMMIT that got no answer as unknown: it may have been committed.
 
