@@ -24,7 +24,7 @@ network:
 
 # CN and dnsNames of the server certificate and of the one replication
 # certificate shared by all instances, both signed by the CA of the chart's
-# issuer. The CN is the host name of one node. pg_ident maps this CN, and
+# issuers. The CN is the host name of one node. pg_ident maps this CN, and
 # besides CNPG's fixed CN streaming_replica only this CN, to streaming_replica.
 replication:
   commonName: node-1.example.test

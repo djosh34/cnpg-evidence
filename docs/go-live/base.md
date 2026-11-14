@@ -38,7 +38,7 @@ kubectl get cluster -n <namespace> <cluster> -o jsonpath='{.spec.certificates}'
 
 ## The rw LoadBalancer, and no read port
 
-Clients outside the cluster reach the primary on 5432 of every node, and nothing else.
+Clients outside the cluster reach the primary on 5432 of every node, and no instance through a read port. The LoadBalancer may still open NodePorts; [later.md](later.md) turns them off.
 
 ```bash
 kubectl get cluster -n <namespace> <cluster> -o jsonpath='{.spec.managed.services.additional[*].selectorType}'   # rw only
@@ -51,7 +51,7 @@ kubectl get svc -n <namespace>                                                  
 kubectl get cluster -n <namespace> <cluster> -o jsonpath='{.spec.plugins}'
 # barman-cloud.cloudnative-pg.io with "isWALArchiver":true and its ObjectStore
 kubectl get cluster -n <namespace> <cluster> -o jsonpath='{.status.conditions[?(@.type=="ContinuousArchiving")].status}'   # True
-kubectl get scheduledbackup -n <namespace>                                                              # one for the cluster, method plugin
+kubectl get scheduledbackup -n <namespace>                                                              # one for the cluster, method plugin (in the scenarios, the run's first backup stands in)
 kubectl get backup -n <namespace> --sort-by=.metadata.creationTimestamp                                 # the newest completed
 ```
 
