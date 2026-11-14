@@ -11,9 +11,10 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// gormPool is GORM with its own pgx pool on the rw port of the hosts, as an
-// application without pgfallback has it: target_session_attrs=read-write
-// and the connection string's connect_timeout, nothing more.
+// gormPool is GORM, whose database/sql pool uses the pgx driver, on the rw
+// port of the hosts, as an application without pgfallback has it:
+// target_session_attrs=read-write and the connection string's
+// connect_timeout, nothing more.
 type gormPool struct{ db *gorm.DB }
 
 // openGORM opens the pool without connecting: ensureTable makes the first

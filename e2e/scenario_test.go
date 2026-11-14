@@ -3,9 +3,12 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -37,8 +40,14 @@ func TestScenario(t *testing.T) {
 		if !scenarioTag.MatchString(*variantFlag) {
 			t.Fatalf("%q is not a variant name: lower-case words with dashes", *variantFlag)
 		}
+		if slices.Contains(notInVariants, *scenarioFlag) {
+			t.Fatalf("a variant run leaves out %s; docs/e2e.md says why", *scenarioFlag)
+		}
 		if _, err := os.Stat(filepath.Join(dir, "charts", "releases.yaml")); err != nil {
 			t.Fatalf("no variant %s: %v", *variantFlag, err)
+		}
+		if err := noSymlinks(dir); err != nil {
+			t.Fatal(err)
 		}
 		// The parents /samples and /variants are in the image, so each
 		// directory lands at its own name.
@@ -83,6 +92,17 @@ func TestScenario(t *testing.T) {
 	if state.ExitCode != 0 {
 		t.Fatalf("the scenario %s exited with %d: 1 when it failed, 2 when it could not run", *scenarioFlag, state.ExitCode)
 	}
+}
+
+// noSymlinks fails on a symlink in dir: testcontainers would leave it out of
+// the copy without a word.
+func noSymlinks(dir string) error {
+	return filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err == nil && d.Type()&fs.ModeSymlink != 0 {
+			return fmt.Errorf("%s is a symlink; a variant needs real files", path)
+		}
+		return err
+	})
 }
 
 // copyResults copies the run's files out of the container to results/.

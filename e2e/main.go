@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 )
 
 const (
@@ -46,11 +45,12 @@ func settingsDir() string {
 	return filepath.Join(variantsDir, variant)
 }
 
-// The scenarios a variant run leaves out. A variant's client has no
-// pgfallback, so the three that test it do not apply. rejoin-from-archive
-// needs the primary to drop WAL that a stopped replica needs; CNPG's
-// replication slots, on in a variant, keep that WAL. Every scenario with a
-// lost node or a switchover still tests a rejoin, through always.feature.
+// The scenarios a variant run leaves out; TestScenario refuses them. A
+// variant's client has no pgfallback, so the three that test it do not
+// apply. rejoin-from-archive needs the primary to drop WAL that a stopped
+// replica needs, which CNPG's replication slots keep when they are on, as
+// CNPG has them by default. Every scenario with a lost node or a switchover
+// still tests a rejoin, through always.feature.
 var notInVariants = []string{
 	"pgfallback-drain", "pgfallback-primary-node-loss", "pgfallback-replica-node-loss", "rejoin-from-archive",
 }
@@ -77,10 +77,6 @@ func run(scenario string) int {
 	}
 	if variant != "" && !scenarioTag.MatchString(variant) {
 		say(os.Stderr, "e2e: %q is not a variant name\n", variant)
-		return 2
-	}
-	if variant != "" && slices.Contains(notInVariants, scenario) {
-		say(os.Stderr, "e2e: a variant run leaves out %s; docs/e2e.md says why\n", scenario)
 		return 2
 	}
 	results, err := newResults(scenario)

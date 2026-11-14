@@ -175,10 +175,10 @@ func TestReadingLimit(t *testing.T) {
 	if run("", "") == nil {
 		t.Error("samples: reading < 5 s passed a gap of 100 s")
 	}
-	if err := run("first-list", ""); err != nil {
+	if err := run("my-variant", ""); err != nil {
 		t.Errorf("variant: reading took the limit of 180 s and failed: %v", err)
 	}
-	if run("first-list", "30") == nil {
+	if run("my-variant", "30") == nil {
 		t.Error("variant with writing < 30 s: reading passed a gap of 100 s")
 	}
 }

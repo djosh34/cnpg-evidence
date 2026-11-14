@@ -2,8 +2,9 @@
 // certificate from the company CA by ACME, then reads and writes through
 // pgfallback, as an application outside the cluster does, until it is
 // killed. pgfallback is https://github.com/djosh34/pgfallback. With -gorm it
-// reads and writes through GORM and its own pgx pool on the rw port only,
-// without pgfallback. It prints one line per event on stdout:
+// reads and writes through GORM, whose database/sql pool uses the pgx
+// driver, on the rw port only, without pgfallback. It prints one line per
+// event on stdout:
 //
 //	<start unix ms> <end unix ms> <what> <address> <result> <detail>
 //

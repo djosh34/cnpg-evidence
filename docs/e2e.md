@@ -16,13 +16,13 @@ Scenario: The primary's node is lost for 2 minutes
 ```bash
 ./e2e.sh                         # lists the scenarios, exits 2
 ./e2e.sh switchover              # runs one on the samples
-./e2e.sh switchover first-list   # runs one on the variant variants/first-list
+./e2e.sh switchover my-variant   # runs one on variants/my-variant
 ```
 
 The host needs what the [README](../README.md#run-a-scenario) lists. `./e2e.sh` runs `TestScenario` in [`e2e/scenario_test.go`](../e2e/scenario_test.go) with `go test`, so you can run it directly too:
 
 ```bash
-go -C e2e test -run '^TestScenario$' -count=1 -timeout 90m -v . -scenario switchover -variant first-list
+go -C e2e test -run '^TestScenario$' -count=1 -timeout 90m -v . -scenario switchover -variant my-variant
 ```
 
 Without `-variant`, or with it empty, the run uses the samples.
@@ -47,13 +47,13 @@ A variant is another set of settings for the same scenarios: a directory `varian
 | `k3s/config.yaml`, `k3s/manifests/` | Each node's k3s config, and the manifests k3s applies. |
 | `monitoring/` | `rules.yaml`, `alertmanager.yaml` and `dashboard.json`, which the run's monitoring loads. |
 
-The scenarios are always those of `samples/features/`; a variant has no `features/`. The run copies no symlinks, so every file is a real file. The release of the cluster is `pg`, its cluster `pg` in the namespace `databases`.
+The scenarios are always those of `samples/features/`; a variant has no `features/`. A run refuses a variant with a symlink, as it would not copy it. The release of the cluster is `pg`, its cluster `pg` in the namespace `databases`.
 
 A variant run differs from a samples run in three ways:
 
-- The client reads and writes through GORM and its own pgx pool, with no pgfallback and no read port. Its connection string lists the rw port of the three nodes with `target_session_attrs=read-write` and `connect_timeout=2`.
+- The client reads and writes through GORM, whose `database/sql` pool uses the pgx driver, with no pgfallback and no read port. Its connection string lists the rw port of the three nodes with `target_session_attrs=read-write` and `connect_timeout=2`.
 - Its reads stop during a switchover or a failover, as its writes do. So in `always.feature`, reading takes the limit of writing: the scenario's own, or 180 s.
-- It leaves out `pgfallback-drain`, `pgfallback-primary-node-loss` and `pgfallback-replica-node-loss`, which test pgfallback, and `rejoin-from-archive`. That scenario needs the primary to drop WAL a stopped replica needs, which CNPG's replication slots prevent. Every scenario with a lost node or a switchover still checks that the instances rejoin, through `always.feature`. `./e2e.sh <scenario> <variant>` exits 1 for these, and the log says why.
+- It leaves out `pgfallback-drain`, `pgfallback-primary-node-loss` and `pgfallback-replica-node-loss`, which test pgfallback, and `rejoin-from-archive`. That scenario needs the primary to drop WAL a stopped replica needs, which CNPG's replication slots prevent when they are on, as CNPG has them by default. Every scenario with a lost node or a switchover still checks that the instances rejoin, through `always.feature`. `./e2e.sh <scenario> <variant>` exits 1 for these before it builds anything.
 
 What the run adds to a variant's settings is only what a run alone knows:
 
@@ -65,7 +65,7 @@ What the run adds to a variant's settings is only what a run alone knows:
 On GitHub, give the variant as the workflow's input:
 
 ```bash
-gh workflow run e2e.yml --ref <branch> -f variant=first-list
+gh workflow run e2e.yml --ref <branch> -f variant=my-variant
 ```
 
 The run's name says which settings it used, and its matrix leaves out the four scenarios above.
@@ -102,7 +102,7 @@ On GitHub, [`e2e.yml`](../.github/workflows/e2e.yml) runs every scenario on an a
 
 ```bash
 gh workflow run e2e.yml --ref <branch>            # the samples
-gh workflow run e2e.yml --ref <branch> -f variant=first-list
+gh workflow run e2e.yml --ref <branch> -f variant=my-variant
 gh run list --workflow e2e.yml --limit 1          # the run's id
 gh run download <run id> --name switchover-X64    # one job's results
 ```
