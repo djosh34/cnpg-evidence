@@ -66,7 +66,7 @@ func runScenario(name string, res *results) int {
 
 // setUp builds the scenario's cluster and names the instances.
 func (s *scenario) setUp(sn *godog.Scenario) error {
-	logf("scenario %q: a new cluster from samples/", sn.Name)
+	logf("scenario %q: a new cluster from %s", sn.Name, settingsDir())
 	var err error
 	if s.w, err = newWorld(s.ctx); err != nil {
 		return err

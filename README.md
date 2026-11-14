@@ -11,7 +11,7 @@ Sample charts for a CloudNativePG (CNPG) cluster that accepts only certificate l
 - **Needs** docker, bash and Go 1.27, and the host's `fs.inotify.max_user_instances` at 1024 or more: `bash e2e/inotify.sh` raises it.
 - **Results** go to `results/<scenario>-<time>/`. Exit 0 means the scenario passed.
 
-`./e2e.sh` with no argument lists the scenarios. A run builds a three-node k3s cluster from `samples/` inside one container and takes 15 to 40 minutes; [docs/e2e.md](docs/e2e.md) says what it does and how to read its results.
+`./e2e.sh` with no argument lists the scenarios. A run builds a three-node k3s cluster from `samples/`, or from a variant of `variants/`, inside one container and takes 15 to 40 minutes; [docs/e2e.md](docs/e2e.md) says what it does and how to read its results.
 
 ## How to
 

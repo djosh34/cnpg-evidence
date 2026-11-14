@@ -37,15 +37,15 @@ func readReleases(file string) ([]release, error) {
 	return releases, nil
 }
 
-// installCharts installs the releases of charts/releases.yaml in their
-// order. helm dependency build writes the values charts' dependencies next
-// to them, so the charts are copied out of /samples first and /samples stays
-// as samples/ is. Each release gets its values files from /samples, then
-// values/<release>.yaml when it exists. It returns the chart and values of
-// the cluster's release.
+// installCharts installs the releases of charts/releases.yaml of the run's
+// settings in their order. helm dependency build writes the values charts'
+// dependencies next to them, so the charts are copied out of the settings
+// first and the settings stay as they are. Each release gets its values
+// files from the settings, then values/<release>.yaml when it exists. It
+// returns the chart and values of the cluster's release.
 func installCharts(ctx context.Context) (chartValues, error) {
 	charts := filepath.Join(workDir, "charts")
-	if err := os.CopyFS(charts, os.DirFS(filepath.Join(samplesDir, "charts"))); err != nil {
+	if err := os.CopyFS(charts, os.DirFS(filepath.Join(settingsDir(), "charts"))); err != nil {
 		return chartValues{}, fmt.Errorf("copying the charts: %w", err)
 	}
 	releases, err := readReleases(filepath.Join(charts, "releases.yaml"))
@@ -60,9 +60,9 @@ func installCharts(ctx context.Context) (chartValues, error) {
 		}
 		var values []string
 		for _, v := range r.Values {
-			values = append(values, "--values", filepath.Join(samplesDir, v))
+			values = append(values, "--values", filepath.Join(settingsDir(), v))
 		}
-		own := filepath.Join(samplesDir, "values", r.Name+".yaml")
+		own := filepath.Join(settingsDir(), "values", r.Name+".yaml")
 		switch _, err := os.Stat(own); {
 		case err == nil:
 			values = append(values, "--values", own)

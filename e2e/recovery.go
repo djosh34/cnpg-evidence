@@ -20,7 +20,7 @@ const (
 	// The backup a scenario takes, and the cluster it restores it into.
 	scenarioBackup  = "scenario"
 	restoredCluster = "pg-restore"
-	// The values file, in /samples, of the second instance image
+	// The values file, in the settings, of the second instance image
 	// that "the instance image is changed" changes the cluster to.
 	newImageValues = "values/new-image.yaml"
 )
@@ -243,13 +243,13 @@ func idleAfterSwitch(ctx context.Context, _ *scenario, a args) error {
 // values/new-image.yaml. CNPG restarts every instance on it, the primary
 // last, in place.
 func changeImage(ctx context.Context, s *scenario, _ args) error {
-	return s.upgradeCluster(ctx, "--values", filepath.Join(samplesDir, newImageValues))
+	return s.upgradeCluster(ctx, "--values", filepath.Join(settingsDir(), newImageValues))
 }
 
 // onNewImage: every instance runs the image of values/new-image.yaml and is
 // ready.
 func onNewImage(ctx context.Context, _ *scenario, _ args) error {
-	data, err := os.ReadFile(filepath.Join(samplesDir, newImageValues))
+	data, err := os.ReadFile(filepath.Join(settingsDir(), newImageValues))
 	if err != nil {
 		return err
 	}

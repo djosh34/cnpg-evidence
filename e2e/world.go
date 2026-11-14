@@ -10,7 +10,7 @@ import (
 )
 
 // world is everything one run starts: the network, the services outside
-// k3s, the three nodes, and the releases of samples/ on them.
+// k3s, the three nodes, and the releases of the run's settings on them.
 // Nothing of it outlives the e2e test's container.
 type world struct {
 	root    *ca

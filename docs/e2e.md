@@ -1,6 +1,6 @@
 # Scenarios
 
-A scenario is a short Gherkin text in [`samples/features/`](../samples/features) about what happens to the cluster and what must hold after it, such as a lost node, a switchover or a broken store. Each run builds a new three-node k3s cluster from [`samples/`](../samples), plays one scenario on it, then plays [`always.feature`](../samples/features/always.feature).
+A scenario is a short Gherkin text in [`samples/features/`](../samples/features) about what happens to the cluster and what must hold after it, such as a lost node, a switchover or a broken store. Each run builds a new three-node k3s cluster from [`samples/`](../samples), or from a [variant](#run-a-variant), plays one scenario on it, then plays [`always.feature`](../samples/features/always.feature).
 
 ```gherkin
 @primary-node-loss
@@ -14,21 +14,61 @@ Scenario: The primary's node is lost for 2 minutes
 ## Run a scenario
 
 ```bash
-./e2e.sh                 # lists the scenarios, exits 2
-./e2e.sh switchover      # runs one
+./e2e.sh                         # lists the scenarios, exits 2
+./e2e.sh switchover              # runs one on the samples
+./e2e.sh switchover first-list   # runs one on the variant variants/first-list
 ```
 
 The host needs what the [README](../README.md#run-a-scenario) lists. `./e2e.sh` runs `TestScenario` in [`e2e/scenario_test.go`](../e2e/scenario_test.go) with `go test`, so you can run it directly too:
 
 ```bash
-go -C e2e test -run '^TestScenario$' -count=1 -timeout 90m -v . -scenario switchover
+go -C e2e test -run '^TestScenario$' -count=1 -timeout 90m -v . -scenario switchover -variant first-list
 ```
+
+Without `-variant`, or with it empty, the run uses the samples.
 
 Without `-scenario` the test skips, so `go test ./...` in `e2e/` starts no container.
 
-The test builds [`e2e/Dockerfile`](../e2e/Dockerfile) for the host's own architecture and keeps it as `cnpg-evidence-e2e:local`, so the next run reuses its layers. It copies `samples/` into the container, runs it privileged and copies `/results` out to `results/` at the end. testcontainers removes the container and its volumes when the test ends. If the test process is killed, its Ryuk container removes them. A run never writes into `samples/`.
+The test builds [`e2e/Dockerfile`](../e2e/Dockerfile) for the host's own architecture and keeps it as `cnpg-evidence-e2e:local`, so the next run reuses its layers. It copies `samples/` into the container, or `samples/features/` and the variant's directory, runs it privileged and copies `/results` out to `results/` at the end. testcontainers removes the container and its volumes when the test ends. If the test process is killed, its Ryuk container removes them. A run never writes into `samples/` or `variants/`.
 
-`./e2e.sh` exits 0 when the scenario passed, 2 without exactly one scenario, and 1 otherwise. The log gives the container's own code: 1 when the scenario failed, 2 when it could not run. One run takes 15 to 40 minutes.
+`./e2e.sh` exits 0 when the scenario passed, 2 without a scenario, and 1 otherwise. The log gives the container's own code: 1 when the scenario failed, 2 when it could not run. One run takes 15 to 40 minutes.
+
+## Run a variant
+
+A variant is another set of settings for the same scenarios: a directory `variants/<name>/`, its name lower-case words with dashes. It is complete and shaped like `samples/`, so it can be compared file by file with another cluster's charts:
+
+| Path | What |
+|---|---|
+| `charts/releases.yaml` | The releases the run installs, in order, as in [`samples/charts/releases.yaml`](../samples/charts/releases.yaml). |
+| `charts/<chart>/` | Every chart a release names, the variant's own copy, with its dependencies' charts. |
+| `values/<release>.yaml` | The run's values of a release, put on top of the values `releases.yaml` names. |
+| `values/new-image.yaml` | The instance image of the rollout scenario. |
+| `desired.yaml` | The cluster's values, which the evidence scripts read. |
+| `k3s/config.yaml`, `k3s/manifests/` | Each node's k3s config, and the manifests k3s applies. |
+| `monitoring/` | `rules.yaml`, `alertmanager.yaml` and `dashboard.json`, which the run's monitoring loads. |
+
+The scenarios are always those of `samples/features/`; a variant has no `features/`. The run copies no symlinks, so every file is a real file. The release of the cluster is `pg`, its cluster `pg` in the namespace `databases`.
+
+A variant run differs from a samples run in three ways:
+
+- The client reads and writes through GORM and its own pgx pool, with no pgfallback and no read port. Its connection string lists the rw port of the three nodes with `target_session_attrs=read-write` and `connect_timeout=2`.
+- Its reads stop during a switchover or a failover, as its writes do. So in `always.feature`, reading takes the limit of writing: the scenario's own, or 180 s.
+- It leaves out `pgfallback-drain`, `pgfallback-primary-node-loss` and `pgfallback-replica-node-loss`, which test pgfallback, and `rejoin-from-archive`. That scenario needs the primary to drop WAL a stopped replica needs, which CNPG's replication slots prevent. Every scenario with a lost node or a switchover still checks that the instances rejoin, through `always.feature`. `./e2e.sh <scenario> <variant>` exits 1 for these, and the log says why.
+
+What the run adds to a variant's settings is only what a run alone knows:
+
+- **The CA root:** the company CA gets a new root on every run, in the Secrets below and in the client.
+- **The run Secrets**, made before the charts: `company-acme-eab` (the EAB key of the ClusterIssuer) and `company-ca` in `cert-manager`; `client-ca`, `s3-ca` and `backup-creds` (the store's keys) in `databases`; `company-ca` in `otel`.
+- **The test endpoints:** the containers outside k3s, by the names in [What a run does](#what-a-run-does). A variant's values name them as the samples do: `https://acme.example.test/v1/pki/acme/directory` and `https://s3.example.test` in [`samples/values/`](../samples/values), `otel.example.test:4317` in the collector's chart, the node names `k3s-1.example.test` to `k3s-3.example.test`, and the client `orders-app.test` in `desired.yaml`.
+- **The nodes:** each node's `--node-ip`, `--tls-san`, `--resolv-conf` and join address, and one CoreDNS, metrics-server and Traefik pod per node, as in step 4 below.
+
+On GitHub, give the variant as the workflow's input:
+
+```bash
+gh workflow run e2e.yml --ref <branch> -f variant=first-list
+```
+
+The run's name says which settings it used, and its matrix leaves out the four scenarios above.
 
 ## Raise the inotify limit
 
@@ -61,17 +101,18 @@ Start with `timing.md`: the first row with a failure names the line that failed,
 On GitHub, [`e2e.yml`](../.github/workflows/e2e.yml) runs every scenario on an amd64 and an arm64 runner, one job each, in parallel. It runs on demand only:
 
 ```bash
-gh workflow run e2e.yml --ref <branch>
+gh workflow run e2e.yml --ref <branch>            # the samples
+gh workflow run e2e.yml --ref <branch> -f variant=first-list
 gh run list --workflow e2e.yml --limit 1          # the run's id
 gh run download <run id> --name switchover-X64    # one job's results
 ```
 
 Each job uploads its `results/` as `<scenario>-<arch>`, where the arch is `X64` or `ARM64`, also when the scenario failed.
 
-In any other CI, run one job per scenario with a matrix variable and this one line:
+In any other CI, run one job per scenario with a matrix variable and this one line, with `$VARIANT` empty for the samples:
 
 ```bash
-./e2e.sh "$SCENARIO"
+./e2e.sh "$SCENARIO" "$VARIANT"
 ```
 
 The job needs docker that can run privileged containers, Go 1.27 and the inotify limit. Keep `results/` as the job's artifact. An unset or empty `$SCENARIO` exits 2, so the job fails rather than pass without running anything.
@@ -86,18 +127,18 @@ What runs outside k3s in production runs as a container next to the k3s nodes, n
 | cert-manager, with a ClusterIssuer of the company CA | `acme.example.test`: OpenBao as the company CA, serving ACME |
 | The CNPG operator and the barman-cloud plugin | `s3.example.test`: versitygw as the S3 store, with TLS |
 | The CNPG cluster `pg` | `otel`, `prometheus`, `alertmanager`, `grafana` `.example.test`: the [monitoring](monitoring.md) |
-| The OTel collectors | `orders-app.test`: the client, reading and writing through [pgfallback](https://github.com/djosh34/pgfallback) |
+| The OTel collectors | `orders-app.test`: the client, reading and writing through [pgfallback](https://github.com/djosh34/pgfallback), or GORM in a variant run |
 
 1. Checks the inotify limit and starts its own dockerd.
 2. Builds the `client` image, then creates the outside containers, copies their files in with `docker cp`, and starts them. The company CA gets a new root on every run.
-3. Starts three k3s servers with embedded etcd, `k3s-1.example.test` to `k3s-3.example.test`, with [`samples/k3s/`](../samples/k3s). Each node runs [`e2e/node-init.sh`](../e2e/node-init.sh), which restarts k3s when it exits, so the pods outlive k3s as they do under systemd.
+3. Starts three k3s servers with embedded etcd, `k3s-1.example.test` to `k3s-3.example.test`, with [`samples/k3s/`](../samples/k3s) or the variant's `k3s/`. Each node runs [`e2e/node-init.sh`](../e2e/node-init.sh), which restarts k3s when it exits, so the pods outlive k3s as they do under systemd.
 4. Runs one CoreDNS, metrics-server and Traefik pod per node, as [samples.md](samples.md#one-pod-per-node) says.
-5. Makes the Secrets only the run knows, then installs the releases of [`samples/charts/releases.yaml`](../samples/charts/releases.yaml) in order.
+5. Makes the Secrets only the run knows, then installs the releases of [`samples/charts/releases.yaml`](../samples/charts/releases.yaml), or of the variant's, in order.
 6. Waits until the cluster is healthy, takes a first backup, and waits until Prometheus has every source's metrics. It then names the instances: the primary, replica 1 and replica 2.
 7. Runs the scenario. Its first When line starts the client.
 8. Runs `always.feature`, also after a failed scenario, and writes the results.
 
-The client gets its own certificate from the company CA by ACME. For the whole scenario it reads and writes through `pgfallback` every 0.25 s, each with a 10 s limit, and connects to each node's rw port alone every 0.25 s. `Given no writes` starts it without writes.
+The client gets its own certificate from the company CA by ACME. For the whole scenario it reads and writes through `pgfallback`, or GORM in a variant run, every 0.25 s, each with a 10 s limit, and connects to each node's rw port alone every 0.25 s. `Given no writes` starts it without writes.
 
 ## Add or change a scenario
 

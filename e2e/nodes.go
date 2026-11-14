@@ -59,7 +59,7 @@ func startNodes(ctx context.Context) error {
 	return nil
 }
 
-// startNode starts node i, with samples/k3s at /e2e/k3s: k3s reads
+// startNode starts node i, with k3s/ of the settings at /e2e/k3s: k3s reads
 // config.yaml there, and node-init.sh copies the files of manifests/ into
 // the server's manifests directory, which k3s applies. The node's data is a
 // volume. The /tmp tmpfs is there because containerd tests idmapped mounts
@@ -71,7 +71,7 @@ func startNode(ctx context.Context, i int) error {
 	if i > 0 {
 		join = []string{"--server", "https://" + nodeIP(0) + ":6443"}
 	}
-	files, err := dirFiles(filepath.Join(samplesDir, "k3s"), "/e2e/k3s")
+	files, err := dirFiles(filepath.Join(settingsDir(), "k3s"), "/e2e/k3s")
 	if err != nil {
 		return err
 	}

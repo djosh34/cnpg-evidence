@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -149,6 +150,39 @@ func TestNewPrimary(t *testing.T) {
 	}
 }
 
+// In a variant run, reading takes the limit writing had last: a scenario's
+// own, else always.feature's. With the samples it keeps its own.
+func TestReadingLimit(t *testing.T) {
+	gap := func(context.Context, *scenario) (time.Duration, error) { return 100 * time.Second, nil }
+	reading := word{longest: gap, writingLimit: true}
+	writing := word{longest: gap, scenarioLimit: true}
+	run := func(v, own string) error {
+		variant = v
+		t.Cleanup(func() { variant = "" })
+		s := &scenario{limits: map[string]int{}}
+		if own != "" && s.measure("writing | healthy", writing, own, "", "") == nil {
+			t.Fatalf("writing < %s s passed a gap of 100 s", own)
+		}
+		s.inAlways = true
+		// always.feature's writing line fails when the scenario's own
+		// limit is short; its reading line still runs on its own.
+		werr := s.measure("writing | healthy", writing, "180", "", "")
+		if (werr != nil) != (own != "") {
+			t.Fatalf("always.feature's writing line: %v", werr)
+		}
+		return s.measure("reading | healthy", reading, "5", "", "")
+	}
+	if run("", "") == nil {
+		t.Error("samples: reading < 5 s passed a gap of 100 s")
+	}
+	if err := run("first-list", ""); err != nil {
+		t.Errorf("variant: reading took the limit of 180 s and failed: %v", err)
+	}
+	if run("first-list", "30") == nil {
+		t.Error("variant with writing < 30 s: reading passed a gap of 100 s")
+	}
+}
+
 // Every line of the feature files in samples/features binds to exactly one
 // line shape, every "is", "has been" and verb line is in the vocabulary, and
 // every alert line names a role. Each scenario has its own tag, and the
@@ -219,7 +253,7 @@ func TestFeaturesUseTheVocabulary(t *testing.T) {
 			t.Errorf("the tag @%s is on more than one scenario", tags[i])
 		}
 	}
-	listed, err := workflowScenarios()
+	listed, excluded, err := workflowScenarios()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,25 +261,41 @@ func TestFeaturesUseTheVocabulary(t *testing.T) {
 	if !slices.Equal(listed, tags) {
 		t.Errorf("e2e.yml runs %v, the feature files have %v", listed, tags)
 	}
+	left := slices.Sorted(slices.Values(notInVariants))
+	slices.Sort(excluded)
+	if !slices.Equal(excluded, left) {
+		t.Errorf("e2e.yml leaves %v out of a variant run, notInVariants %v", excluded, left)
+	}
+	for _, name := range left {
+		if !slices.Contains(tags, name) {
+			t.Errorf("notInVariants has %s, which is no scenario", name)
+		}
+	}
 }
 
-// workflowScenarios are the scenarios of the matrix of e2e.yml.
-func workflowScenarios() ([]string, error) {
+// workflowScenarios are the scenarios of the matrix of e2e.yml, and those
+// its exclude leaves out of a variant run.
+func workflowScenarios() (listed, excluded []string, err error) {
 	data, err := os.ReadFile("../.github/workflows/e2e.yml")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var workflow struct {
 		Jobs map[string]struct {
 			Strategy struct {
 				Matrix struct {
 					Scenario []string `yaml:"scenario"`
+					Exclude  string   `yaml:"exclude"`
 				} `yaml:"matrix"`
 			} `yaml:"strategy"`
 		} `yaml:"jobs"`
 	}
 	if err := yaml.Unmarshal(data, &workflow); err != nil {
-		return nil, fmt.Errorf("e2e.yml: %w", err)
+		return nil, nil, fmt.Errorf("e2e.yml: %w", err)
 	}
-	return workflow.Jobs["scenario"].Strategy.Matrix.Scenario, nil
+	matrix := workflow.Jobs["scenario"].Strategy.Matrix
+	for _, m := range regexp.MustCompile(`"scenario":"([a-z0-9-]+)"`).FindAllStringSubmatch(matrix.Exclude, -1) {
+		excluded = append(excluded, m[1])
+	}
+	return matrix.Scenario, excluded, nil
 }

@@ -1,8 +1,9 @@
 // Command client is the application host of the e2e test. It gets its own
 // certificate from the company CA by ACME, then reads and writes through
 // pgfallback, as an application outside the cluster does, until it is
-// killed. pgfallback is https://github.com/djosh34/pgfallback. It prints one
-// line per event on stdout:
+// killed. pgfallback is https://github.com/djosh34/pgfallback. With -gorm it
+// reads and writes through GORM and its own pgx pool on the rw port only,
+// without pgfallback. It prints one line per event on stdout:
 //
 //	<start unix ms> <end unix ms> <what> <address> <result> <detail>
 //
@@ -18,7 +19,7 @@
 //     each host, which shows whether rw takes connections. ok or fail.
 //   - read-attempt, write-attempt: an attempt of pgfallback at rw for that
 //     pool. started when it starts, worked when it connected; a failed one
-//     logs no end.
+//     logs no end. Not with -gorm.
 //   - writes: stopped, once the writes stopped.
 //
 // Each read, write and connect starts on time, also while earlier ones still
@@ -29,12 +30,13 @@
 //
 // Usage:
 //
-//	client -name <name> -acme <directory URL> -ca <file> -hosts <host>[,<host>...] [-writes=false]
+//	client -name <name> -acme <directory URL> -ca <file> -hosts <host>[,<host>...] [-writes=false] [-gorm]
 //
 // The environment variables EAB_KID and EAB_HMAC hold the EAB key of the
 // client's ACME account. The client logs in as orders to the database
 // orders, with sslmode=verify-full against the rw port 5432 of each host;
-// pgfallback adds the read port 5433 of each host.
+// pgfallback adds the read port 5433 of each host. With -gorm the connection
+// string also asks for target_session_attrs=read-write.
 package main
 
 import (
@@ -97,10 +99,57 @@ const createTable = `CREATE TABLE IF NOT EXISTS e2e_writes (
 	at timestamptz NOT NULL DEFAULT now()
 )`
 
+// The statements of the reads and writes. Both pools take @n as a named
+// argument.
 const (
-	insertRow = `INSERT INTO e2e_writes (n) VALUES ($1) RETURNING host(inet_server_addr())`
+	insertRow = `INSERT INTO e2e_writes (n) VALUES (@n) RETURNING host(inet_server_addr())`
 	readRow   = `SELECT host(inet_server_addr()), pg_is_in_recovery()`
 )
+
+// Enough connections for every attempt of the last 10 s, 0.25 s apart,
+// while connects or commits wait.
+const maxConns = 40
+
+// pool is how the client reaches the database: pgfallback's pgx pool, or
+// GORM's.
+type pool interface {
+	exec(ctx context.Context, query string) error
+	// row runs a statement on one connection and scans its one row into
+	// dest. It gives the connection's address, or - when it got none.
+	row(ctx context.Context, query string, args map[string]any, dest ...any) (string, error)
+	close()
+}
+
+// pgxPool is a pool through pgfallback.
+type pgxPool struct{ *pgxpool.Pool }
+
+func openPgfallback(hosts []string, name string) (pool, error) {
+	p, err := newPool(app, hosts, name)
+	if err != nil {
+		return nil, err
+	}
+	return pgxPool{p}, nil
+}
+
+func (p pgxPool) exec(ctx context.Context, query string) error {
+	_, err := p.Exec(ctx, query)
+	return err
+}
+
+func (p pgxPool) row(ctx context.Context, query string, args map[string]any, dest ...any) (string, error) {
+	conn, err := p.Acquire(ctx)
+	if err != nil {
+		return "-", err
+	}
+	defer conn.Release()
+	var named []any
+	if args != nil {
+		named = append(named, pgx.NamedArgs(args))
+	}
+	return address(conn.Conn().PgConn()), conn.QueryRow(ctx, query, named...).Scan(dest...)
+}
+
+func (p pgxPool) close() { p.Close() }
 
 func main() {
 	if err := run(); err != nil {
@@ -122,6 +171,7 @@ func run() error {
 	caFile := flag.String("ca", "", "the company CA, in PEM")
 	hostList := flag.String("hosts", "", "the database hosts, separated by commas")
 	writes := flag.Bool("writes", true, "write every 0.25 s")
+	useGORM := flag.Bool("gorm", false, "read and write through GORM on the rw port only, without pgfallback")
 	flag.Parse()
 	if *name == "" || *directory == "" || *caFile == "" || *hostList == "" || flag.NArg() != 0 {
 		flag.Usage()
@@ -135,16 +185,20 @@ func run() error {
 	// Reads and writes each have their own pool, so writes that wait for a
 	// standby to confirm their commit cannot take every connection from the
 	// reads.
-	readPool, err := newPool(app, hosts, "read")
+	open := openPgfallback
+	if *useGORM {
+		open = openGORM
+	}
+	readPool, err := open(hosts, "read")
 	if err != nil {
 		return err
 	}
-	defer readPool.Close()
-	writePool, err := newPool(app, hosts, "write")
+	defer readPool.close()
+	writePool, err := open(hosts, "write")
 	if err != nil {
 		return err
 	}
-	defer writePool.Close()
+	defer writePool.close()
 	var alone []*pgx.ConnConfig
 	for _, host := range hosts {
 		cc, err := connConfig([]string{host})
@@ -272,9 +326,7 @@ func newPool(ctx context.Context, hosts []string, pool string) (*pgxpool.Pool, e
 	if config.ConnConfig, err = connConfig(hosts); err != nil {
 		return nil, err
 	}
-	// Enough for every attempt of the last 10 s, 0.25 s apart, while connects
-	// or commits wait.
-	config.MaxConns = 40
+	config.MaxConns = maxConns
 	// pgx looks up the first rw host first, so a lookup of it outside the
 	// client's own contexts is the start of an attempt.
 	config.ConnConfig.LookupFunc = func(ctx context.Context, host string) ([]string, error) {
@@ -342,10 +394,10 @@ func address(pgConn *pgconn.PgConn) string {
 }
 
 // ensureTable creates the table of the writes, trying once a second.
-func ensureTable(ctx context.Context, pool *pgxpool.Pool) error {
+func ensureTable(ctx context.Context, p pool) error {
 	for {
 		try, cancel := context.WithTimeout(ctx, attemptTimeout)
-		_, err := pool.Exec(try, createTable)
+		err := p.exec(try, createTable)
 		cancel()
 		if err == nil {
 			return nil
@@ -378,40 +430,31 @@ func every250ms(stop <-chan os.Signal, attempt func()) {
 	}
 }
 
-func read(pool *pgxpool.Pool) {
-	run := func(ctx context.Context, conn *pgxpool.Conn) (string, error) {
-		var server string
-		var recovery bool
-		err := conn.QueryRow(ctx, readRow).Scan(&server, &recovery)
-		return fmt.Sprintf("%s recovery=%t", server, recovery), err
-	}
-	attempt(pool, "read", run)
+func read(p pool) {
+	var server string
+	var recovery bool
+	attempt("read", func(ctx context.Context) (string, string, error) {
+		addr, err := p.row(ctx, readRow, nil, &server, &recovery)
+		return addr, fmt.Sprintf("%s recovery=%t", server, recovery), err
+	})
 }
 
-func write(pool *pgxpool.Pool) {
+func write(p pool) {
 	n := time.Now().UnixMicro()
-	run := func(ctx context.Context, conn *pgxpool.Conn) (string, error) {
-		var server string
-		err := conn.QueryRow(ctx, insertRow, n).Scan(&server)
-		return fmt.Sprintf("%d %s", n, server), err
-	}
-	attempt(pool, "write", run)
+	var server string
+	attempt("write", func(ctx context.Context) (string, string, error) {
+		addr, err := p.row(ctx, insertRow, map[string]any{"n": n}, &server)
+		return addr, fmt.Sprintf("%d %s", n, server), err
+	})
 }
 
-// attempt runs one read or write on a connection of the pool and logs it
-// with the address of that connection.
-func attempt(pool *pgxpool.Pool, what string, run func(context.Context, *pgxpool.Conn) (string, error)) {
+// attempt runs one read or write and logs it with the address of the
+// connection it ran on.
+func attempt(what string, run func(context.Context) (addr, detail string, err error)) {
 	ctx, cancel := context.WithTimeout(app, attemptTimeout)
 	defer cancel()
 	start := time.Now()
-	conn, err := pool.Acquire(ctx)
-	if err != nil {
-		logLine(start, time.Now(), what, "-", "fail", oneLine(err))
-		return
-	}
-	defer conn.Release()
-	addr := address(conn.Conn().PgConn())
-	detail, err := run(ctx, conn)
+	addr, detail, err := run(ctx)
 	if err != nil {
 		logLine(start, time.Now(), what, addr, "fail", oneLine(err))
 		return

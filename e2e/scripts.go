@@ -63,7 +63,7 @@ func script(ctx context.Context, stdin, path string, args ...string) (scriptRun,
 }
 
 // desiredValues are the values of the cluster's release, desired.yaml of
-// samples/ with the e2e test's own values/pg.yaml on top, as
+// the settings with the e2e test's own values/pg.yaml on top, as
 // JSON, which the scripts take on stdin.
 func desiredValues(ctx context.Context) (string, error) {
 	return helm(ctx, time.Minute, "get", "values", clusterRelease, "--namespace", namespace, "--output", "json")

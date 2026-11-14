@@ -1,11 +1,20 @@
 name: e2e
 
 # Runs on demand: every scenario of samples/features on amd64 and on arm64,
-# each in its own job with ./e2e.sh. Each job uploads the run's files, also
-# when the scenario failed. A Go test of e2e/ checks that the list below has
-# every scenario.
+# each in its own job with ./e2e.sh, on the settings of samples/ or of the
+# variant given. Each job uploads the run's files, also when the scenario
+# failed. A Go test of e2e/ checks that the list below has every scenario,
+# and that the list a variant run leaves out is notInVariants of
+# e2e/main.go.
 on:
   workflow_dispatch:
+    inputs:
+      variant:
+        description: A directory of variants/; empty for the samples
+        type: string
+        default: ""
+
+run-name: e2e of ${{ inputs.variant || 'the samples' }}
 
 permissions:
   contents: read
@@ -41,6 +50,7 @@ jobs:
           - store-hang
           - store-refuse
           - switchover
+        exclude: ${{ fromJSON(inputs.variant && '[{"scenario":"pgfallback-drain"},{"scenario":"pgfallback-primary-node-loss"},{"scenario":"pgfallback-replica-node-loss"},{"scenario":"rejoin-from-archive"}]' || '[]') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 100
     steps:
@@ -52,7 +62,10 @@ jobs:
           go-version-file: e2e/go.mod
           cache-dependency-path: e2e/go.sum
       - name: Scenario
-        run: ./e2e.sh ${{ matrix.scenario }}
+        env:
+          SCENARIO: ${{ matrix.scenario }}
+          VARIANT: ${{ inputs.variant }}
+        run: ./e2e.sh "$SCENARIO" "$VARIANT"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ !cancelled() }}
         with:
