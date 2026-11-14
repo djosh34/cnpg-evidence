@@ -1,0 +1,6 @@
+cert-manager:
+  # Values for the cert-manager chart v1.21.3, release "cert-manager" in
+  # cert-manager. Everything else is the chart's default: one pod each.
+  # The CRDs, so one install gives a working cert-manager.
+  crds:
+    enabled: true

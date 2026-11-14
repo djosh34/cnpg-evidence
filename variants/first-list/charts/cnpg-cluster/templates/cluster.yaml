@@ -1,0 +1,132 @@
+{{- $c := .Values.cluster }}
+{{- $replicationCN := required "replication.commonName is required" .Values.replication.commonName }}
+# The base of docs/go-live/base.md and the first list of docs/go-live/README.md.
+# Every other field is CNPG's default.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ $c.name }}
+  namespace: {{ $c.namespace }}
+  annotations:
+    # Runs postgres in a pod user namespace: uid {{ $c.postgresUID }} in the pod is another uid on the host.
+    cnpg.io/podPatch: '[{"op":"add","path":"/spec/hostUsers","value":false}]'
+spec:
+  instances: {{ $c.instances }}
+  imageName: {{ $c.imageName }}
+  postgresUID: {{ $c.postgresUID }}
+  postgresGID: {{ $c.postgresGID }}
+  storage:
+    size: {{ $c.storageSize }}
+
+  # One instance per node, so the synchronous copy is on another node.
+  affinity:
+    podAntiAffinityType: required
+
+  # No probes: CNPG's defaults, none of them streaming.
+
+  # A rollout restarts the primary in place: CNPG's default, set to be seen.
+  # A stopping instance ends open sessions at once. In a switchover the old
+  # primary gets 30 s, not 3600 s, to archive its WAL before it stops.
+  primaryUpdateMethod: restart
+  smartShutdownTimeout: 0
+  switchoverDelay: 30
+
+  # No postgres password and no <cluster>-superuser Secret: CNPG's default,
+  # set to be seen.
+  enableSuperuserAccess: false
+
+  bootstrap:
+    {{- if .Values.recovery.enabled }}
+    recovery:
+      source: origin
+    {{- else }}
+    initdb:
+      # Lets the metrics exporter read pg_ident for the compliance query
+      # (queries.yaml). CNPG creates cnpg_metrics_exporter only
+      # after this SQL, so it is created here, as CNPG would.
+      postInitSQL:
+        - CREATE ROLE cnpg_metrics_exporter WITH LOGIN PASSWORD NULL
+        - GRANT SELECT ON pg_ident_file_mappings TO cnpg_metrics_exporter
+        - GRANT EXECUTE ON FUNCTION pg_ident_file_mappings() TO cnpg_metrics_exporter
+      walSegmentSize: {{ $c.walSegmentSize }}  # MB; a restore takes the backup's size
+    {{- end }}
+      # No app database, role or Secret, as after the monolith import of
+      # docs/go-live/new-cluster.md, which this run does not do.
+      database: postgres
+      owner: postgres
+      secret:
+        name: {{ $c.name }}-bootstrap
+
+  certificates:
+    serverTLSSecret: {{ $c.name }}-server
+    serverCASecret: {{ .Values.caSecret }}
+    clientCASecret: {{ .Values.caSecret }}  # client certificates are checked against the CAs in this Secret
+    replicationTLSSecret: {{ $c.name }}-replication  # the replication certificate from certificates.yaml
+
+  postgresql:
+    synchronous:
+      method: any
+      number: 1  # every commit waits for one other instance
+      dataDurability: required  # and stops while no other instance can confirm it
+      failoverQuorum: true  # promotes only a replica that holds every confirmed commit
+    parameters:
+      # A commit returns once one other instance has applied it.
+      synchronous_commit: remote_apply
+    pg_hba:
+      # One line per database: only its own role, only with a certificate.
+      {{- range .Values.databases }}
+      - hostssl {{ .name }} {{ .role }} all cert map=clients
+      {{- end }}
+      # Rejects every other TCP connection before CNPG's final password line.
+      - host all all all reject
+    pg_ident:
+      # Maps the replication certificate's CN to streaming_replica.
+      - cnpg_streaming_replica {{ $replicationCN }} streaming_replica
+      # Exact CNs, each to one role.
+      {{- range .Values.databases }}
+      {{- $role := .role }}
+      {{- range .clientCNs }}
+      - clients {{ . }} {{ $role }}
+      {{- end }}
+      {{- end }}
+
+  managed:
+    # The application roles, one per database, without a password.
+    roles:
+      {{- range .Values.databases }}
+      - name: {{ .role }}
+        ensure: present
+        login: true
+        disablePassword: true  # PASSWORD NULL
+      {{- end }}
+    services:
+      additional:
+        # 5432 on every node, to the primary.
+        - selectorType: rw
+          serviceTemplate:
+            metadata:
+              name: {{ .Values.rwLoadBalancer.name }}
+            spec:
+              type: LoadBalancer
+
+  monitoring:
+    # The queries of queries.yaml.
+    customQueriesConfigMap:
+      - name: {{ $c.name }}-queries
+        key: queries
+
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: {{ $c.name }}-store
+
+  {{- if .Values.recovery.enabled }}
+  externalClusters:
+    - name: origin
+      plugin:
+        name: barman-cloud.cloudnative-pg.io
+        parameters:
+          barmanObjectName: {{ $c.name }}-store
+          serverName: {{ .Values.recovery.sourceCluster }}
+  {{- end }}

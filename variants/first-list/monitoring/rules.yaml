@@ -1,0 +1,376 @@
+# Alert rules for the sample's CNPG cluster, in Prometheus rule-file format.
+# Prometheus or the Mimir ruler evaluates them; Alertmanager only routes the
+# alerts (alertmanager.yaml). docs/monitoring.md lists the scrape targets and
+# the labels the rules expect.
+#
+# The dashboard's Healthy tile counts the firing critical alerts, and a tile
+# is red only while the critical alert it shows fires.
+groups:
+  - name: cnpg-sample
+    rules:
+      # The databases these rules watch: one series per CNPG cluster, with its
+      # namespace and cluster name. Add one entry per cluster. Every alert
+      # below is limited to these clusters.
+      - record: cnpg_sample:database
+        expr: vector(1)
+        labels:
+          namespace: databases
+          cluster: pg
+
+      # The instances whose metrics arrive: the newest cnpg_collector_up of
+      # each is at most 30 s older than the newest of its cluster. A collector
+      # lost with its node sends no stale marker, so without this its last
+      # samples would count for the evaluator's whole lookback, 5 min in
+      # Prometheus. The value is the time of the newest sample.
+      - record: cnpg_sample:instance_reports
+        expr: |
+          max by (namespace, cluster, pod) (timestamp(cnpg_collector_up))
+            > on (namespace, cluster) group_left ()
+          max by (namespace, cluster) (timestamp(cnpg_collector_up)) - 30
+
+      # The instance that reports itself as the primary, out of recovery.
+      - record: cnpg_sample:primary
+        expr: |
+          max by (namespace, cluster, pod) (cnpg_pg_replication_in_recovery == 0)
+            and on (namespace, pod) cnpg_sample:instance_reports
+
+      # One series per instance in the primary's pg_stat_replication, named by
+      # its pod: CNPG sets each replica's application_name to its pod name.
+      - record: cnpg_sample:replica_streaming
+        expr: |
+          count by (namespace, cluster, pod) (
+            label_replace(
+              cnpg_pg_stat_replication_backend_start
+                and on (namespace, pod) cnpg_sample:primary,
+              "pod", "$1", "application_name", "(.+)"))
+
+      # An instance answers when cnpg_collector_up is 1 and it is not fenced:
+      # the exporter keeps cnpg_collector_up at its last value while fenced.
+      # An instance that answers but reports no query metrics, such as
+      # cnpg_pg_replication_in_recovery, may be the primary; CNPGMetricsMissing
+      # covers it.
+      - record: cnpg_sample:instance_answers
+        expr: |
+          max by (namespace, cluster, pod) (cnpg_collector_up == 1 and on (namespace, pod) cnpg_collector_fencing_on == 0)
+            and on (namespace, pod) cnpg_sample:instance_reports
+
+      - alert: CNPGDatabaseDown
+        expr: |
+          cnpg_sample:database
+            unless on (namespace, cluster)
+          (
+            cnpg_sample:primary
+            or
+            (cnpg_sample:instance_answers unless on (namespace, pod) cnpg_pg_replication_in_recovery)
+          )
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: No instance of {{ $labels.namespace }}/{{ $labels.cluster }} reports a running primary.
+          description: PostgreSQL is down or fenced on every instance, no replica was promoted, or the metrics of the primary do not arrive.
+
+      # An instance seen in the last day, other than the primary, that is not
+      # in the primary's pg_stat_replication while a primary reports its
+      # metrics; or an instance seen in the last day whose metrics stopped
+      # arriving: its pod or node is gone, or its scrape fails. The second
+      # part also holds while the exporters report no query metrics, and so
+      # no primary.
+      - alert: CNPGReplicaDown
+        expr: |
+          (
+            (
+              max by (namespace, cluster, pod) (max_over_time(cnpg_collector_up[1d]))
+                unless on (namespace, pod) cnpg_sample:primary
+                unless on (namespace, pod) cnpg_sample:replica_streaming
+                and on (namespace, cluster) cnpg_sample:primary
+            )
+            or
+            (
+              max by (namespace, cluster, pod) (max_over_time(cnpg_collector_up[1d]))
+                unless on (namespace, pod) cnpg_sample:instance_reports
+            )
+          )
+          and on (namespace, cluster) cnpg_sample:database
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Instance {{ $labels.pod }} of {{ $labels.namespace }}/{{ $labels.cluster }} does not stream from the primary or reports no metrics.
+
+      # cnpg_replica_lag_seconds comes from the chart's query on each replica:
+      # 0 when it has replayed all the WAL its primary reported, else the age
+      # of the last transaction it replayed.
+      - alert: CNPGReplicaLag
+        expr: |
+          max by (namespace, cluster, pod) (cnpg_replica_lag_seconds) > 15
+          and on (namespace, cluster) cnpg_sample:database
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Replica {{ $labels.pod }} of {{ $labels.namespace }}/{{ $labels.cluster }} is {{ $value | humanizeDuration }} behind the primary.
+
+      # The last backup is older than 26 h (a daily schedule plus 2 h) or
+      # there is none, the last backup failed, or WAL archiving fails. The
+      # last backup is the newest the plugin reported in the last 2 h: it can
+      # report 0 for a while when its list of the store's backups missed the
+      # backup (docs/monitoring.md).
+      - alert: CNPGBackupFailing
+        expr: |
+          (
+            time() - max by (namespace, cluster) (max_over_time(barman_cloud_cloudnative_pg_io_last_available_backup_timestamp[2h])) > 26 * 3600
+            or
+            max by (namespace, cluster) (barman_cloud_cloudnative_pg_io_last_failed_backup_timestamp)
+              > max by (namespace, cluster) (max_over_time(barman_cloud_cloudnative_pg_io_last_available_backup_timestamp[2h]))
+            or
+            max by (namespace, cluster) (
+              cnpg_pg_stat_archiver_last_failed_time > cnpg_pg_stat_archiver_last_archived_time
+                and on (namespace, pod) cnpg_sample:primary
+            )
+            or
+            (cnpg_sample:database unless on (namespace, cluster) barman_cloud_cloudnative_pg_io_last_available_backup_timestamp)
+          )
+          and on (namespace, cluster) cnpg_sample:database
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: Backups of {{ $labels.namespace }}/{{ $labels.cluster }} fail or are too old.
+          description: The last backup is older than 26 h or missing, the last backup failed, or WAL archiving fails.
+
+      # The used share of the disk each instance keeps its data on, from the
+      # kubelet's stats of its data volume, the PVC named like the pod. For a
+      # local-path volume the kubelet reports the node's filesystem the volume
+      # is on. With the node the kubelet's scrape adds.
+      - record: cnpg_sample:data_disk_used_ratio
+        expr: |
+          max by (namespace, cluster, pod, node) (
+            label_replace(
+              label_replace(
+                kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes,
+                "pod", "$1", "persistentvolumeclaim", "(.+-[0-9]+)"),
+              "cluster", "$1", "pod", "(.+)-[0-9]+")
+            and on (namespace, cluster) cnpg_sample:database
+          )
+
+      # A full data disk stops PostgreSQL, and CNPG does not fail over. When
+      # local-path writes to the node's root disk, k3s's kubelet also evicts
+      # pods once less than 5 % of it is free (95 % used).
+      - alert: CNPGDataDiskFull
+        expr: cnpg_sample:data_disk_used_ratio > 0.7
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: The data disk of instance {{ $labels.pod }} of {{ $labels.namespace }}/{{ $labels.cluster }} on node {{ $labels.node }} is {{ $value | humanizePercentage }} full.
+
+      - alert: CNPGDataDiskFull
+        expr: cnpg_sample:data_disk_used_ratio > 0.8
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: The data disk of instance {{ $labels.pod }} of {{ $labels.namespace }}/{{ $labels.cluster }} on node {{ $labels.node }} is {{ $value | humanizePercentage }} full.
+
+      # When the chart's Certificates <cluster>-server and <cluster>-replication
+      # expire, as cert-manager reports it. 0 means not yet issued.
+      - record: cnpg_sample:certificate_expiration_timestamp_seconds
+        expr: |
+          label_replace(
+            max by (namespace, name) (certmanager_certificate_expiration_timestamp_seconds > 0),
+            "cluster", "$1", "name", "(.+)-(server|replication)")
+          and on (namespace, cluster) cnpg_sample:database
+
+      - alert: CNPGCertificateExpiring
+        expr: cnpg_sample:certificate_expiration_timestamp_seconds - time() < 14 * 86400
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Certificate {{ $labels.namespace }}/{{ $labels.name }} expires in {{ $value | humanizeDuration }}.
+
+      - alert: CNPGCertificateExpiring
+        expr: cnpg_sample:certificate_expiration_timestamp_seconds - time() < 3 * 86400
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: Certificate {{ $labels.namespace }}/{{ $labels.name }} expires in {{ $value | humanizeDuration }}.
+
+      - alert: CNPGConnectionsHigh
+        expr: |
+          sum by (namespace, cluster, pod) (cnpg_backends_total)
+            / max by (namespace, cluster, pod) (cnpg_pg_settings_setting{name="max_connections"})
+          > 0.9
+          and on (namespace, cluster) cnpg_sample:database
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Instance {{ $labels.pod }} of {{ $labels.namespace }}/{{ $labels.cluster }} uses {{ $value | humanizePercentage }} of max_connections.
+
+      # PostgreSQL stops assigning transaction IDs at about 2.1 billion.
+      - alert: CNPGTransactionIDWraparound
+        expr: |
+          max by (namespace, cluster) (cnpg_pg_database_xid_age) > 1000000000
+          and on (namespace, cluster) cnpg_sample:database
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: The oldest transaction ID of {{ $labels.namespace }}/{{ $labels.cluster }} is {{ $value | humanize }} transactions old.
+          description: Vacuum does not freeze old rows; find the database with the highest cnpg_pg_database_xid_age.
+
+      - alert: CNPGComplianceViolation
+        expr: |
+          max by (namespace, cluster, rule, check) (cnpg_compliance_violations) > 0
+          and on (namespace, cluster) cnpg_sample:database
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Check {{ $labels.check }} of rule {{ $labels.rule }} fails on {{ $labels.namespace }}/{{ $labels.cluster }}.
+          description: Run evidence.sh against desired.yaml to see which role, attribute or mapping changed.
+
+      # An instance that answers but reports fewer than the four checks of the
+      # compliance query. An instance that reports nothing is CNPGReplicaDown.
+      - alert: CNPGMetricsMissing
+        expr: |
+          (
+            count by (namespace, cluster, pod) (cnpg_compliance_violations)
+            or
+            cnpg_sample:instance_answers * 0
+          ) < 4
+          and on (namespace, cluster) cnpg_sample:database
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: Metrics of instance {{ $labels.pod }} of {{ $labels.namespace }}/{{ $labels.cluster }} are missing.
+          description: Its exporter answers without the metrics of its queries, or the compliance query fails, for example without its grants.
+
+  # Evaluated every 5 s, with the exporter scraped at least as often, so a
+  # wait of 10 s is seen and a shorter one is not.
+  - name: cnpg-sample-writes
+    interval: 5s
+    rules:
+      # Sessions on the primary that wait for a synchronous standby to confirm
+      # their commit, from the chart's query: every commit waits while no
+      # standby confirms. A series counts only while its samples arrive: two
+      # in the last 15 s. A collector lost with its node sends no stale
+      # marker, and its last sample, which may have caught a commit waiting,
+      # would otherwise count for the evaluator's lookback; when its last two
+      # samples both caught sessions waiting, the alert can fire once. Each
+      # series on its own: an instance that comes back under a new address has
+      # a new series.
+      - alert: CNPGWritesBlocked
+        expr: |
+          max by (namespace, cluster, pod) (
+            cnpg_sync_replication_waiting
+            and count_over_time(cnpg_sync_replication_waiting[15s]) > 1
+          ) > 0
+          and on (namespace, cluster) cnpg_sample:database
+        for: 10s
+        labels:
+          severity: critical
+        annotations:
+          summary: Commits on {{ $labels.pod }} of {{ $labels.namespace }}/{{ $labels.cluster }} wait for a synchronous standby.
+          description: "{{ $value }} sessions wait for a standby to confirm their commit. Reads still work."
+
+  # The alerts of docs/go-live/metrics-and-alerts.md: the k3s and etcd
+  # certificates, cert-manager's certificates and the data volumes, from the
+  # kubelet's and cert-manager's own metrics.
+  - name: go-live
+    rules:
+      # When each k3s CA ends, as unix time.
+      - record: k3s:certificate_expiration_timestamp_seconds
+        expr: time() + max by (subject, usages) (k3s_certificate_expiration_seconds{usages="CertSign"})
+
+      # Rotating a CA needs planning; k3s itself warns from 365 days.
+      - alert: K3sCAExpiring
+        expr: k3s:certificate_expiration_timestamp_seconds - time() < 365 * 86400
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: The k3s CA {{ $labels.subject }} ends in {{ $value | humanizeDuration }}.
+
+      - alert: K3sCAExpiring
+        expr: k3s:certificate_expiration_timestamp_seconds - time() < 30 * 86400
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: The k3s CA {{ $labels.subject }} ends in {{ $value | humanizeDuration }}.
+
+      # k3s renews a certificate only when it starts within 120 days of its
+      # end; restarting k3s on that node renews it.
+      - alert: K3sCertificateExpiring
+        expr: min by (node, subject) (k3s_certificate_expiration_seconds{usages!="CertSign"}) < 30 * 86400
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: The k3s certificate {{ $labels.subject }} on {{ $labels.node }} ends in {{ $value | humanizeDuration }}.
+
+      - alert: K3sCertificateExpiring
+        expr: min by (node, subject) (k3s_certificate_expiration_seconds{usages!="CertSign"}) < 7 * 86400
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: The k3s certificate {{ $labels.subject }} on {{ $labels.node }} ends in {{ $value | humanizeDuration }}.
+
+      # Otherwise every k3s alert above goes silent.
+      - alert: K3sCertificateMetricMissing
+        expr: absent(k3s_certificate_expiration_seconds{subject=~"CN=etcd-server-ca@.*"})
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: No k3s certificate expiry arrives.
+
+      # For 90-day certificates renewal starts with a third of the lifetime
+      # left, so this means it has failed for weeks.
+      - alert: CertManagerCertificateExpiring
+        expr: (certmanager_certificate_expiration_timestamp_seconds > 0) - time() < 14 * 86400
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Certificate {{ $labels.namespace }}/{{ $labels.name }} ends in {{ $value | humanizeDuration }}.
+
+      - alert: CertManagerCertificateExpiring
+        expr: (certmanager_certificate_expiration_timestamp_seconds > 0) - time() < 3 * 86400
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: Certificate {{ $labels.namespace }}/{{ $labels.name }} ends in {{ $value | humanizeDuration }}.
+
+      # Missing, expired or not as its spec says.
+      - alert: CertManagerCertificateNotReady
+        expr: certmanager_certificate_ready_status{condition="False"} == 1
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: Certificate {{ $labels.namespace }}/{{ $labels.name }} is not ready.
+
+      - alert: DataVolumeFull
+        expr: kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes > 0.7
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Volume {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} on {{ $labels.node }} is {{ $value | humanizePercentage }} full.
+
+      # A full data disk stops PostgreSQL, and CNPG does not fail over.
+      - alert: DataVolumeFull
+        expr: kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes > 0.8
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Volume {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} on {{ $labels.node }} is {{ $value | humanizePercentage }} full.

@@ -3,3 +3,5 @@ samples/charts/cnpg-*/charts/
 samples/charts/cnpg-*/Chart.lock
 # What ./e2e.sh copies out of each run.
 results/
+variants/*/charts/cnpg-*/charts/
+variants/*/charts/cnpg-*/Chart.lock

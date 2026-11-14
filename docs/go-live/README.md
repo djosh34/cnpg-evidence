@@ -3,13 +3,22 @@
 What a running k3s and CNPG setup needs before a new production cluster takes traffic, in order of importance. Each link leads to the details: the problem, how behaviour changes, and what to change or check. Some items are checks of settings that are already right by default: they are listed because nothing else notices when a chart or a person changes them.
 
 It assumes:
-- three k3s servers, local-path volumes, CNPG 1.30.1 with the barman-cloud plugin, certificates from an ACME CA through cert-manager;
+- a cluster with [the base](#the-base) below: three k3s servers, CNPG 1.30.1, synchronous replication and the rest. The promises about commits below rest on it;
 - a new cluster that imports the old one's databases;
-- clients outside the cluster on the rw LoadBalancer only, and no read port;
-- synchronous replication with `method: any`, `number: 1`, `dataDurability: required`, `synchronous_commit: remote_apply` and `failoverQuorum: true`, as in the [samples](../samples.md#writes-reads-and-failover). The promises about commits below rest on these;
-- clients that list every node, set a short `connect_timeout`, and treat a COMMIT that got no answer as unknown: it may have been committed.
+- clients outside the cluster that list every node, set a short `connect_timeout`, and treat a COMMIT that got no answer as unknown: it may have been committed.
 
-Everything here was measured in the [scenarios](../e2e.md) or read from the upstream source, unless it says otherwise.
+Everything here was measured in the [scenarios](../e2e.md) or read from the upstream source, unless it says otherwise. The variant [`first-list`](../../variants/first-list) of the scenarios applies the base and the list below, and leaves everything else at its default.
+
+## The base
+
+What the list assumes the cluster already has: only checks, no changes. [base.md](base.md)
+
+- Three k3s servers with local-path volumes, CNPG 1.30.1 with the barman-cloud plugin. [base.md](base.md#three-k3s-servers-and-cnpg-with-the-barman-cloud-plugin)
+- Synchronous replication: `method: any`, `number: 1`, `dataDurability: required`, `synchronous_commit: remote_apply`, `failoverQuorum: true`, as in the [samples](../samples.md#writes-reads-and-failover). [base.md](base.md#synchronous-replication)
+- Certificates from an ACME CA through cert-manager. [base.md](base.md#certificates-from-an-acme-ca-through-cert-manager)
+- The rw LoadBalancer, and no read port. [base.md](base.md#the-rw-loadbalancer-and-no-read-port)
+- WAL archiving and backups to a bucket through the plugin. [base.md](base.md#wal-archiving-and-backups-to-a-bucket)
+- Metrics and alerts on the cluster. [base.md](base.md#metrics-and-alerts-on-the-cluster)
 
 ## Set when the cluster is created
 
@@ -48,7 +57,7 @@ These cannot change on a running cluster.
 - **Check: superuser access off, Secrets encrypted, SELinux in containerd.** Settings that should already be on. [hardening.md](hardening.md#checks)
 - **`hostUsers: false`, and a check that it is set.** A process that escapes the container is nobody on the host, not the owner of the data. [hardening.md](hardening.md#hostusers-false)
 - **Certificate-only logins, with a manual check.** CNPG's last pg_hba line accepts a password from anywhere. [hardening.md](hardening.md#certificate-only-logins)
-- **A NetworkPolicy for the instances, maybe.** Only the clients, the operator, the other instances and the collectors reach PostgreSQL. [hardening.md](hardening.md#a-networkpolicy-for-the-instances)
+- **A NetworkPolicy for the instances.** Only the clients, the operator, the other instances and the collectors reach PostgreSQL. [hardening.md](hardening.md#a-networkpolicy-for-the-instances)
 
 ## Metrics and alerts
 
