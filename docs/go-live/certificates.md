@@ -2,9 +2,9 @@
 
 ## One Issuer per Certificate
 
-**Problem.** cert-manager orders every certificate of an Issuer or ClusterIssuer through that Issuer's one ACME account. When several certificates share an account, an ACME server can time out their orders.
+**Problem.** One Issuer or ClusterIssuer is shared by several Certificates. cert-manager orders every certificate of an Issuer through that Issuer's one ACME account, so they all share it.
 
-**What changes.** Each Certificate has its own namespaced Issuer, and so its own ACME account. Orders never wait on another certificate's account. There is no shared ClusterIssuer for them.
+**What changes.** Each Certificate has its own namespaced Issuer, and so its own ACME account. There is no shared ClusterIssuer for them.
 
 **How.** One Issuer per Certificate, in the Certificate's namespace, each with its own account key Secret:
 
@@ -41,7 +41,7 @@ spec:
   # secretName, commonName, dnsNames, usages as before
 ```
 
-cert-manager uses the external account binding only to register the account. Afterwards the account key in `privateKeySecretRef` is enough, so an EAB key that is valid for a short time works. If that account key Secret is lost, cert-manager registers a new account and needs a valid EAB key again. The [cluster chart](../../samples/charts/cnpg-cluster) has one `issuer` value for both of its Certificates; give each its own.
+cert-manager uses the external account binding only to register the account. Afterwards the account key in `privateKeySecretRef` is enough. If that account key Secret is lost, cert-manager registers a new account and needs a valid EAB key again. The [cluster chart](../../samples/charts/cnpg-cluster) has one `issuer` value for both of its Certificates; give each its own.
 
 Check that every Certificate names its own Issuer:
 
@@ -55,7 +55,7 @@ kubectl get certificate -A -o custom-columns=NS:.metadata.namespace,NAME:.metada
 
 **What changes.** Traefik listens on port 80 only. cert-manager's http-01 challenges need nothing else, and k3s's Traefik does not redirect 80 to 443. Traefik still builds its default certificate in memory; it is served only if someone adds a TLS route (an IngressRoute with `tls`, or an Ingress with `traefik.ingress.kubernetes.io/router.tls`), so who may write routes decides that.
 
-**How.** On every server, in `/var/lib/rancher/k3s/server/manifests/traefik-config.yaml` (as in [`samples/k3s/manifests/`](../../samples/k3s/manifests)):
+**How.** Add `ports.websecure: null` to the `valuesContent` of the existing HelmChartConfig `traefik`, on every server in `/var/lib/rancher/k3s/server/manifests/`. If there is none, create `traefik-config.yaml` there with this content. A second file with another HelmChartConfig `traefik` replaces the first one's values instead of adding to them. The sample [`traefik-config.yaml`](../../samples/k3s/manifests/traefik-config.yaml) does not have this line.
 
 ```yaml
 apiVersion: helm.cattle.io/v1
@@ -69,7 +69,7 @@ spec:
       websecure: null
 ```
 
-Checked by rendering the Traefik chart that k3s 1.33 ships with this config: the entrypoints are 80, 8080 (dashboard, not exposed) and 9100 (metrics), and the Service has only port 80.
+Checked by rendering the Traefik chart that k3s 1.33 ships (`traefik-40.1.4+up40.1.0`) with this config: the entrypoints are `web` on 8000 (Service port 80), `traefik` on 8080 (dashboard, not exposed) and `metrics` on 9100, and the Service has only port 80.
 
 ```bash
 kubectl get svc traefik -n kube-system -o jsonpath='{.spec.ports[*].port}'   # 80
@@ -78,7 +78,7 @@ openssl s_client -connect <node>:443 </dev/null                              # c
 
 ## The self-signed certificates that stay
 
-With 443 gone, none of these is reachable from outside the cluster. Each answers only the API server, the kubelet, etcd or CNPG's own components. Replacing them needs certificates for `.svc` names, which an ACME CA does not issue, or turning the component off.
+With 443 gone, only the k3s certificates are still on the nodes' addresses: on 6443 (API server), 10250 (kubelet) and 2379-2380 (etcd). A firewall in front of the nodes that lets in only 5432 and 80, and 6443 only from the admins' addresses, keeps them out of a scan. The rest answer only inside the cluster. Replacing them needs certificates for `.svc` names, which an ACME CA that only issues for public names does not give, or turning the component off.
 
 | Component | What is self-signed | Who connects |
 |---|---|---|

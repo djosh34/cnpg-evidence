@@ -54,11 +54,11 @@ The k3s-selinux policy labels only `/var/lib/rancher/k3s/storage` for volumes; l
 
 ## hostUsers: false
 
-**Problem.** PostgreSQL runs as the image's postgres uid, for example 999, and that is the same uid on the host. Any host user with that uid can read the data directory and connect to the socket as `postgres`.
+**Problem.** PostgreSQL runs as the image's postgres uid, for example 999, and that is the same uid on the host: a process that escapes the container is uid 999 on the host, the owner of the data directory. Root in a container is root on the host.
 
-**What changes.** The pod runs in its own user namespace: uid 999 in the pod is a high, unused uid on the host. A host user with uid 999 is nobody to the pod.
+**What changes.** The pod runs in its own user namespace: uid 999 in the pod is a high, unused uid on the host, and so is root in the pod. A process that escapes is nobody on the host and cannot read the data directory. The files on the volume keep uid 999 on the host, so no host account may have that uid.
 
-**How.** Needs RHEL 9.4 or later on every node (kernel 5.14.0-427 or later; earlier kernels lack idmapped mounts on tmpfs). On the `Cluster`:
+**How.** Needs a kernel with idmapped mounts on tmpfs on every node: Linux 6.3 or later, or a distribution kernel that has them backported. On the `Cluster`:
 
 ```yaml
 metadata:
@@ -66,16 +66,16 @@ metadata:
     cnpg.io/podPatch: '[{"op":"add","path":"/spec/hostUsers","value":false}]'
 ```
 
-It applies to new pods, so restart the instances once (`kubectl cnpg restart <cluster> -n <namespace>`). It was not run together with k3s's SELinux mode on a real node: apply it to a test cluster on the same nodes first. Check:
+It applies to new pods, so restart the instances once (`kubectl cnpg restart <cluster> -n <namespace>`). It was not run together with k3s's SELinux mode on a real node: apply it to a test cluster on the same nodes first. Check, also later, since a chart change can drop the annotation:
 
 ```bash
-uname -r                                                                       # 5.14.0-427 or later
 kubectl get pod -n <namespace> <instance pod> -o jsonpath='{.spec.hostUsers}'  # false
-ps -o uid=,comm= -C postgres | head -3                                         # a high uid, not the image's
-awk -F: '$2 + $3 > 65536' /etc/subuid /etc/subgid                              # nothing: see below
+ps -o uid=,comm= -C postgres | head -3                                         # on the node: a high uid, not the image's
+getent passwd <image's postgres uid>                                           # on every node: nothing
+awk -F: '$2 + $3 > 65536' /etc/subuid /etc/subgid                              # on every node: nothing, see below
 ```
 
-The pods' uids come from the range above 65536. A host user with a subordinate id range there (`useradd` on RHEL hands out ranges from 100000) can map those uids into a namespace of its own and so become the pod's postgres. Keep `/etc/subuid` and `/etc/subgid` free of such ranges.
+The pods' uids come from the range above 65536. A host user with a subordinate id range there (`useradd` on many distributions hands out ranges from 100000) can map those uids into a namespace of its own and so become the pod's postgres. Keep `/etc/subuid` and `/etc/subgid` free of such ranges.
 
 ## Certificate-only logins
 
@@ -106,7 +106,8 @@ Before: list every client, its certificate's CN and its database, and confirm ea
 
 ```bash
 psql "host=<node> dbname=<database> user=<role> sslmode=verify-full sslrootcert=ca.crt sslcert=client.crt sslkey=client.key" -c 'select 1'   # works
-psql "host=<node> dbname=<database> user=<role> password=x sslmode=require" -c 'select 1'   # rejected: no pg_hba.conf entry / reject
+psql "host=<node> dbname=<database> user=<role> password=x sslmode=require sslcertmode=disable" -c 'select 1'   # fails: connection requires a valid client certificate
+psql "host=<node> dbname=postgres user=<role> password=x sslmode=require sslcertmode=disable" -c 'select 1'     # fails: pg_hba.conf rejects connection
 ```
 
 Right after an in-place restart of an instance, its pg_ident holds CNPG's own lines only, for a few seconds; certificate logins wait until the cluster's lines are back.

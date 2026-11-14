@@ -1,12 +1,12 @@
 # Failover happens by itself
 
-With these, losing the primary's node gives a new primary that takes writes without a person: about 75 seconds later in the scenarios, most of it Kubernetes marking the node as lost (k3s's default 50 s node grace period).
+With these, losing the primary's node gives a new primary that takes writes without a person: 69 to 88 seconds later in 16 runs of that scenario, most of it Kubernetes marking the node as lost (k3s's default 50 s node grace period).
 
 ## No streaming probe
 
 **Problem.** With `probes.startup.type: streaming` (or the same for readiness), an instance is ready only once it streams from a primary. When the primary's node is lost and a replica restarts at that moment, that replica can never become ready: there is no primary to stream from. The failover quorum needs every replica ready to decide, so nothing is promoted until the old node returns. Promoting a replica by hand then risks the wrong one: in a test, that lost 75 commits the clients had been told were done. With a streaming readiness probe, no replica was promoted at all.
 
-**What changes.** With CNPG's default probes (`pg_isready`), an instance is ready once PostgreSQL accepts connections. The quorum promotes the replica that holds every confirmed commit, in about 80 to 120 seconds, and keeps every commit. The cost, a replica serving reads while it is still behind, does not exist without a read port.
+**What changes.** With CNPG's default probes (`pg_isready`), an instance is ready once PostgreSQL accepts connections. The quorum promotes the replica that holds every confirmed commit and keeps every commit; with a replica restarting at the same time, that took about 80 to 120 seconds. The cost, a replica serving reads while it is still behind, does not exist without a read port.
 
 **How.** Check that the `Cluster` sets no streaming probe:
 
@@ -21,7 +21,7 @@ If it does, remove `spec.probes.startup` and `spec.probes.readiness`.
 
 **Problem.** Kubernetes moves the pods of a lost node only after 5 minutes. CNPG does nothing for a cluster while one of its plugins does not answer, failover included, and retries with a back-off of up to about 17 minutes. With the only barman-cloud plugin pod on the lost node, a failover took 6.5 minutes in one test, and in another there was still no primary after 15 minutes. With the only operator pod on the lost node, nothing reconciles until the pod has moved (not measured).
 
-**What changes.** One plugin pod and one operator pod per node. The pods elect a leader; when the leader's node is lost, another pod takes over within about 20 seconds. Failover then took 69 to 88 seconds in 16 runs.
+**What changes.** One plugin pod and one operator pod per node. The pods elect a leader; when the leader's node is lost, another pod takes over within about 20 seconds. Failover then took the 69 to 88 seconds above.
 
 **How.** In the values of the `plugin-barman-cloud` chart (as in [`cnpg-plugin-barman-cloud/values.yaml`](../../samples/charts/cnpg-plugin-barman-cloud/values.yaml)):
 

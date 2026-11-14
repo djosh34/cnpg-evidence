@@ -47,13 +47,13 @@ k3s's leaf certificates last a year and are renewed only when k3s starts within 
 |---|---|---|---|
 | A k3s CA ends within a year | `k3s:certificate_expiration_timestamp_seconds - time() < 365 * 86400` | warning | Rotating a CA (`k3s certificate rotate-ca`) needs planning; k3s itself warns from 365 days |
 | A k3s CA ends within 30 days | `… < 30 * 86400` | critical | |
-| A k3s certificate ends within 30 days | `min by (node, subject) (k3s_certificate_expiration_seconds{usages!="CertSign"}) < 30 * 86400` | warning | That node's k3s has not restarted for about 11 months; restarting k3s there renews it |
+| A k3s certificate ends within 30 days | `min by (node, subject) (k3s_certificate_expiration_seconds{usages!="CertSign"}) < 30 * 86400` | warning | k3s has not started on that node since the certificate came within 120 days of its end; restarting k3s there renews it |
 | A k3s certificate ends within 7 days | `… < 7 * 86400` | critical | |
 | The k3s certificate metric is missing | `absent(k3s_certificate_expiration_seconds{subject=~"CN=etcd-server-ca@.*"})`, for 1 h | warning | Otherwise every alert above goes silent |
-| A cert-manager certificate ends within 14 days | `(certmanager_certificate_expiration_timestamp_seconds > 0) - time() < 14 * 86400` | warning | Renewal starts at two thirds of the lifetime, so this means it has failed for weeks |
+| A cert-manager certificate ends within 14 days | `(certmanager_certificate_expiration_timestamp_seconds > 0) - time() < 14 * 86400` | warning | For 90-day certificates: renewal starts with a third of the lifetime left, so this means it has failed for weeks. For a shorter lifetime, use well under a third of it |
 | A cert-manager certificate ends within 3 days | `… < 3 * 86400` | critical | |
-| A cert-manager certificate is not ready | `certmanager_certificate_ready_status{condition="False"} == 1`, for 1 h | warning | Issuance or renewal fails now, before the expiry alerts |
+| A cert-manager certificate is not ready | `certmanager_certificate_ready_status{condition="False"} == 1`, for 1 h | warning | The certificate is missing, expired or does not match its spec. A failed renewal while the old certificate is still valid can stay Ready, so the expiry alerts are still needed |
 | A data volume is 70 % full | `kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes > 0.7`, for 5 min | warning | |
-| A data volume is 80 % full | `… > 0.8`, for 5 min | critical | The kubelet evicts pods from about 85 % on k3s |
+| A data volume is 80 % full | `… > 0.8`, for 5 min | critical | A full data disk stops PostgreSQL, and CNPG does not fail over |
 
 The expiry alerts can wait 15 minutes (`for: 15m`): the values change slowly. The disk alerts in the samples, with the rest of the sample rules, are in [`samples/monitoring/rules.yaml`](../../samples/monitoring/rules.yaml).
