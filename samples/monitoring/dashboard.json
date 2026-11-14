@@ -911,7 +911,7 @@
    "id": 7,
    "type": "stat",
    "title": "Data disks",
-   "description": "The fullest disk that holds an instance's data, by node. Orange over 70 %; red while CNPGDataDiskFull is critical, over 80 %, before Kubernetes evicts pods at about 85 %.",
+   "description": "The fullest disk that holds an instance's data, by node. Orange over 70 %; red while CNPGDataDiskFull is critical, over 80 %. A full data disk stops PostgreSQL.",
    "datasource": {
     "type": "prometheus",
     "uid": "${datasource}"

@@ -154,9 +154,9 @@ groups:
             and on (namespace, cluster) cnpg_sample:database
           )
 
-      # Kubernetes evicts pods from a node from about 85 % used: by default
-      # the kubelet keeps 10 % of the node's filesystem and 15 % of the image
-      # filesystem free, and on k3s both are the disk local-path uses.
+      # A full data disk stops PostgreSQL, and CNPG does not fail over. When
+      # local-path writes to the node's root disk, k3s's kubelet also evicts
+      # pods once less than 5 % of it is free (95 % used).
       - alert: CNPGDataDiskFull
         expr: cnpg_sample:data_disk_used_ratio > 0.7
         for: 5m

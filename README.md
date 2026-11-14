@@ -24,6 +24,7 @@ Sample charts for a CloudNativePG (CNPG) cluster that accepts only certificate l
 | Change a chart, its values or the k3s settings | [samples.md](docs/samples.md#change-a-chart-its-values-or-the-k3s-settings) |
 | Add or change a scenario | [e2e.md](docs/e2e.md#add-or-change-a-scenario) |
 | Install the samples on a real cluster | [samples.md](docs/samples.md#install-on-a-cluster) |
+| Bring an existing setup to production, most important first | [go-live/](docs/go-live/README.md) |
 | Collect the evidence and draw its images | [Evidence](#evidence) |
 | Release a version | [release.md](docs/release.md) |
 

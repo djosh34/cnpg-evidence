@@ -290,7 +290,7 @@ def dashboard(rules):
         thr=thresholds((None, WARN), (14, OK_FILL)), missing="Missing", text_size={"valueSize": 30}))
     panels.append(alert_stat(
         "Data disks", "The fullest disk that holds an instance's data, by node. Orange over 70 %; red while CNPGDataDiskFull "
-        "is critical, over 80 %, before Kubernetes evicts pods at about 85 %.",
+        "is critical, over 80 %. A full data disk stops PostgreSQL.",
         f"topk(1, {DATA_DISK})", "CNPGDataDiskFull", gp(21, y, 3, H5), legend="{{node}}", unit="percentunit", decimals=0,
         thr=thresholds((None, OK_FILL), (0.7, WARN)), text_mode="value_and_name", missing="Missing",
         text_size={"titleSize": 12, "valueSize": 30}))

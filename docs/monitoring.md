@@ -80,7 +80,7 @@ Every alert is one a person must act on. Thresholds are in the expressions, each
 
 - **Replica lag.** The chart's query reports 0 when the replica has replayed all the WAL its primary last reported, else the age of the last transaction it replayed. CNPG's `cnpg_pg_replication_lag` reports minutes on a caught-up replica after a restart. Only one replica confirms each commit, so the other can fall behind while it serves reads.
 - **Writes blocked.** `cnpg_sync_replication_waiting` counts sessions whose commit waits right now, so a long statement does not count. The rule group runs every 5 s.
-- **Data disks.** For `local-path` the kubelet reports the node's whole filesystem. On k3s the kubelet evicts pods at about 85 %, so 80 % comes first.
+- **Data disks.** For `local-path` the kubelet reports the whole filesystem that holds the volume. A full data disk stops PostgreSQL, and CNPG does not fail over. When that filesystem is the node's root disk, k3s's kubelet also evicts pods once less than 5 % is free.
 - **Backups.** The plugin can report its last backup as 0 for a while when its list of the store misses the backup, as after the primary's node and another node were lost. The rule takes the newest value of the last 2 h, so such a 0 counts only after 2 h.
 
 **Notifications.** Alertmanager groups by `namespace`, `cluster` and alert name: one notification when a group fires, one when it resolves, a reminder every 4 h. `CNPGDatabaseDown` mutes the replica, lag, backup and missing-metrics alerts of its database, `CNPGReplicaDown` mutes the lag and missing metrics of its instance, and a critical alert mutes its own warning.
