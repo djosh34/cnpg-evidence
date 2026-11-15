@@ -384,7 +384,7 @@ func TestDashboards(t *testing.T) {
 }
 
 // A pod missing from k evaluations in a row of a panel every 15 s, also at
-// the start or the end, was gone for k+1 steps: one is 30 s, three 60 s.
+// the start or the end, was gone for k steps.
 func TestPanelGap(t *testing.T) {
 	shown := func(ts ...int64) map[int64]bool {
 		m := map[int64]bool{}
@@ -399,10 +399,11 @@ func TestPanelGap(t *testing.T) {
 		want  time.Duration
 	}{
 		{"always", shown(0, 15, 30, 45, 60), 0},
-		{"one missing", shown(0, 15, 45, 60), 30 * time.Second},
-		{"three missing", shown(0, 60), 60 * time.Second},
-		{"the first missing", shown(15, 30, 45, 60), 30 * time.Second},
-		{"the last two missing", shown(0, 15, 30), 45 * time.Second},
+		{"one missing", shown(0, 15, 45, 60), 15 * time.Second},
+		{"three missing", shown(0, 60), 45 * time.Second},
+		{"the first three missing", shown(45, 60), 45 * time.Second},
+		{"the last two missing", shown(0, 15, 30), 30 * time.Second},
+		{"none shown", shown(), 75 * time.Second},
 	}
 	for _, tt := range tests {
 		if got := longestGap(tt.shown, 0, 60, 15); got != tt.want {

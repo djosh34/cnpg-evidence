@@ -544,19 +544,17 @@ func (m *monitoring) panelNotRed(ctx context.Context, title string) error {
 	return nil
 }
 
-// longestGap is the longest time a panel did not show a pod: the
-// evaluations from from to end, every step seconds, that showed it are
-// shown. A pod missing from one evaluation between two that show it was
-// gone for two steps.
+// longestGap is the longest time a panel did not show a pod: the longest
+// run of evaluations from from to end, every step seconds, missing from
+// shown, one step each.
 func longestGap(shown map[int64]bool, from, end, step int64) time.Duration {
-	var longest int64
-	last := from - step
+	var run, longest int64
 	for t := from; t <= end; t += step {
+		run += step
 		if shown[t] {
-			last = t
-			continue
+			run = 0
 		}
-		longest = max(longest, t-last+step)
+		longest = max(longest, run)
 	}
 	return time.Duration(longest) * time.Second
 }
@@ -587,7 +585,8 @@ func (p panel) redQueries() (map[string]bool, error) {
 }
 
 // shownSince: the stat panel with the title never lost one of the pods for
-// 60 s or longer from from to now, evaluated every 15 s as a dashboard that
+// 60 s or longer, four evaluations in a row, from from to now, evaluated
+// every 15 s as a dashboard that
 // refreshes would show it. An exporter can answer once without its query
 // metrics after a change of the Cluster, which drops the instance from one
 // evaluation; that is no gap on-call needs to see. It returns the longest

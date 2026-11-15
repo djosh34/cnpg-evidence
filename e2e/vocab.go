@@ -186,12 +186,15 @@ func killNodes(ctx context.Context, s *scenario, a args) error {
 		nodes = append(nodes, node)
 	}
 	if err := stopNodes(ctx, nodes...); err != nil {
-		// The stop can fail after some nodes stopped: those are kept for
-		// endOutages.
+		// The stop can fail after some nodes stopped: endOutages starts
+		// those, and every node it cannot tell about, which docker start
+		// leaves as it is when it runs. Only a node known to have stopped
+		// lost its pods' firewall rules and paused replay.
 		for i, node := range nodes {
 			running, inspectErr := command(ctx, "docker", "inspect", "-f", "{{.State.Running}}", node)
 			if inspectErr != nil {
 				err = errors.Join(err, inspectErr)
+				s.down = append(s.down, node)
 				continue
 			}
 			if running == "false" {
