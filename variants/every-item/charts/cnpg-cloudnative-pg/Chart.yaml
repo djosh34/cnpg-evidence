@@ -1,0 +1,9 @@
+apiVersion: v2
+name: cnpg-cloudnative-pg
+description: CloudNativePG with namespaced RBAC and one pod per node.
+type: application
+version: 0.1.0
+dependencies:
+  - name: cloudnative-pg
+    version: 0.29.1
+    repository: file://../cloudnative-pg

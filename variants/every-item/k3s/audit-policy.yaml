@@ -1,0 +1,12 @@
+# The API audit policy of every server: who opened a shell next to the data or
+# read a Secret in the database namespace. Everything else is not logged.
+apiVersion: audit.k8s.io/v1
+kind: Policy
+omitStages: [RequestReceived]
+rules:
+  - level: Metadata
+    namespaces: [databases]
+    resources:
+      - group: ""
+        resources: [pods/exec, pods/attach, secrets]
+  - level: None

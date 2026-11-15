@@ -1,10 +1,9 @@
 # Later
 
-What the samples do that can wait until after go-live. [samples.md](../samples.md#what-the-samples-change-and-why) gives the reason for each.
+What the samples do that can wait until after go-live. [samples.md](../samples.md#what-the-samples-change-and-why) gives the reason for each. The variant [`every-item`](../../variants/every-item) of the scenarios applies the base, the first list and every item below.
 
 **Cluster**
 - **Metrics over TLS** (`monitoring.tls.enabled: true`). A change rolls every instance, and the collectors must scrape with `https`.
-- **`primaryUpdateMethod: switchover`**, if wanted, once a CNPG release with [cloudnative-pg#11677](https://github.com/cloudnative-pg/cloudnative-pg/pull/11677) runs (1.31.0 or later).
 - **`allocateLoadBalancerNodePorts: false`** on the rw LoadBalancer, so 5432 is the only port it opens on the nodes.
 - **The monitoring queries in a Secret** (`customQueriesSecret`) and `metricsQueriesTTL: 0s`. Only the metrics improve: with a ConfigMap, the exporters lose their query metrics while a lost pod is being deleted.
 

@@ -1,0 +1,19 @@
+# The k3s server settings of every node, the file a node reads as
+# /etc/rancher/k3s/config.yaml. The e2e test adds each node's own address, the
+# join to the first node and the DNS server.
+
+# Secrets are encrypted before they reach etcd.
+secrets-encryption: true
+
+# The API audit log of audit-policy.yaml, which the e2e test puts next to this
+# file in /e2e/k3s. The log stays on the node: ship it off with a log
+# collector. Without rotation it grows until the disk is full.
+kube-apiserver-arg:
+  - audit-policy-file=/e2e/k3s/audit-policy.yaml
+  - audit-log-path=/var/lib/rancher/k3s/server/logs/audit.log
+  - audit-log-maxsize=100
+  - audit-log-maxbackup=5
+
+# kube-proxy cannot set nf_conntrack_max inside a container.
+kube-proxy-arg:
+  - conntrack-max-per-core=0

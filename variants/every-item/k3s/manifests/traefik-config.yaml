@@ -1,0 +1,15 @@
+# k3s's Traefik as a DaemonSet, one pod per node, on port 80 only: no port 443
+# with its self-signed default certificate. cert-manager's http-01 challenges
+# need only port 80. Put this file into /var/lib/rancher/k3s/server/manifests/
+# on every server; k3s merges these values into its own Traefik HelmChart.
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    deployment:
+      kind: DaemonSet
+    ports:
+      websecure: null
