@@ -1,6 +1,6 @@
 # evidence.sh
 
-`scripts/evidence/evidence.sh` shows who can do what to the CNPG cluster, in PostgreSQL and in Kubernetes, and lists every [rule](../README.md#rules) the live state breaks. It only reads. The `evidence` scenario runs it.
+`scripts/evidence/evidence.sh` shows who can do what to the CNPG cluster, in PostgreSQL and in Kubernetes, and lists every [rule](../README.md#rules) the live state breaks. It only reads. Six [scenarios](e2e.md) run it, one part each.
 
 ## Run
 
@@ -16,13 +16,24 @@ yq -o=json samples/desired.yaml | bash scripts/evidence/evidence.sh --ca client-
 
 Exit 0 when `violations` is empty, 1 when not, 2 on any error, with nothing on stdout. It takes about 15 s.
 
+### One part
+
+```bash
+yq -o=json samples/desired.yaml | bash scripts/evidence/evidence.sh --ca client-ca.pem --part tls > evidence.tls.json
+```
+
+`--part` reads and judges only one part: `client-ca`, `logins`, `postgres`, `pods`, `tls` or `kubernetes`, as [What it reads](#what-it-reads) lists them. It still reads the instance pods, to know the primary and the instances, but judges them only for `pods`. The document then has `part`, the violations of that part, its facts and `details` with the primary and the instances (and the pg_hba and pg_ident lines for `logins`). Without `--part` it reads every part and the software versions. The [scenarios](e2e.md) run one part each, so a violation in one part never hides another.
+
 ## What it reads
 
-- **PostgreSQL**, on the primary: every role, which roles hold each special right after `SET ROLE` or by inheritance, and every database. On every instance: `pg_hba_file_rules` and `pg_ident_file_mappings`. pg_hba must match line for line, since PostgreSQL uses the first match; pg_ident must match in any order.
-- **The client CA:** the certificates of the Secret the `Cluster` names must be exactly those of `--ca`.
-- **TLS:** each instance's `ssl_min_protocol_version`, and a handshake with port 9187 through `kubectl port-forward`.
-- **Pods:** every instance pod has `hostUsers: false`, and there are `cluster.instances` of them.
-- **Kubernetes:** every subject of every binding is asked with a SubjectAccessReview, per right below. Existing objects are asked by name, so Roles limited to named objects show. A failed review fails the run.
+Each part, by its name for `--part`:
+
+- **PostgreSQL** (`postgres`), on the primary: every role, which roles hold each special right after `SET ROLE` or by inheritance, and every database.
+- **Logins** (`logins`), on every instance: `pg_hba_file_rules` and `pg_ident_file_mappings`. pg_hba must match line for line, since PostgreSQL uses the first match; pg_ident must match in any order.
+- **The client CA** (`client-ca`): the certificates of the Secret the `Cluster` names must be exactly those of `--ca`.
+- **TLS** (`tls`): each instance's `ssl_min_protocol_version`, and a handshake with port 9187 through `kubectl port-forward`.
+- **Pods** (`pods`): every instance pod has `hostUsers: false`, and there are `cluster.instances` of them.
+- **Kubernetes** (`kubernetes`): every subject of every binding is asked with a SubjectAccessReview, per right below. Existing objects are asked by name, so Roles limited to named objects show. A failed review fails the run.
 
 ## Output
 
