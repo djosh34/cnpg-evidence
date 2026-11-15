@@ -12,13 +12,10 @@ Feature: Monitoring
     and no CNPGComplianceViolation, which is about the whole cluster. While
     CNPGReplicaDown fires for replica 1, the sample's Alertmanager
     configuration mutes its CNPGMetricsMissing, and not that of replica 2.
-    A lost replica does not replay, and the last lag it reported stays in
-    Prometheus for 5 min, so CNPGReplicaLag can fire for replica 1 first.
 
     Given the exporters are healthy < 60 s
     When replica 1's node is killed
     Then CNPGReplicaDown fires for replica 1 < 420 s after the kill
-    And CNPGReplicaLag may fire for replica 1
     And Alertmanager sends CNPGReplicaDown for replica 1 < 60 s
     When Alertmanager gets CNPGMetricsMissing for replica 1
     And Alertmanager gets CNPGMetricsMissing for replica 2

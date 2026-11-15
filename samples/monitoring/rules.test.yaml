@@ -295,6 +295,8 @@ tests:
   - name: replica lag
     interval: 1m
     input_series:
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-2"}', values: '1x20'}
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-3"}', values: '1x20'}
       - {series: 'cnpg_replica_lag_seconds{namespace="databases",cluster="pg",pod="pg-2"}', values: '0x4 20x10 0x5'}
       - {series: 'cnpg_replica_lag_seconds{namespace="databases",cluster="pg",pod="pg-3"}', values: '15x14'}
     alert_rule_test:
@@ -306,6 +308,21 @@ tests:
             exp_annotations:
               summary: Replica pg-2 of databases/pg is 20s behind the primary.
       - {eval_time: 16m, alertname: CNPGReplicaLag}
+
+  # pg-2's node is lost at 5m, and its last sample reports a lag of 200 s,
+  # the age of the last transaction before a pause in writes. The sample
+  # stays for 5 min, but pg-2 no longer reports: no CNPGReplicaLag.
+  - name: a lost replica's last lag sample
+    interval: 15s
+    input_series:
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-1"}', values: '1x60'}
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-2"}', values: '1x20'}
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-3"}', values: '1x60'}
+      - {series: 'cnpg_replica_lag_seconds{namespace="databases",cluster="pg",pod="pg-2"}', values: '0x19 200'}
+      - {series: 'cnpg_replica_lag_seconds{namespace="databases",cluster="pg",pod="pg-3"}', values: '0x60'}
+    alert_rule_test:
+      - {eval_time: 7m15s, alertname: CNPGReplicaLag}
+      - {eval_time: 9m45s, alertname: CNPGReplicaLag}
 
   # The last backup ran at 1 h; at 27 h it is older than 26 h.
   - name: backup too old

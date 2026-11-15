@@ -41,6 +41,25 @@ k3s's leaf certificates last a year and are renewed only when k3s starts within 
 
 `certmanager_certificate_expiration_timestamp_seconds{namespace, name, issuer_name}`, already unix time, and `certmanager_certificate_ready_status{condition}`, from cert-manager's controller on port 9402, for every `Certificate`. The chart marks its pods with `prometheus.io/*` annotations. A collector that discovers targets by `io.opentelemetry.discovery.metrics/*` annotations does not read those; give the pods those annotations through the chart's `podAnnotations`, or add a scrape job like the `cert-manager` job in the sample collector.
 
+## The replica lag alert only for instances that report
+
+**Problem.** A replica's lag comes from the chart's query on that replica: 0 when it has replayed all the WAL its primary reported, else the age of the last transaction it replayed. Just after a pause in writes, one sample can give the age of the last transaction before the pause: minutes, while the replica is less than a second behind. The next sample, 5 s later, is 0 again, and the alert waits 2 minutes, so on its own that sample pages nobody. But a replica lost with its node loses its collector too, which sends no stale marker, so its last sample stays with the evaluator for 5 minutes. In a scenario, the node of a replica was lost 8 s after the first writes following a pause: `CNPGReplicaLag` fired for 3 minutes on a lag of minutes that never was, before `CNPGReplicaDown`.
+
+**What changes.** `CNPGReplicaLag` counts only instances whose metrics still arrive, as the other instance rules do. A lost replica drops out within 30 s, and `CNPGReplicaDown` reports it.
+
+**How.** In the lag alert's expression, add the instance condition of the [sample rules](../../samples/monitoring/rules.yaml):
+
+```yaml
+- alert: CNPGReplicaLag
+  expr: |
+    max by (namespace, cluster, pod) (cnpg_replica_lag_seconds) > 15
+    and on (namespace, cluster, pod) cnpg_sample:instance_reports
+    and on (namespace, cluster) cnpg_sample:database
+  for: 2m
+```
+
+`cnpg_sample:instance_reports` keeps an instance while its newest `cnpg_collector_up` is at most 30 s older than its cluster's newest. The unit test "a lost replica's last lag sample" in [`rules.test.yaml`](../../samples/monitoring/rules.test.yaml) checks it.
+
 ## Alerts
 
 | Alert | Expression | Severity | Why |

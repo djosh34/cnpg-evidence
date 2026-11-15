@@ -66,7 +66,7 @@ A collector lost with its node sends no stale marker, so its last samples stay f
 |---|---|---|---|
 | `CNPGDatabaseDown` | critical | No instance reports a running primary | 3 min |
 | `CNPGReplicaDown` | critical | An instance seen in the last day, other than the primary, is not in the primary's `pg_stat_replication`, or its metrics stopped | 5 min |
-| `CNPGReplicaLag` | critical | A replica's `cnpg_replica_lag_seconds` is above 15 s | 2 min |
+| `CNPGReplicaLag` | critical | A replica's `cnpg_replica_lag_seconds` is above 15 s, while its metrics arrive | 2 min |
 | `CNPGWritesBlocked` | critical | Sessions on the primary wait for a standby to confirm their commit, at every scrape | 10 s |
 | `CNPGBackupFailing` | critical | The newest backup of the last 2 h is older than 26 h, missing or failed, or WAL archiving fails | 10 min |
 | `CNPGDataDiskFull` | warning, critical | An instance's data disk is over 70 % or 80 % used | 5 min |

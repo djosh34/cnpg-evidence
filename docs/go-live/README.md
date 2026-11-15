@@ -70,6 +70,7 @@ These cannot change on a running cluster.
 
 - **Certificate expiry and disk usage as metrics.** k3s (for its own and etcd's certificates) and cert-manager already export their certificate expiry, and the kubelet the volume usage; the collectors only need to scrape them. [metrics-and-alerts.md](metrics-and-alerts.md)
 - **The alerts on them.** [metrics-and-alerts.md](metrics-and-alerts.md#alerts)
+- **The replica lag alert only for instances that report.** A replica lost with its node leaves its last lag sample for 5 minutes; when that sample came just after a pause in writes, `CNPGReplicaLag` pages for minutes of lag that never were. [metrics-and-alerts.md](metrics-and-alerts.md#the-replica-lag-alert-only-for-instances-that-report)
 
 ## To weigh
 
