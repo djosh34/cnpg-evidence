@@ -13,18 +13,19 @@ Feature: One scenario per alert
   @database-down
   Scenario: CNPGDatabaseDown: two of three nodes are lost for 5 minutes
     One etcd member of three leaves no Kubernetes API, so nothing is
-    promoted, and replica 2 reports on. The nodes start once Alertmanager
-    sent the alert. Writes stop until the primary is back. In the samples the
+    promoted, and replica 2 reports on. The nodes start 5 minutes after the
+    kill, once Alertmanager sent the alert. Writes stop until the primary is back. In the samples the
     client reads on through replica 2; in a variant run, reading takes the
     limit of writing. With no primary to stream from, replica 2 reports the
     age of its last replayed transaction as its lag, and the killed
-    instances report nothing for about 5 minutes, so CNPGReplicaLag can fire
+    instances report nothing for over 5 minutes, so CNPGReplicaLag can fire
     for replica 2 and CNPGReplicaDown for them.
 
     When the primary's node and replica 1's node are killed
     Then CNPGDatabaseDown critical fires for the cluster < 300 s after the kill
     And Alertmanager sends CNPGDatabaseDown critical for the cluster < 60 s
-    When the nodes start
+    When 300 s pass after the kill
+    And the nodes start
     Then CNPGDatabaseDown resolves for the cluster < 300 s
     And Alertmanager sends the resolved CNPGDatabaseDown critical for the cluster < 360 s
     And the cluster is healthy < 600 s
@@ -137,6 +138,9 @@ Feature: One scenario per alert
     psql sessions as postgres, each in pg_sleep, bring the sessions CNPG
     counts on the instance to 93 % of max_connections. That leaves the
     connections reserved for superusers free, and a few more for the others.
+    The ended sessions' series can count for the rule evaluator's 5 minute
+    lookback when no stale marker reaches it, so the alert may take that long
+    to resolve.
 
     When sessions are held on replica 1 up to 93 % of max_connections
     Then CNPGConnectionsHigh critical fires for replica 1 < 480 s

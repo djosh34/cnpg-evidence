@@ -309,7 +309,7 @@ func xidAgeExported(ctx context.Context, s *scenario, _ args) error {
 		if !slices.Equal(got, want) {
 			return fmt.Errorf("cnpg_pg_database_xid_age of %s has the databases %v, not %v", pod, got, want)
 		}
-		s.detail = strings.Join(want, ", ")
 	}
+	s.detail = fmt.Sprintf("%d instances", len(pods))
 	return nil
 }

@@ -235,9 +235,9 @@ func TestHostCheckLines(t *testing.T) {
 }
 
 // Every line of the feature files in samples/features binds to exactly one
-// line shape, every "is", "has been" and verb line is in the vocabulary, and
-// every alert line names a role, the cluster or a certificate. Each scenario has its own tag, and e2e.yml
-// lists them all.
+// line shape, every "is", "has been" and verb line is in the vocabulary,
+// and every alert line names a role, the cluster or a certificate. Each
+// scenario has its own tag, and e2e.yml lists them all.
 func TestFeaturesUseTheVocabulary(t *testing.T) {
 	shapes := map[string]*regexp.Regexp{
 		"is": regexp.MustCompile(isLine), "since": regexp.MustCompile(sinceLine), "verb": regexp.MustCompile(verbLine),
