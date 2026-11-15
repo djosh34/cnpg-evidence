@@ -189,13 +189,18 @@ func pauseStore(ctx context.Context) error {
 }
 
 // restoreStore brings back a store that stopStore stopped or pauseStore
-// paused.
+// paused, also when the break failed halfway: a store that was never
+// paused, a stand-in that was never made, or a store that still runs.
 func restoreStore(ctx context.Context, stopped bool) error {
 	if !stopped {
-		_, err := command(ctx, "docker", "unpause", "s3")
+		state, err := command(ctx, "docker", "inspect", "-f", "{{.State.Paused}}", "s3")
+		if err != nil || state != "true" {
+			return err
+		}
+		_, err = command(ctx, "docker", "unpause", "s3")
 		return err
 	}
-	if _, err := command(ctx, "docker", "rm", "-f", storeGone); err != nil {
+	if _, err := command(ctx, "docker", "rm", "-f", storeGone); err != nil && !strings.Contains(err.Error(), "No such container") {
 		return err
 	}
 	_, err := command(ctx, "docker", "start", "s3")

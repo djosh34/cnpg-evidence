@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -345,4 +346,39 @@ func workflowScenarios() (listed, excluded []string, err error) {
 	}
 	env := steps[0].Env
 	return strings.Fields(env["SCENARIOS"]), strings.Fields(env["NOT_IN_VARIANTS"]), nil
+}
+
+// The dashboards of the samples and of every variant decode as the e2e test
+// reads them, and have the two stat panels its lines read: Replica lag, with
+// a query it shows in red, and Instances, with one query.
+func TestDashboards(t *testing.T) {
+	files, err := filepath.Glob("../variants/*/monitoring/dashboard.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range append(files, "../samples/monitoring/dashboard.json") {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var dashboard struct {
+			Panels []panel `json:"panels"`
+		}
+		if err := json.Unmarshal(data, &dashboard); err != nil {
+			t.Errorf("%s: %v", file, err)
+			continue
+		}
+		stats := map[string]panel{}
+		for _, p := range dashboard.Panels {
+			if _, seen := stats[p.Title]; p.Type == "stat" && !seen {
+				stats[p.Title] = p
+			}
+		}
+		if red, err := stats["Replica lag"].redQueries(); err != nil || len(red) != 1 {
+			t.Errorf("%s: Replica lag shows %v in red: %v", file, red, err)
+		}
+		if n := len(stats["Instances"].Targets); n != 1 {
+			t.Errorf("%s: Instances has %d queries", file, n)
+		}
+	}
 }

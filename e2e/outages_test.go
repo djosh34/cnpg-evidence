@@ -10,12 +10,14 @@ import (
 )
 
 // fakeTools puts a docker and a kubectl first on PATH that only record how
-// they were called; kubectl answers that every pod runs on k3s-1. It
-// returns what they were called with since the last call.
-func fakeTools(t *testing.T) func() []string {
+// they were called; kubectl answers that every pod runs on k3s-1. more are
+// further shell case branches, for calls that answer otherwise. It returns
+// what they were called with since the last call.
+func fakeTools(t *testing.T, more ...string) func() []string {
 	dir := t.TempDir()
 	calls := filepath.Join(dir, "calls")
-	tool := "#!/bin/sh\necho \"${0##*/} $*\" >>" + calls + "\ncase \"$*\" in *spec.nodeName*) echo k3s-1 ;; esac\n"
+	tool := "#!/bin/sh\necho \"${0##*/} $*\" >>" + calls + "\ncase \"$*\" in *spec.nodeName*) echo k3s-1 ;; " +
+		strings.Join(more, " ") + " esac\n"
 	for _, name := range []string{"docker", "kubectl"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(tool), 0o755); err != nil {
 			t.Fatal(err)
@@ -76,5 +78,26 @@ func TestEndOutages(t *testing.T) {
 	}
 	if got := calls(); !slices.Equal(got, []string{""}) {
 		t.Errorf("a second time it called %q", got)
+	}
+}
+
+// A store stop that fails halfway, with the store stopped and no stand-in
+// at its address, still leaves the store to bring back.
+func TestEndOutagesAfterAHalfStoppedStore(t *testing.T) {
+	calls := fakeTools(t,
+		`"create --name s3-gone"*) echo no address >&2; exit 1 ;;`,
+		`"rm -f s3-gone") echo "Error response from daemon: No such container: s3-gone" >&2; exit 1 ;;`)
+	ctx := context.Background()
+	s := &scenario{}
+	if breakStore("stopped")(ctx, s, args{}) == nil {
+		t.Fatal("the stand-in failed, and the stop passed")
+	}
+	calls()
+	if _, err := s.endOutages(ctx); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"docker rm -f " + storeGone, "docker start s3"}
+	if got := calls(); !slices.Equal(got, want) {
+		t.Errorf("after the failed line: got %q, want %q", got, want)
 	}
 }

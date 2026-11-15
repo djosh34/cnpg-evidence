@@ -431,10 +431,8 @@ type panel struct {
 				Options string `json:"options"`
 			} `json:"matcher"`
 			Properties []struct {
-				ID    string `json:"id"`
-				Value struct {
-					FixedColor string `json:"fixedColor"`
-				} `json:"value"`
+				ID    string          `json:"id"`
+				Value json.RawMessage `json:"value"`
 			} `json:"properties"`
 		} `json:"overrides"`
 	} `json:"fieldConfig"`
@@ -526,16 +524,9 @@ func (m *monitoring) panelNotRed(ctx context.Context, title string) error {
 	if err != nil {
 		return err
 	}
-	red := map[string]bool{}
-	for _, o := range p.FieldConfig.Overrides {
-		for _, prop := range o.Properties {
-			if o.Matcher.ID == "byFrameRefID" && prop.ID == "color" && prop.Value.FixedColor == "red" {
-				red[o.Matcher.Options] = true
-			}
-		}
-	}
-	if len(red) == 0 {
-		return fmt.Errorf("the dashboard's %s panel has no query it shows in red", title)
+	red, err := p.redQueries()
+	if err != nil {
+		return err
 	}
 	for _, t := range p.Targets {
 		if !red[t.RefID] {
@@ -552,6 +543,31 @@ func (m *monitoring) panelNotRed(ctx context.Context, title string) error {
 		}
 	}
 	return nil
+}
+
+// redQueries are the refIds of the queries the panel shows in red.
+func (p panel) redQueries() (map[string]bool, error) {
+	red := map[string]bool{}
+	for _, o := range p.FieldConfig.Overrides {
+		for _, prop := range o.Properties {
+			if o.Matcher.ID != "byFrameRefID" || prop.ID != "color" {
+				continue
+			}
+			var color struct {
+				FixedColor string `json:"fixedColor"`
+			}
+			if err := json.Unmarshal(prop.Value, &color); err != nil {
+				return nil, fmt.Errorf("the colour of panel %s: %w", p.Title, err)
+			}
+			if color.FixedColor == "red" {
+				red[o.Matcher.Options] = true
+			}
+		}
+	}
+	if len(red) == 0 {
+		return nil, fmt.Errorf("the dashboard's %s panel has no query it shows in red", p.Title)
+	}
+	return red, nil
 }
 
 // shownSince: the stat panel with the title showed each pod at every
