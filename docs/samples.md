@@ -76,7 +76,7 @@ Compared with each project's defaults and examples. The rule numbers are those o
 |---|---|---|
 | **k3s** | | |
 | [Secrets encryption](https://docs.k3s.io/security/secrets-encryption) on: `--secrets-encryption` on new servers | off | The Secrets hold certificate keys and store credentials; without it they sit in plain text in etcd and its snapshots. Rule 8. |
-| An audit policy, given with `--kube-apiserver-arg=audit-policy-file=` and `audit-log-path=`: level `Metadata` for `pods/exec`, `pods/attach` and `secrets` in `databases`, `None` for the rest | no audit log | Records who opened a shell next to the data or read a Secret. Ship the log off the node. |
+| An audit policy, given with `--kube-apiserver-arg=audit-policy-file=` and `audit-log-path=`: level `Metadata` for `pods/exec`, `pods/attach` and `secrets` in `databases` and across all namespaces (`""`), `None` for the rest | no audit log | Records who opened a shell next to the data or read a Secret. Ship the log off the node. |
 | SELinux enforcing, with `enable_selinux` in containerd | off in containerd | Every container gets its own SELinux label. Rule 5. |
 | **cert-manager** | | |
 | `crds.enabled: true` | false | One install gives a working cert-manager. |

@@ -27,4 +27,4 @@ spec:
 kubectl get cluster -n <namespace> <cluster> -o jsonpath='{.spec.primaryUpdateMethod}'   # restart
 ```
 
-If it says `switchover`, remove the line or set `primaryUpdateMethod: restart`. Set `switchover` again only once the cluster runs a CNPG release that has the fix.
+If it says `switchover`, remove the line or set `primaryUpdateMethod: restart`.
