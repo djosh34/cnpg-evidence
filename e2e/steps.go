@@ -7,6 +7,7 @@ import (
 	"io"
 	"maps"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -99,8 +100,10 @@ type scenario struct {
 	started time.Time       // when the scenario started, after the monitoring was ready
 	alerts  map[string]bool // the alerts the scenario names, "<alertname> <pod>": true when they must fire, false when they may
 
-	limits   map[string]int // the scenario's own limits of the measures
-	inAlways bool           // always.feature runs
+	limits        map[string]int // the scenario's own limits of the measures
+	alwaysWriting int            // the limit always.feature gives writing
+	primaryOut    bool           // the primary changed or stopped in the scenario
+	inAlways      bool           // always.feature runs
 
 	stepStart time.Time
 	holding   time.Time // when the "for N s" line running started
@@ -367,8 +370,9 @@ func (s *scenario) event(key string, w word, a args) error {
 // measure checks a measure over the whole scenario against the line's
 // limit. For writing, a scenario's own line sets the limit that
 // always.feature then uses; every other limit of always.feature holds for
-// every scenario. In a variant run, reading takes the limit writing had
-// last.
+// every scenario. In a variant run where the primary changed or stopped,
+// reading takes the limit of writing: the scenario's own, else that of
+// always.feature.
 func (s *scenario) measure(key string, w word, n, after, forN string) error {
 	if n == "" || after != "" || forN != "" {
 		return fmt.Errorf("%s takes only a limit, < N s", key)
@@ -378,9 +382,12 @@ func (s *scenario) measure(key string, w word, n, after, forN string) error {
 		return err
 	}
 	switch own, ok := s.limits[key]; {
-	case w.writingLimit && variant != "":
+	case w.writingLimit && variant != "" && s.primaryOut:
 		if limit, ok = s.limits["writing | healthy"]; !ok {
-			return fmt.Errorf("in a variant run, %s takes the limit of writing; a writing line must come first", key)
+			limit = s.alwaysWriting
+		}
+		if limit == 0 {
+			return fmt.Errorf("%s takes the limit of writing, and no line gave one", key)
 		}
 	case !w.scenarioLimit:
 	case !s.inAlways:
@@ -476,6 +483,32 @@ func (s *scenario) deadline(n, after string) (time.Time, error) {
 	return from.Add(time.Duration(secs) * time.Second), nil
 }
 
+// keepWritingLimit keeps the limit always.feature gives writing: reading
+// can take it before the writing line runs.
+func (s *scenario) keepWritingLimit(sn *godog.Scenario) error {
+	line := regexp.MustCompile(isLine)
+	for _, st := range sn.Steps {
+		if m := line.FindStringSubmatch(st.Text); m != nil && m[1] == "writing" && m[2] == "healthy" && m[3] != "" {
+			var err error
+			s.alwaysWriting, err = strconv.Atoi(m[3])
+			return err
+		}
+	}
+	return errors.New(`always.feature has no line "writing is healthy < N s"`)
+}
+
+// stops marks the primary as stopped when one of the pods is the primary
+// now: the one that became primary last, else the first.
+func (s *scenario) stops(pods ...string) {
+	primary, ok := s.roles["the new primary"]
+	if !ok {
+		primary = s.roles["the primary"]
+	}
+	if slices.Contains(pods, primary) {
+		s.primaryOut = true
+	}
+}
+
 // The roles a line can name. "another instance" is any instance but the
 // primary; "the new primary" is the instance that became primary last; "a
 // replica" is an instance other than the one that became primary last.
@@ -569,6 +602,9 @@ func (s *scenario) runAlways() error {
 	suite := godog.TestSuite{
 		Name: "always",
 		ScenarioInitializer: func(sc *godog.ScenarioContext) {
+			sc.Before(func(ctx context.Context, sn *godog.Scenario) (context.Context, error) {
+				return ctx, s.keepWritingLimit(sn)
+			})
 			s.bind(sc)
 			sc.StepContext().After(func(ctx context.Context, st *godog.Step, _ godog.StepResultStatus, err error) (context.Context, error) {
 				if err != nil && failed == nil {

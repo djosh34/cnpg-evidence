@@ -243,6 +243,7 @@ func idleAfterSwitch(ctx context.Context, _ *scenario, a args) error {
 // values/new-image.yaml. CNPG restarts every instance on it, the primary
 // last, in place.
 func changeImage(ctx context.Context, s *scenario, _ args) error {
+	s.primaryOut = true
 	return s.upgradeCluster(ctx, "--values", filepath.Join(settingsDir(), newImageValues))
 }
 

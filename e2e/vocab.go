@@ -36,8 +36,9 @@ type word struct {
 	back    func(context.Context, *scenario, time.Time) (time.Time, error)
 	// A measure whose limit in always.feature a scenario's own line sets.
 	scenarioLimit bool
-	// A measure that takes the limit of writing in a variant run, whose
-	// client reads on rw only: its reads stop when its writes do.
+	// A measure that takes the limit of writing in a variant run where the
+	// primary changed or stopped: its client reads on rw only, so its reads
+	// stop then as its writes do.
 	writingLimit bool
 }
 
@@ -141,6 +142,7 @@ func promote(ctx context.Context, s *scenario, a args) error {
 	if _, err := kubectl(ctx, "cnpg", "promote", clusterName, pod, "-n", namespace); err != nil {
 		return err
 	}
+	s.primaryOut = true
 	s.newPrimary(pod)
 	return nil
 }
@@ -151,6 +153,7 @@ func fence(ctx context.Context, s *scenario, a args) error {
 	if _, err := kubectl(ctx, "cnpg", "fencing", "on", clusterName, a.pods[0], "-n", namespace); err != nil {
 		return err
 	}
+	s.stops(a.pods[0])
 	s.fenced = append(s.fenced, a.pods[0])
 	return nil
 }
@@ -185,6 +188,7 @@ func killNodes(ctx context.Context, s *scenario, a args) error {
 	if err := stopNodes(ctx, nodes...); err != nil {
 		return err
 	}
+	s.stops(a.pods...)
 	s.down = append(s.down, nodes...)
 	s.downPods = append(s.downPods, a.pods...)
 	return useRunningAPI(s.down)

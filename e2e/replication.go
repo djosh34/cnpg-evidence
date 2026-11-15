@@ -69,6 +69,7 @@ func drainNode(ctx context.Context, s *scenario, a args) error {
 		return err
 	}
 	s.drain = &drained{node: node, run: inBackground(ctx, "kubectl", "drain", node, "--ignore-daemonsets", "--delete-emptydir-data")}
+	s.stops(a.pods[0])
 	logf("draining %s", node)
 	return nil
 }

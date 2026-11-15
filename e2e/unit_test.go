@@ -151,36 +151,40 @@ func TestNewPrimary(t *testing.T) {
 	}
 }
 
-// In a variant run, reading takes the limit writing had last: a scenario's
-// own, else always.feature's. With the samples it keeps its own.
+// In a variant run where the primary changed or stopped, reading takes the
+// limit of writing: the scenario's own, else always.feature's, even before
+// always.feature's writing line runs. Elsewhere it keeps its own.
 func TestReadingLimit(t *testing.T) {
 	gap := func(context.Context, *scenario) (time.Duration, error) { return 100 * time.Second, nil }
 	reading := word{longest: gap, writingLimit: true}
 	writing := word{longest: gap, scenarioLimit: true}
-	run := func(v, own string) error {
+	run := func(v string, primaryOut bool, own string) error {
 		variant = v
 		t.Cleanup(func() { variant = "" })
-		s := &scenario{limits: map[string]int{}}
+		s := &scenario{limits: map[string]int{}, primaryOut: primaryOut}
 		if own != "" && s.measure("writing | healthy", writing, own, "", "") == nil {
 			t.Fatalf("writing < %s s passed a gap of 100 s", own)
 		}
 		s.inAlways = true
-		// always.feature's writing line fails when the scenario's own
-		// limit is short; its reading line still runs on its own.
-		werr := s.measure("writing | healthy", writing, "180", "", "")
-		if (werr != nil) != (own != "") {
-			t.Fatalf("always.feature's writing line: %v", werr)
+		always := &godog.Scenario{Steps: []*messages.PickleStep{
+			{Text: "reading is healthy < 5 s"}, {Text: "writing is healthy < 180 s"},
+		}}
+		if err := s.keepWritingLimit(always); err != nil {
+			t.Fatal(err)
 		}
 		return s.measure("reading | healthy", reading, "5", "", "")
 	}
-	if run("", "") == nil {
+	if run("", true, "") == nil {
 		t.Error("samples: reading < 5 s passed a gap of 100 s")
 	}
-	if err := run("my-variant", ""); err != nil {
-		t.Errorf("variant: reading took the limit of 180 s and failed: %v", err)
+	if run("my-variant", false, "") == nil {
+		t.Error("variant without a change of primary: reading < 5 s passed a gap of 100 s")
 	}
-	if run("my-variant", "30") == nil {
-		t.Error("variant with writing < 30 s: reading passed a gap of 100 s")
+	if err := run("my-variant", true, ""); err != nil {
+		t.Errorf("variant with a change of primary: reading took the limit of 180 s and failed: %v", err)
+	}
+	if run("my-variant", true, "30") == nil {
+		t.Error("variant with a change of primary and writing < 30 s: reading passed a gap of 100 s")
 	}
 }
 
