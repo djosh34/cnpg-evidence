@@ -31,8 +31,8 @@ func (s *scenario) endOutages(ctx context.Context) (string, error) {
 		}
 		done = append(done, what)
 	}
-	restarted := s.downPods
-	if len(s.down) > 0 {
+	restarted, started := s.downPods, len(s.down) > 0
+	if started {
 		what := "started " + strings.Join(s.down, " and ")
 		err := restartNodes(ctx, s.down...)
 		if err == nil {
@@ -42,7 +42,7 @@ func (s *scenario) endOutages(ctx context.Context) (string, error) {
 	}
 	// The next steps need the API server, which waits for etcd's quorum
 	// when two nodes were down.
-	if len(restarted) > 0 && (len(s.fenced)+len(s.paused)+len(s.cut) > 0 || s.drain != nil) {
+	if started && (len(s.fenced)+len(s.paused)+len(s.cut) > 0 || s.drain != nil) {
 		step("the API server answered", poll(ctx, time.Now().Add(5*time.Minute), func(ctx context.Context) error {
 			_, err := kubectl(ctx, "get", "--raw", "/readyz")
 			return err

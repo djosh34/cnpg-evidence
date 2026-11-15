@@ -427,7 +427,7 @@ func onDashboard(ctx context.Context, s *scenario, a args, from time.Time) error
 	}
 	longest, err := s.w.mon.shownSince(ctx, "Instances", a.pods, from)
 	if err == nil || longest > 0 {
-		s.detail = "the longest gap " + seconds(longest)
+		s.detail = fmt.Sprintf("the longest gap %d evaluations, every 15 s", longest/(15*time.Second))
 	}
 	return err
 }

@@ -630,7 +630,7 @@ func (m *monitoring) shownSince(ctx context.Context, title string, pods []string
 		}
 		longest = max(longest, longestGap(shown, from.Unix(), end.Unix(), step))
 		if longest >= time.Minute {
-			return longest, fmt.Errorf("the dashboard's %s panel lost %s for %s", title, pod, seconds(longest))
+			return longest, fmt.Errorf("the dashboard's %s panel lacked %s at %d evaluations in a row, every %d s", title, pod, longest/(step*time.Second), step)
 		}
 	}
 	return longest, nil

@@ -129,7 +129,8 @@ func TestEndOutagesAfterAFailedKill(t *testing.T) {
 }
 
 // A kill whose stop failed and whose node docker cannot tell about keeps
-// the node: the cleanup starts it, and still resumes its pod's replay.
+// the node: the cleanup starts it, waits for the API server, and still
+// resumes its pod's replay.
 func TestEndOutagesAfterAKillDockerCannotTell(t *testing.T) {
 	calls := fakeTools(t,
 		`"stop -t 0 k3s-1") exit 1 ;;`,
@@ -146,7 +147,7 @@ func TestEndOutagesAfterAKillDockerCannotTell(t *testing.T) {
 	if _, err := s.endOutages(ctx); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"docker start k3s-1", "kubectl exec -n " + namespace + " pg-1 -c postgres -- psql -U postgres -d postgres -XqAt -v ON_ERROR_STOP=1 -c " +
+	want := []string{"docker start k3s-1", "kubectl get --raw /readyz", "kubectl exec -n " + namespace + " pg-1 -c postgres -- psql -U postgres -d postgres -XqAt -v ON_ERROR_STOP=1 -c " +
 		"select pg_wal_replay_resume() where pg_is_in_recovery()"}
 	if got := calls(); !slices.Equal(got, want) {
 		t.Errorf("after the failed kill: got %q, want %q", got, want)
