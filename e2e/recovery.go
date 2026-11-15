@@ -243,6 +243,7 @@ func idleAfterSwitch(ctx context.Context, _ *scenario, a args) error {
 // values/new-image.yaml. CNPG restarts every instance on it, the primary
 // last, in place.
 func changeImage(ctx context.Context, s *scenario, _ args) error {
+	s.primaryOut = true
 	return s.upgradeCluster(ctx, "--values", filepath.Join(settingsDir(), newImageValues))
 }
 
@@ -394,6 +395,9 @@ func breakStore(how string) func(context.Context, *scenario, args) error {
 		if s.store != "" {
 			return fmt.Errorf("the store is %s already", s.store)
 		}
+		// Kept before the break, which can fail halfway: the store is then
+		// broken all the same, and endOutages brings it back.
+		s.store = how
 		var err error
 		if how == "stopped" {
 			err = stopStore(ctx)
@@ -403,7 +407,6 @@ func breakStore(how string) func(context.Context, *scenario, args) error {
 		if err != nil {
 			return err
 		}
-		s.store = how
 		logf("the store is %s", how)
 		return nil
 	}

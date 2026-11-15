@@ -17,17 +17,25 @@ import (
 
 // background is a command that runs on while the scenario goes on.
 type background struct {
-	done chan struct{}
-	err  error
+	done   chan struct{}
+	err    error
+	cancel context.CancelFunc
 }
 
 func inBackground(ctx context.Context, name string, args ...string) *background {
-	b := &background{done: make(chan struct{})}
+	ctx, cancel := context.WithCancel(ctx)
+	b := &background{done: make(chan struct{}), cancel: cancel}
 	go func() {
 		_, b.err = command(ctx, name, args...)
 		close(b.done)
 	}()
 	return b
+}
+
+// stop ends the command if it still runs, and waits until it has.
+func (b *background) stop() {
+	b.cancel()
+	<-b.done
 }
 
 // finished is the command's error once it ended, and an error while it
@@ -61,6 +69,7 @@ func drainNode(ctx context.Context, s *scenario, a args) error {
 		return err
 	}
 	s.drain = &drained{node: node, run: inBackground(ctx, "kubectl", "drain", node, "--ignore-daemonsets", "--delete-emptydir-data")}
+	s.stops(a.pods[0])
 	logf("draining %s", node)
 	return nil
 }
@@ -91,11 +100,12 @@ func uncordon(ctx context.Context, s *scenario, a args) error {
 // its connections to port 5432, and the primary ends the instance's WAL
 // sender. The replica stops streaming, while its exporter, which others
 // connect to, goes on answering.
-func cutOff(ctx context.Context, _ *scenario, a args) error {
+func cutOff(ctx context.Context, s *scenario, a args) error {
 	pod := a.pods[0]
 	if err := podFirewall(ctx, pod, "-I"); err != nil {
 		return err
 	}
+	s.cut = append(s.cut, pod)
 	primary, err := clusterStatus(ctx, clusterName, "currentPrimary")
 	if err != nil {
 		return err
@@ -106,8 +116,12 @@ func cutOff(ctx context.Context, _ *scenario, a args) error {
 }
 
 // reconnect: the rule of cutOff is gone.
-func reconnect(ctx context.Context, _ *scenario, a args) error {
-	return podFirewall(ctx, a.pods[0], "-D")
+func reconnect(ctx context.Context, s *scenario, a args) error {
+	if err := podFirewall(ctx, a.pods[0], "-D"); err != nil {
+		return err
+	}
+	s.cut = slices.DeleteFunc(s.cut, func(p string) bool { return p == a.pods[0] })
+	return nil
 }
 
 var sandboxID = regexp.MustCompile(`^[0-9a-f]+$`)
@@ -172,13 +186,17 @@ func metricsArriving(ctx context.Context, s *scenario, a args) error {
 
 // replay pauses or resumes WAL replay on the instances.
 func replay(action string) func(context.Context, *scenario, args) error {
-	return func(ctx context.Context, _ *scenario, a args) error {
+	return func(ctx context.Context, s *scenario, a args) error {
 		for _, pod := range a.pods {
 			if pod == anotherInstance {
 				return errors.New("name the instances")
 			}
 			if _, err := psql(ctx, pod, "postgres", "select pg_wal_replay_"+action+"()"); err != nil {
 				return err
+			}
+			s.paused = slices.DeleteFunc(s.paused, func(p string) bool { return p == pod })
+			if action == "pause" {
+				s.paused = append(s.paused, pod)
 			}
 		}
 		return nil
@@ -225,40 +243,17 @@ func commitDone(_ context.Context, s *scenario, _ args) error {
 	return s.commit.finished()
 }
 
-// replicaLagHealthy: with "for N s", the chart's cnpg_replica_lag_seconds
-// of each replica stays under 1 s in every sample taken since the line
-// started, and every replica has one after 30 s. The timing table gives the
-// most each instance reported since the last event, of it and of CNPG's own
-// cnpg_pg_replication_lag, which reports minutes on a caught-up replica for
-// up to 5 min after its PostgreSQL restarts.
-func replicaLagHealthy(ctx context.Context, s *scenario, _ args) error {
-	if s.holding.IsZero() {
-		return errors.New(`the replica lag takes "for N s"`)
-	}
-	primary, err := clusterStatus(ctx, clusterName, "currentPrimary")
-	if err != nil {
-		return err
-	}
-	pods, err := instances(ctx, clusterName)
-	if err != nil {
+// lagPanelHealthy: the dashboard's Replica lag panel shows no alert state,
+// which it shows in red while CNPGReplicaLag fires. The timing table gives
+// the most each replica reported since the last event, of the chart's
+// cnpg_replica_lag_seconds and of CNPG's own cnpg_pg_replication_lag, which
+// reports minutes on a caught-up replica for up to 5 min after its
+// PostgreSQL restarts.
+func lagPanelHealthy(ctx context.Context, s *scenario, _ args) error {
+	if err := s.w.mon.panelNotRed(ctx, "Replica lag"); err != nil {
 		return err
 	}
 	selector := fmt.Sprintf(`namespace=%q, cluster=%q`, namespace, clusterName)
-	held := time.Since(s.holding)
-	most, err := s.w.mon.values(ctx, fmt.Sprintf(`max by (pod) (max_over_time(cnpg_replica_lag_seconds{%s}[%dms]))`,
-		selector, max(held.Milliseconds(), 1)))
-	if err != nil {
-		return err
-	}
-	for _, pod := range slices.DeleteFunc(pods, func(p string) bool { return p == primary }) {
-		value, ok := most[pod]
-		switch {
-		case !ok && held > 30*time.Second:
-			return fmt.Errorf("no cnpg_replica_lag_seconds of %s in the %s since the line started", pod, seconds(held))
-		case ok && value >= 1:
-			return fmt.Errorf("cnpg_replica_lag_seconds of %s was %.1f s", pod, value)
-		}
-	}
 	window := int(time.Since(s.marks[s.last]).Seconds()) + 1
 	var report []string
 	for _, metric := range []string{"cnpg_replica_lag_seconds", "cnpg_pg_replication_lag"} {

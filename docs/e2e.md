@@ -11,6 +11,8 @@ Scenario: The primary's node is lost for 2 minutes
   And the node starts
 ```
 
+Eight scenarios run the evidence scripts, one part each, so a gap in one part never hides another: `evidence-client-ca`, `evidence-logins`, `evidence-postgres`, `evidence-pods`, `evidence-tls` and `evidence-kubernetes` run one [part of `evidence.sh`](evidence.md#one-part), `prove` runs [`prove.sh`](prove.md) on every node, and `compliance` checks that every instance reports the compliance checks as passing.
+
 Two scenarios run [`host-check.sh`](host-check.md#in-the-scenarios) on every node. `host-check-docker` expects the three checks a node in a container can never pass to fail, each with its known value, so a change to them shows. `host-check` expects every other check to pass, in the samples and in a variant: those checks depend on the settings, so a failure there is a real gap.
 
 ## Run a scenario
@@ -54,15 +56,16 @@ The scenarios are always those of `samples/features/`; a variant has no `feature
 A variant run differs from a samples run in three ways:
 
 - The client reads and writes through GORM, whose `database/sql` pool uses the pgx driver, with no pgfallback and no read port. Its connection string lists the rw port of the three nodes with `target_session_attrs=read-write` and `connect_timeout=2`.
-- Its reads stop during a switchover or a failover, as its writes do. So in `always.feature`, reading takes the limit of writing: the scenario's own, or 180 s.
+- Its reads stop while the primary changes or stops, as its writes do. So in a scenario that promotes an instance, fences the primary, kills or drains the primary's node, or rolls out a new image, reading in `always.feature` takes the limit of writing: the scenario's own, or 180 s. In every other scenario it keeps 5 s, as in the samples: a replica that does not confirm blocks commits, not reads.
 - It leaves out `pgfallback-drain`, `pgfallback-primary-node-loss` and `pgfallback-replica-node-loss`, which test pgfallback, and `rejoin-from-archive`. That scenario needs the primary to drop WAL a stopped replica needs, which CNPG's replication slots prevent when they are on, as CNPG has them by default. Every scenario with a lost node or a switchover still checks that the instances rejoin, through `always.feature`. `./e2e.sh <scenario> <variant>` exits 1 for these before it builds anything.
 
 What the run adds to a variant's settings is only what a run alone knows:
 
 - **The CA root:** the company CA gets a new root on every run, in the Secrets below and in the client.
-- **The run Secrets**, made before the charts: `company-acme-eab` (the EAB key of the samples' ClusterIssuer) and `company-ca` in `cert-manager`; `client-ca`, `s3-ca`, `company-ca` and `backup-creds` (the store's keys) in `databases`; `company-ca` in `otel`. For a variant with one Issuer per Certificate, also an EAB key per Issuer, since a key is good for one ACME account: `pg-server-acme-eab`, `pg-replication-acme-eab`, `pg-restore-server-acme-eab` and `pg-restore-replication-acme-eab` in `databases`, and `otel-client-acme-eab` in `otel`. An EAB Secret has `keyID` and `secret`.
+- **The run Secrets**, made before the charts: `company-acme-eab` (the EAB key of the samples' ClusterIssuer) and `company-ca` in `cert-manager`; `client-ca`, `s3-ca`, `company-ca` and `backup-creds` (CNPG's keys of the [store](#the-store)) in `databases`; `company-ca` in `otel`. For a variant with one Issuer per Certificate, also an EAB key per Issuer, since a key is good for one ACME account: `pg-server-acme-eab`, `pg-replication-acme-eab`, `pg-restore-server-acme-eab` and `pg-restore-replication-acme-eab` in `databases`, and `otel-client-acme-eab` in `otel`. An EAB Secret has `keyID` and `secret`.
 - **The test endpoints:** the containers outside k3s, by the names in [What a run does](#what-a-run-does). A variant's values name them as the samples do: `https://acme.example.test/v1/pki/acme/directory` and `https://s3.example.test` in [`samples/values/`](../samples/values), `otel.example.test:4317` in the collector's chart, the node names `k3s-1.example.test` to `k3s-3.example.test`, and the client `orders-app.test` in `desired.yaml`.
 - **The nodes:** each node's `--node-ip`, `--tls-san`, `--resolv-conf` and join address, and one CoreDNS pod per node, as in step 4 below. Traefik runs as the variant's `k3s/manifests` say. metrics-server runs as in step 4.
+- **The nodes' data filesystems**, one per node, as in [Each node's data filesystem](#each-nodes-data-filesystem).
 
 [`variants/first-list`](../variants/first-list) applies the [base and the first list](go-live/README.md) of `docs/go-live/`, and leaves every other setting at the CNPG, chart or k3s default. It also keeps the samples' image (the list's uid item needs an image whose `postgres` is not CNPG's uid 26) and what the docker nodes need. As for the samples, the run's first backup stands in for a schedule.
 
@@ -96,21 +99,29 @@ Each run writes a new directory `results/<scenario>-<time>/`, time in UTC:
 | `cucumber.json`, `junit.xml` | The scenario's steps and results. |
 | `always.cucumber.json`, `always.junit.xml` | The same for `always.feature`. |
 | `state.txt` | `docker ps`, the last log lines of every container, the nodes, pods, events and CNPG objects, and the alert history. After a failure it is also printed at the end of the log. |
+| `k3s-1.log` to `k3s-3.log` | Each node's whole log, k3s's and the kubelet's, with docker's timestamps. |
+| `disks.md` | Each node's [data filesystem](#each-nodes-data-filesystem): its size, the most it held and when, what it held at the end, and what each volume holds then. Also the runner's free space before the run. |
 | `client.log` | The client's log: one line per read, write, connect and attempt, with the address it used ([format](../e2e/client/main.go)). |
 | `pgfallback.md` | The [pgfallback report](#the-pgfallback-report), for scenarios with a `pgfallback has been healthy` line. |
-| `evidence.json`, `evidence.desired.json`, `prove.<node>.json`, `prove.desired.json`, `host-check.<node>.json` | What the evidence scripts printed, for scenarios that run them. `cnpg-report` [draws them](report.md#run); host-check needs its desired document from [`desired.sh --source host-check`](desired.md) first. |
+| `evidence.<part>.json`, `evidence.desired.json`, `prove.<node>.json`, `prove.desired.json`, `host-check.<node>.json` | What the evidence scripts printed, for scenarios that run them. `cnpg-report` [draws](report.md#run) the prove and host-check documents; host-check needs its desired document from [`desired.sh --source host-check`](desired.md) first. An `evidence.sh` document of one part has only that part. |
 
 Start with `timing.md`: the first row with a failure names the line that failed, and its *Measured* column gives what was seen. Then read `state.txt` for what the cluster looked like at the end.
 
 ## Run scenarios in CI
 
-On GitHub, [`e2e.yml`](../.github/workflows/e2e.yml) runs every scenario on an amd64 and an arm64 runner, one job each, in parallel. It runs on demand only:
+On GitHub, [`e2e.yml`](../.github/workflows/e2e.yml) runs every scenario on an amd64 runner, one job each, in parallel. It runs on demand only. It takes three inputs:
+
+- `variant`: a directory of `variants/`; empty for the samples.
+- `scenarios`: scenario tags, comma-separated; empty for every scenario. A tag that no scenario has, or that a variant run leaves out, stops the run before any job.
+- `arm64`: `true` runs every job on an arm64 runner too. Off by default.
 
 ```bash
-gh workflow run e2e.yml --ref <branch>            # the samples
+gh workflow run e2e.yml --ref <branch>                               # every scenario of the samples on amd64
 gh workflow run e2e.yml --ref <branch> -f variant=my-variant
-gh run list --workflow e2e.yml --limit 1          # the run's id
-gh run download <run id> --name switchover-X64    # one job's results
+gh workflow run e2e.yml --ref <branch> -f scenarios=fence,switchover # two scenarios
+gh workflow run e2e.yml --ref <branch> -f arm64=true                 # also on arm64
+gh run list --workflow e2e.yml --limit 1                             # the run's id
+gh run download <run id> --name switchover-X64                       # one job's results
 ```
 
 Each job uploads its `results/` as `<scenario>-<arch>`, where the arch is `X64` or `ARM64`, also when the scenario failed.
@@ -131,27 +142,56 @@ What runs outside k3s in production runs as a container next to the k3s nodes, n
 |---|---|
 | k3s: CoreDNS, Traefik, local-path, metrics-server | `dns`: CoreDNS for every name below |
 | cert-manager, with a ClusterIssuer of the company CA, or an Issuer per Certificate | `acme.example.test`: OpenBao as the company CA, serving ACME |
-| The CNPG operator and the barman-cloud plugin | `s3.example.test`: versitygw as the S3 store, with TLS |
+| The CNPG operator and the barman-cloud plugin | `s3.example.test`: versitygw as the [S3 store](#the-store), with TLS |
 | The CNPG cluster `pg` | `otel`, `prometheus`, `alertmanager`, `grafana` `.example.test`: the [monitoring](monitoring.md) |
 | The OTel collectors | `orders-app.test`: the client, reading and writing through [pgfallback](https://github.com/djosh34/pgfallback), or GORM in a variant run |
 
-1. Checks the inotify limit and starts its own dockerd.
+1. Checks the inotify limit and starts its own dockerd. Checks that the runner's disk has room, then makes each node's [data filesystem](#each-nodes-data-filesystem).
 2. Builds the `client` image, then creates the outside containers, copies their files in with `docker cp`, and starts them. The company CA gets a new root on every run.
 3. Starts three k3s servers with embedded etcd, `k3s-1.example.test` to `k3s-3.example.test`, with [`samples/k3s/`](../samples/k3s) or the variant's `k3s/`. Each node runs [`e2e/node-init.sh`](../e2e/node-init.sh), which restarts k3s when it exits, so the pods outlive k3s as they do under systemd.
 4. Runs one CoreDNS, metrics-server and Traefik pod per node, as [samples.md](samples.md#one-pod-per-node) says. For a variant, CoreDNS, as the [first list](go-live/README.md#failover-happens-by-itself) says; for `every-item` also metrics-server, as [later.md](go-live/later.md) says. Traefik as the variant's `k3s/manifests` say.
 5. Makes the Secrets only the run knows, then installs the releases of [`samples/charts/releases.yaml`](../samples/charts/releases.yaml), or of the variant's, in order.
 6. Waits until the cluster is healthy, takes a first backup, and waits until Prometheus has every source's metrics. It then names the instances: the primary, replica 1 and replica 2.
 7. Runs the scenario. Its first When line starts the client.
-8. Runs `always.feature`, also after a failed scenario, and writes the results.
+8. After a failed line, [ends the outages](#after-a-failed-line) still in place.
+9. Runs `always.feature`, also after a failed scenario, and writes the results.
+10. Removes the nodes, then unmounts their data filesystems and deletes the images.
 
 The client gets its own certificate from the company CA by ACME. For the whole scenario it reads and writes through `pgfallback`, or GORM in a variant run, every 0.25 s, each with a 10 s limit, and connects to each node's rw port alone every 0.25 s. `Given no writes` starts it without writes.
+
+### Each node's data filesystem
+
+Each node keeps its local-path volumes, the instances' data and WAL, on a filesystem of its own, as the [first list](go-live/disk-and-bucket.md#the-data-disk) asks of a production node. In every run, of the samples and of a variant, the run makes one 4 GiB ext4 image per node in `/e2e-disks`, a volume of the e2e container, allocated in full up front. It mounts each on a loop device and binds it into its node at `/var/lib/rancher/k3s/storage` before k3s starts; [`node-init.sh`](../e2e/node-init.sh) refuses to start k3s without it. etcd, the images and the logs stay on the node's own volume. The mount outlives a node's `docker stop` and `docker start`, so a killed node keeps its data.
+
+The kubelet reports this filesystem in `kubelet_volume_stats_*`, so `CNPGDataDiskFull` and the dashboard's data disk panels see a node's own disk. A full one stops only that node's PostgreSQL: the runner's disk gave the three images their 12 GiB at the start.
+
+Before it makes them, the run checks that the runner's disk has 20 GiB free: 12 GiB for the images and 8 GiB for the rest of the run. With less it stops with that message. Every 5 s it notes how much each filesystem holds; `disks.md` gives the most and the end. At the end it removes the nodes, unmounts the filesystems and deletes the images. If the run is killed, removing the e2e container and its volume releases them too.
+
+### The store
+
+`s3.example.test` is [versitygw](https://github.com/versity/versitygw) with its own users and versioning. Its bucket is the one [disk-and-bucket.md](go-live/disk-and-bucket.md#a-bucket-nothing-can-delete-from) asks for: versioned, with that page's bucket policy. The policy lets CNPG's keys, in the Secret `backup-creds`, list, read and write, and refuses everyone the deletes and the changes of versioning, lifecycle and the policy. versitygw has no lifecycle rules at all. Its root keys pass every policy, as an account's root does, so only the run has them; CNPG never does.
+
+When it starts the store, the run checks with CNPG's keys that a write and a read work, and that a delete and a change of versioning, of the policy or of the bucket are refused. A run whose store does not hold these limits stops there.
+
+### After a failed line
+
+Each scenario ends its own faults in its own lines. When a line fails partway, the run first ends the outages still in place, then runs `always.feature`:
+
+- it starts the killed nodes, and waits up to 5 min for the API server before the steps that need it;
+- it brings back a stopped or paused store;
+- it removes the firewall rule of a cut-off instance;
+- it unfences the fenced instances;
+- it resumes paused replay;
+- it stops an unfinished drain and uncordons its node.
+
+Nothing else is undone, and the run does none of CNPG's work: no promote, rejoin or pod deletion. `always.feature` then checks that the cluster gets healthy on its own. An instance whose node was restarted lost its firewall rule and its paused replay with the node, so those are left alone. The timing table has a row for this step with what it did.
 
 ## Add or change a scenario
 
 1. Write the scenario in a `.feature` file of `samples/features/`, with its own tag: lower-case words with dashes. Use only the lines of the [vocabulary](#vocabulary).
-2. Add the tag to the `scenario` list of [`e2e.yml`](../.github/workflows/e2e.yml).
+2. Add the tag to `SCENARIOS` in the `plan` job of [`e2e.yml`](../.github/workflows/e2e.yml).
 3. Check both without a cluster: `go -C e2e test ./...`. `TestFeaturesUseTheVocabulary` fails on a line outside the vocabulary, on a tag used twice, and when the list in `e2e.yml` differs from the tags.
-4. Run it: `./e2e.sh <tag>`, or the [workflow](#run-scenarios-in-ci) for both architectures.
+4. Run it: `./e2e.sh <tag>`, or the [workflow](#run-scenarios-in-ci) with `-f scenarios=<tag>`.
 
 A new kind of line needs a word in [`e2e/vocab.go`](../e2e/vocab.go) and a function that does or checks it. Step code only turns a line into one call.
 
@@ -206,7 +246,8 @@ Events:
 | `replay on <role> is paused`, `is resumed`, and `on <role> and <role> are` | `pg_wal_replay_pause()` or `pg_wal_replay_resume()`. |
 | `<role> is cut off`, `<role> is reconnected` | A firewall rule in the pod's network namespace rejects its connections to 5432, and the primary ends its WAL sender; then the rule goes. |
 | `writing stops` | The client stops writing; reads go on. The line ends once every write it started has ended. |
-| `desired.sh runs`, `evidence.sh runs`, `prove.sh runs`, `host-check.sh runs` | Runs the script as its doc says: `desired.sh` and `evidence.sh` against the cluster, `prove.sh` and `host-check.sh` as root on every node. |
+| `desired.sh runs`, `prove.sh runs`, `host-check.sh runs` | Runs the script as its doc says: `desired.sh` against the cluster, `prove.sh` and `host-check.sh` as root on every node. |
+| `the <part> part of evidence.sh runs` | Runs `evidence.sh --part <part>` against the cluster: `client-ca`, `logins`, `postgres`, `pods`, `tls` or `kubernetes`. |
 
 States, checked now, within the line's limit, or for its time:
 
@@ -231,10 +272,10 @@ States, checked now, within the line's limit, or for its time:
 | `the backup is done` | The backup's phase is completed. |
 | `the commit is done` | The started insert ended and succeeded. |
 | `<role>'s metrics are arriving` | Prometheus has its `cnpg_collector_up` 1 from the last 30 s. |
-| `the replica lag is healthy for N s` | Each replica's `cnpg_replica_lag_seconds` stays under 1 s. |
+| `the replica lag panel is healthy` | The dashboard's Replica lag panel shows no alert state: the query it shows in red, while `CNPGReplicaLag` fires, has no result. With `for N s` it holds the whole time. The timing table gives the most each replica reported since the last event, of `cnpg_replica_lag_seconds` and of CNPG's own `cnpg_pg_replication_lag`. |
 | `compliance is healthy`, `compliance on pg-restore is healthy` | Every instance reported the four compliance checks as 0 in the last 30 s. |
 | `the exporters are healthy` | Every exporter answered in the last 30 s with its query metrics. |
-| `evidence.sh passes`, `prove.sh passes` | No violation; every probe as in the desired document, on every node. |
+| `the <part> part of evidence.sh passes`, `prove.sh passes` | No violation in that part; every probe as in the desired document, on every node. |
 | `no acknowledged write is lost`, `... lost in pg-restore` | Stops the client; every write it got acknowledged is in `e2e_writes` on the primary, or of `pg-restore`. |
 | `the alerts are healthy` | No alert fires. The alerts the scenario says `fired` or `fires` fired, and no other did but those it says `may fire`. |
 | `the dashboard is healthy` | Every panel of the dashboard gives a value through Grafana. |
@@ -246,7 +287,7 @@ Measures and since lines:
 | `reading is healthy < N s` | The client never went N s without a successful read. |
 | `writing is healthy < N s` | The client never went N s without an acknowledged write, until the writes stop. A scenario's own limit also replaces the one in `always.feature`. With `after the <event>`: an acknowledged write sent after the event, by N s after it. |
 | `writing has been down since the <event>` | No write sent since the event was acknowledged. |
-| `the exporters of <role> and <role> have been healthy since the <event>` | In every 15 s one of their exporters answered with its query metrics, and none went 60 s without answering. |
+| `<role> and <role> have been on the dashboard since the <event>` | The dashboard's Instances panel, evaluated every 15 s since the event as a dashboard that refreshes would show it, never lacked either instance at four evaluations in a row, 60 s of refreshes. An exporter can answer once without its query metrics after a change of the `Cluster`, which drops the instance from one evaluation; on-call need not see that. The timing table gives the longest run of evaluations without one. |
 | `pgfallback has been healthy since the <event>` | The [pgfallback report](#the-pgfallback-report) finds nothing `pgfallback` must not do. |
 
 ### The pgfallback report

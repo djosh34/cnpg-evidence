@@ -24,12 +24,6 @@ const (
 	corednsImage = "coredns/coredns:1.15.0@sha256:0a9d8c8ddf34347eb59aad9a8784f0710de88d6d112726d11d271f9bc6daca26"
 	openbaoImage = "openbao/openbao:2.7.2@sha256:5046911075e137e154ce49ab051502f4ec7cf367d484ae4a4dce665d9b90561f"
 	s3Image      = "versity/versitygw:v1.10.0@sha256:89cad13cc981986ee284cbafea4613f9533ce6fd5f37a2c96c4c4fb8adb3a316"
-
-	// The store's bucket and keys, as the chart's values and the Secret
-	// backup-creds give them.
-	s3Bucket = "example-bucket"
-	s3Access = "example-access-key"
-	s3Secret = "example-secret-key"
 )
 
 // The ACME directory of the company CA.
@@ -63,57 +57,6 @@ func startDNS(ctx context.Context) error {
 		name: "dns", ip: dnsIP, image: corednsImage, args: []string{"-conf", "/etc/coredns/Corefile"},
 		files: map[string]string{"/etc/coredns/Corefile": corefile, "/etc/coredns/hosts": hosts()},
 	}.run(ctx)
-}
-
-// The store: versitygw with TLS under its own name, with a certificate of
-// the company CA. Its posix backend keeps each bucket as a directory, so the
-// bucket is one before it starts.
-func startStore(ctx context.Context, root *ca) error {
-	cert, key, err := root.serverCert(s3Name)
-	if err != nil {
-		return err
-	}
-	return container{
-		name: "s3", ip: s3IP, image: s3Image,
-		opts: []string{"--entrypoint", "/usr/local/bin/versitygw"},
-		args: []string{"--access", s3Access, "--secret", s3Secret, "--port", ":443",
-			"--cert", "/tls/tls.crt", "--key", "/tls/tls.key", "posix", "/data"},
-		files: map[string]string{"/tls/tls.crt": string(cert), "/tls/tls.key": string(key)},
-		dirs:  []string{"/data/" + s3Bucket},
-	}.run(ctx)
-}
-
-// The store breaks in one of two ways. Stopped, it refuses connections: its
-// address belongs to a container that listens on no port. Paused, it takes
-// connections and never answers.
-const storeGone = "s3-gone"
-
-func stopStore(ctx context.Context) error {
-	if _, err := command(ctx, "docker", "stop", "-t", "0", "s3"); err != nil {
-		return err
-	}
-	return container{
-		name: storeGone, ip: s3IP, image: k3sImage, opts: []string{"--entrypoint", "/bin/sleep"}, args: []string{"86400"},
-	}.run(ctx)
-}
-
-func pauseStore(ctx context.Context) error {
-	_, err := command(ctx, "docker", "pause", "s3")
-	return err
-}
-
-// restoreStore brings back a store that stopStore stopped or pauseStore
-// paused.
-func restoreStore(ctx context.Context, stopped bool) error {
-	if !stopped {
-		_, err := command(ctx, "docker", "unpause", "s3")
-		return err
-	}
-	if _, err := command(ctx, "docker", "rm", "-f", storeGone); err != nil {
-		return err
-	}
-	_, err := command(ctx, "docker", "start", "s3")
-	return err
 }
 
 // The company CA: OpenBao's PKI with the run's root, serving ACME on 443 with

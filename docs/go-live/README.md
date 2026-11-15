@@ -9,6 +9,13 @@ It assumes:
 
 Everything here was measured in the [scenarios](../e2e.md) or read from the upstream source, unless it says otherwise. The variant [`first-list`](../../variants/first-list) of the scenarios applies the base and the list below, and leaves everything else at its default. The variant [`every-item`](../../variants/every-item) also applies [Later](#later).
 
+Neither variant applies these items of the list, because the scenarios cannot:
+
+- **The import from the old cluster.** The scenarios have no old cluster. Each variant starts with no `app` database, role or Secret, as after the import.
+- **SELinux in containerd.** The runner's kernel has no SELinux, so a node in a container runs k3s without it; the scenario `host-check-docker` shows that check failing.
+- **Object Lock on the bucket**, which [disk-and-bucket.md](disk-and-bucket.md#a-bucket-nothing-can-delete-from) leaves to choice. The test store has every other part: a versioned bucket, that page's bucket policy, CNPG's own keys, no retention policy, and no lifecycle rules, which the store does not support at all ([e2e.md](../e2e.md#the-store)).
+- **A data disk with room for the data.** Each node's data is on a filesystem of its own, as [the data disk](disk-and-bucket.md#the-data-disk) asks, but of 4 GiB, sized for the scenarios ([e2e.md](../e2e.md#each-nodes-data-filesystem)).
+
 ## The base
 
 What the list assumes the cluster already has: only checks, no changes. [base.md](base.md)
@@ -63,6 +70,7 @@ These cannot change on a running cluster.
 
 - **Certificate expiry and disk usage as metrics.** k3s (for its own and etcd's certificates) and cert-manager already export their certificate expiry, and the kubelet the volume usage; the collectors only need to scrape them. [metrics-and-alerts.md](metrics-and-alerts.md)
 - **The alerts on them.** [metrics-and-alerts.md](metrics-and-alerts.md#alerts)
+- **The replica lag alert only for instances that report.** A replica lost with its node leaves its last lag sample for 5 minutes; when that sample came just after a pause in writes, `CNPGReplicaLag` pages for minutes of lag that never were. [metrics-and-alerts.md](metrics-and-alerts.md#the-replica-lag-alert-only-for-instances-that-report)
 
 ## To weigh
 

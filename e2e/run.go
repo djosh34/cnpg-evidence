@@ -80,10 +80,14 @@ func (s *scenario) setUp(sn *godog.Scenario) error {
 }
 
 // tearDown runs always.feature after the scenario, passed or failed, once
-// its cluster was built. It keeps the client's log and the cluster's state,
-// prints the timing table and, on a failure, the state.
+// its cluster was built; after a failed line, it first ends the outages
+// still in place. It keeps the client's log, the cluster's state and the
+// nodes' logs, prints the timing table and, on a failure, the state.
 func (s *scenario) tearDown(sn *godog.Scenario, err error) error {
 	if s.w != nil {
+		if err != nil {
+			err = errors.Join(err, s.afterFailure())
+		}
 		logf("always.feature")
 		err = errors.Join(err, s.runAlways())
 	}
@@ -101,7 +105,30 @@ func (s *scenario) tearDown(sn *godog.Scenario, err error) error {
 	if err != nil {
 		say(os.Stdout, "\n%s", state)
 	}
-	return errors.Join(err, s.results.write("timing.md", table), s.results.write("state.txt", state))
+	return errors.Join(err, s.results.write("timing.md", table), s.results.write("state.txt", state), nodeLogs(s.ctx, s.results))
+}
+
+// nodeLogs writes each node's whole log, k3s's and the kubelet's, to
+// <node>.log, so a node that never registers or turns Ready can be traced.
+// A node that never started has no log.
+func nodeLogs(ctx context.Context, res *results) error {
+	var errs []error
+	for i := range nodeCount {
+		node := nodeName(i)
+		ctx, cancel := context.WithTimeout(ctx, time.Minute)
+		// docker logs prints the container's stderr on its own stderr.
+		out, err := exec.CommandContext(ctx, "docker", "logs", "--timestamps", node).CombinedOutput()
+		cancel()
+		if err != nil && strings.Contains(string(out), "No such container") {
+			continue
+		}
+		if err != nil {
+			errs = append(errs, fmt.Errorf("the log of %s: %w: %s", node, err, out))
+			continue
+		}
+		errs = append(errs, res.write(node+".log", string(out)))
+	}
+	return errors.Join(errs...)
 }
 
 // table is the timing table of the scenario, in Markdown.

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -151,36 +152,40 @@ func TestNewPrimary(t *testing.T) {
 	}
 }
 
-// In a variant run, reading takes the limit writing had last: a scenario's
-// own, else always.feature's. With the samples it keeps its own.
+// In a variant run where the primary changed or stopped, reading takes the
+// limit of writing: the scenario's own, else always.feature's, even before
+// always.feature's writing line runs. Elsewhere it keeps its own.
 func TestReadingLimit(t *testing.T) {
 	gap := func(context.Context, *scenario) (time.Duration, error) { return 100 * time.Second, nil }
 	reading := word{longest: gap, writingLimit: true}
 	writing := word{longest: gap, scenarioLimit: true}
-	run := func(v, own string) error {
+	run := func(v string, primaryOut bool, own string) error {
 		variant = v
 		t.Cleanup(func() { variant = "" })
-		s := &scenario{limits: map[string]int{}}
+		s := &scenario{limits: map[string]int{}, primaryOut: primaryOut}
 		if own != "" && s.measure("writing | healthy", writing, own, "", "") == nil {
 			t.Fatalf("writing < %s s passed a gap of 100 s", own)
 		}
 		s.inAlways = true
-		// always.feature's writing line fails when the scenario's own
-		// limit is short; its reading line still runs on its own.
-		werr := s.measure("writing | healthy", writing, "180", "", "")
-		if (werr != nil) != (own != "") {
-			t.Fatalf("always.feature's writing line: %v", werr)
+		always := &godog.Scenario{Steps: []*messages.PickleStep{
+			{Text: "reading is healthy < 5 s"}, {Text: "writing is healthy < 180 s"},
+		}}
+		if err := s.keepWritingLimit(always); err != nil {
+			t.Fatal(err)
 		}
 		return s.measure("reading | healthy", reading, "5", "", "")
 	}
-	if run("", "") == nil {
+	if run("", true, "") == nil {
 		t.Error("samples: reading < 5 s passed a gap of 100 s")
 	}
-	if err := run("my-variant", ""); err != nil {
-		t.Errorf("variant: reading took the limit of 180 s and failed: %v", err)
+	if run("my-variant", false, "") == nil {
+		t.Error("variant without a change of primary: reading < 5 s passed a gap of 100 s")
 	}
-	if run("my-variant", "30") == nil {
-		t.Error("variant with writing < 30 s: reading passed a gap of 100 s")
+	if err := run("my-variant", true, ""); err != nil {
+		t.Errorf("variant with a change of primary: reading took the limit of 180 s and failed: %v", err)
+	}
+	if run("my-variant", true, "30") == nil {
+		t.Error("variant with a change of primary and writing < 30 s: reading passed a gap of 100 s")
 	}
 }
 
@@ -230,8 +235,8 @@ func TestHostCheckLines(t *testing.T) {
 
 // Every line of the feature files in samples/features binds to exactly one
 // line shape, every "is", "has been" and verb line is in the vocabulary, and
-// every alert line names a role. Each scenario has its own tag, and the
-// matrix of e2e.yml names them all.
+// every alert line names a role. Each scenario has its own tag, and e2e.yml
+// lists them all.
 func TestFeaturesUseTheVocabulary(t *testing.T) {
 	shapes := map[string]*regexp.Regexp{
 		"is": regexp.MustCompile(isLine), "since": regexp.MustCompile(sinceLine), "verb": regexp.MustCompile(verbLine),
@@ -304,7 +309,7 @@ func TestFeaturesUseTheVocabulary(t *testing.T) {
 	}
 	slices.Sort(listed)
 	if !slices.Equal(listed, tags) {
-		t.Errorf("e2e.yml runs %v, the feature files have %v", listed, tags)
+		t.Errorf("e2e.yml lists %v, the feature files have %v", listed, tags)
 	}
 	left := slices.Sorted(slices.Values(notInVariants))
 	slices.Sort(excluded)
@@ -318,8 +323,8 @@ func TestFeaturesUseTheVocabulary(t *testing.T) {
 	}
 }
 
-// workflowScenarios are the scenarios of the matrix of e2e.yml, and those
-// its exclude leaves out of a variant run.
+// workflowScenarios are the scenarios e2e.yml can run, SCENARIOS of its
+// plan step, and those a variant run leaves out, NOT_IN_VARIANTS.
 func workflowScenarios() (listed, excluded []string, err error) {
 	data, err := os.ReadFile("../.github/workflows/e2e.yml")
 	if err != nil {
@@ -327,20 +332,82 @@ func workflowScenarios() (listed, excluded []string, err error) {
 	}
 	var workflow struct {
 		Jobs map[string]struct {
-			Strategy struct {
-				Matrix struct {
-					Scenario []string `yaml:"scenario"`
-					Exclude  string   `yaml:"exclude"`
-				} `yaml:"matrix"`
-			} `yaml:"strategy"`
+			Steps []struct {
+				Env map[string]string `yaml:"env"`
+			} `yaml:"steps"`
 		} `yaml:"jobs"`
 	}
 	if err := yaml.Unmarshal(data, &workflow); err != nil {
 		return nil, nil, fmt.Errorf("e2e.yml: %w", err)
 	}
-	matrix := workflow.Jobs["scenario"].Strategy.Matrix
-	for _, m := range regexp.MustCompile(`"scenario":"([a-z0-9-]+)"`).FindAllStringSubmatch(matrix.Exclude, -1) {
-		excluded = append(excluded, m[1])
+	steps := workflow.Jobs["plan"].Steps
+	if len(steps) != 1 {
+		return nil, nil, fmt.Errorf("e2e.yml: the job plan has %d steps, not one", len(steps))
 	}
-	return matrix.Scenario, excluded, nil
+	env := steps[0].Env
+	return strings.Fields(env["SCENARIOS"]), strings.Fields(env["NOT_IN_VARIANTS"]), nil
+}
+
+// The dashboards of the samples and of every variant decode as the e2e test
+// reads them, and have the two stat panels its lines read: Replica lag, with
+// a query it shows in red, and Instances, with one query.
+func TestDashboards(t *testing.T) {
+	files, err := filepath.Glob("../variants/*/monitoring/dashboard.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range append(files, "../samples/monitoring/dashboard.json") {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var dashboard struct {
+			Panels []panel `json:"panels"`
+		}
+		if err := json.Unmarshal(data, &dashboard); err != nil {
+			t.Errorf("%s: %v", file, err)
+			continue
+		}
+		stats := map[string]panel{}
+		for _, p := range dashboard.Panels {
+			if _, seen := stats[p.Title]; p.Type == "stat" && !seen {
+				stats[p.Title] = p
+			}
+		}
+		if red, err := stats["Replica lag"].redQueries(); err != nil || len(red) != 1 {
+			t.Errorf("%s: Replica lag shows %v in red: %v", file, red, err)
+		}
+		if n := len(stats["Instances"].Targets); n != 1 {
+			t.Errorf("%s: Instances has %d queries", file, n)
+		}
+	}
+}
+
+// A pod missing from k evaluations in a row of a panel every 15 s, also at
+// the start or the end, was gone for k steps.
+func TestPanelGap(t *testing.T) {
+	shown := func(ts ...int64) map[int64]bool {
+		m := map[int64]bool{}
+		for _, t := range ts {
+			m[t] = true
+		}
+		return m
+	}
+	tests := []struct {
+		name  string
+		shown map[int64]bool
+		want  time.Duration
+	}{
+		{"always", shown(0, 15, 30, 45, 60), 0},
+		{"one missing", shown(0, 15, 45, 60), 15 * time.Second},
+		{"three missing", shown(0, 60), 45 * time.Second},
+		{"the first three missing", shown(45, 60), 45 * time.Second},
+		{"the last two missing", shown(0, 15, 30), 30 * time.Second},
+		{"none shown", shown(), 75 * time.Second},
+	}
+	for _, tt := range tests {
+		if got := longestGap(tt.shown, 0, 60, 15); got != tt.want {
+			t.Errorf("%s: got %v, want %v", tt.name, got, tt.want)
+		}
+	}
 }

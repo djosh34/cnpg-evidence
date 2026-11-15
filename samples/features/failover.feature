@@ -27,11 +27,14 @@ Feature: Failover
   Scenario: Two of three nodes are lost for 2 minutes
     One etcd member of three leaves no Kubernetes API, so nothing is
     promoted. Writes stop, as every commit needs a second instance. The
-    client reads on through replica 2.
+    client reads on through replica 2. With no primary to stream from,
+    replica 2 reports the age of its last replayed transaction as its lag,
+    so CNPGReplicaLag can fire for it.
 
     When the primary's node and replica 1's node are killed
     And 120 s pass after the kill
     Then writing has been down since the kill
+    And CNPGReplicaLag may fire for replica 2
     When the nodes start
     Then writing is healthy < 300 s
 

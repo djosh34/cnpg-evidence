@@ -1,10 +1,11 @@
 name: e2e
 
-# Runs on demand: every scenario of samples/features on amd64 and on arm64,
-# each in its own job with ./e2e.sh, on the settings of samples/ or of the
-# variant given. Each job uploads the run's files, also when the scenario
-# failed. A Go test of e2e/ checks that the list below has every scenario,
-# and that the list a variant run leaves out is notInVariants of
+# Runs on demand: the scenarios of samples/features, each in its own job
+# with ./e2e.sh, on the settings of samples/ or of the variant given. By
+# default every scenario on amd64; scenarios picks some by their tags, and
+# arm64 adds the same jobs on arm64. Each job uploads the run's files, also
+# when the scenario failed. A Go test of e2e/ checks that SCENARIOS below
+# has every scenario, and that NOT_IN_VARIANTS is notInVariants of
 # e2e/main.go.
 on:
   workflow_dispatch:
@@ -13,45 +14,91 @@ on:
         description: A directory of variants/; empty for the samples
         type: string
         default: ""
+      scenarios:
+        description: Scenario tags, comma-separated; empty for every scenario
+        type: string
+        default: ""
+      arm64:
+        description: Also run on arm64
+        type: boolean
+        default: false
 
-run-name: e2e of ${{ inputs.variant || 'the samples' }}
+run-name: e2e of ${{ inputs.variant || 'the samples' }}${{ inputs.scenarios && format(' ({0})', inputs.scenarios) || '' }}${{ inputs.arm64 && ', with arm64' || '' }}
 
 permissions:
   contents: read
 
 jobs:
+  plan:
+    name: Pick the scenarios
+    runs-on: ubuntu-24.04
+    outputs:
+      scenarios: ${{ steps.pick.outputs.scenarios }}
+    steps:
+      - id: pick
+        env:
+          WANTED: ${{ inputs.scenarios }}
+          VARIANT: ${{ inputs.variant }}
+          SCENARIOS: |
+            backup-restore
+            compliance
+            evidence-client-ca
+            evidence-kubernetes
+            evidence-logins
+            evidence-pods
+            evidence-postgres
+            evidence-tls
+            exporter-node-loss
+            fence
+            host-check
+            host-check-docker
+            lag-after-primary-change
+            lag-and-stall
+            one-node-left
+            pgfallback-drain
+            pgfallback-primary-node-loss
+            pgfallback-replica-node-loss
+            primary-node-loss
+            prove
+            quiet-failover
+            quiet-rewind
+            rejoin-from-archive
+            replica-down-long
+            replica-node-loss
+            replica-not-streaming
+            replica-restart-during-primary-loss
+            rollout
+            store-hang
+            store-refuse
+            switchover
+          # The scenarios a variant run leaves out; docs/e2e.md says why.
+          NOT_IN_VARIANTS: |
+            pgfallback-drain
+            pgfallback-primary-node-loss
+            pgfallback-replica-node-loss
+            rejoin-from-archive
+        run: |
+          picked=$(jq -cn --arg all "$SCENARIOS" --arg left "$NOT_IN_VARIANTS" --arg wanted "$WANTED" --arg variant "$VARIANT" '
+            def lines: split("\n") | map(select(. != ""));
+            ($all | lines) as $all
+            | (if $variant == "" then [] else $left | lines end) as $left
+            | if $wanted == "" then $all - $left
+              else ($wanted | split(",") | map(gsub("^ +| +$"; "")) | map(select(. != ""))) as $want
+              | if ($want - $all) != [] then error("no scenario has the tag: \($want - $all | join(", "))")
+                elif ($want - ($all - $left)) != [] then error("a variant run leaves out: \($want - ($all - $left) | join(", "))")
+                else $want | unique end
+              end')
+          echo "Scenarios: $picked"
+          echo "scenarios=$picked" >>"$GITHUB_OUTPUT"
+
   scenario:
     name: ${{ matrix.scenario }} on ${{ matrix.runner }}
+    needs: plan
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-24.04, ubuntu-24.04-arm]
-        scenario:
-          - backup-restore
-          - evidence
-          - exporter-node-loss
-          - fence
-          - host-check
-          - host-check-docker
-          - lag-after-primary-change
-          - lag-and-stall
-          - one-node-left
-          - pgfallback-drain
-          - pgfallback-primary-node-loss
-          - pgfallback-replica-node-loss
-          - primary-node-loss
-          - quiet-failover
-          - quiet-rewind
-          - rejoin-from-archive
-          - replica-down-long
-          - replica-node-loss
-          - replica-not-streaming
-          - replica-restart-during-primary-loss
-          - rollout
-          - store-hang
-          - store-refuse
-          - switchover
-        exclude: ${{ fromJSON(inputs.variant && '[{"scenario":"pgfallback-drain"},{"scenario":"pgfallback-primary-node-loss"},{"scenario":"pgfallback-replica-node-loss"},{"scenario":"rejoin-from-archive"}]' || '[]') }}
+        runner: ${{ fromJSON(inputs.arm64 && '["ubuntu-24.04", "ubuntu-24.04-arm"]' || '["ubuntu-24.04"]') }}
+        scenario: ${{ fromJSON(needs.plan.outputs.scenarios) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 100
     steps:

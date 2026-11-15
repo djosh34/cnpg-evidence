@@ -100,10 +100,14 @@ groups:
 
       # cnpg_replica_lag_seconds comes from the chart's query on each replica:
       # 0 when it has replayed all the WAL its primary reported, else the age
-      # of the last transaction it replayed.
+      # of the last transaction it replayed. Only of instances that report: a
+      # replica lost with its node leaves its last sample for 5 min, and the
+      # first sample after a pause in writes can give the age of the last
+      # transaction before it. CNPGReplicaDown covers a lost replica.
       - alert: CNPGReplicaLag
         expr: |
           max by (namespace, cluster, pod) (cnpg_replica_lag_seconds) > 15
+          and on (namespace, cluster, pod) cnpg_sample:instance_reports
           and on (namespace, cluster) cnpg_sample:database
         for: 2m
         labels:
