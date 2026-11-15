@@ -32,6 +32,7 @@ jobs:
           - exporter-node-loss
           - fence
           - host-check
+          - host-check-docker
           - lag-after-primary-change
           - lag-and-stall
           - one-node-left

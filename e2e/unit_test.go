@@ -14,6 +14,7 @@ import (
 	"time"
 
 	gherkin "github.com/cucumber/gherkin/go/v42"
+	"github.com/cucumber/godog"
 	messages "github.com/cucumber/messages/go/v34"
 	"go.yaml.in/yaml/v3"
 )
@@ -183,6 +184,50 @@ func TestReadingLimit(t *testing.T) {
 	}
 }
 
+// The two host-check lines: the docker table wants its checks failed with
+// its values and ignores the rest; the other table wants every check it
+// does not name passed, and each name it has to exist.
+func TestHostCheckLines(t *testing.T) {
+	out := `{"checks":[{"id":"selinux","ok":false,"value":"off"},{"id":"dir-modes","ok":true,"value":"none"},` +
+		`{"id":"k3s-secrets","ok":%t,"value":"x"}]}`
+	run := func(secretsOK bool, rows [][]string, step func(*scenario, *godog.Table) error) error {
+		s := &scenario{kind: messages.PickleStepType_OUTCOME, scripts: map[string]scriptRun{}}
+		for i := range nodeCount {
+			s.scripts["host-check.sh "+nodeName(i)] = scriptRun{out: fmt.Sprintf(out, secretsOK)}
+		}
+		table := &godog.Table{}
+		for _, row := range rows {
+			r := &messages.PickleTableRow{}
+			for _, v := range row {
+				r.Cells = append(r.Cells, &messages.PickleTableCell{Value: v})
+			}
+			table.Rows = append(table.Rows, r)
+		}
+		return step(s, table)
+	}
+	fails := (*scenario).hostCheckFails
+	but := (*scenario).hostCheckPassesBut
+	head := []string{"check", "value"}
+	if err := run(false, [][]string{head, {"selinux", "off"}}, fails); err != nil {
+		t.Errorf("selinux fails with off, k3s-secrets fails too: %v", err)
+	}
+	if run(true, [][]string{head, {"selinux", "disabled"}}, fails) == nil {
+		t.Error("selinux failed with another value, and the line passed")
+	}
+	if run(true, [][]string{head, {"dir-modes", "none"}}, fails) == nil {
+		t.Error("dir-modes passed, and the line passed")
+	}
+	if err := run(true, [][]string{{"check"}, {"selinux"}}, but); err != nil {
+		t.Errorf("every other check passed: %v", err)
+	}
+	if run(false, [][]string{{"check"}, {"selinux"}}, but) == nil {
+		t.Error("k3s-secrets failed, and the line passed")
+	}
+	if run(true, [][]string{{"check"}, {"selinux"}, {"selinx"}}, but) == nil {
+		t.Error("a check that does not exist, and the line passed")
+	}
+}
+
 // Every line of the feature files in samples/features binds to exactly one
 // line shape, every "is", "has been" and verb line is in the vocabulary, and
 // every alert line names a role. Each scenario has its own tag, and the
@@ -192,7 +237,7 @@ func TestFeaturesUseTheVocabulary(t *testing.T) {
 		"is": regexp.MustCompile(isLine), "since": regexp.MustCompile(sinceLine), "verb": regexp.MustCompile(verbLine),
 		"pass": regexp.MustCompile(passLine), "alert": regexp.MustCompile(alertLine),
 		"alertmanager": regexp.MustCompile(amLine), "quiet": regexp.MustCompile(quietLine),
-		"table": regexp.MustCompile(tableLine),
+		"fails": regexp.MustCompile(failsLine), "but": regexp.MustCompile(butLine),
 	}
 	files, err := filepath.Glob("../samples/features/*.feature")
 	if err != nil || len(files) == 0 {

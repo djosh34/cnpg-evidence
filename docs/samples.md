@@ -266,6 +266,6 @@ The operator's ClusterRole maps to `cnpg-operator-cluster` and its Role to `cnpg
 The scenarios differ from production only here:
 
 - Three k3s servers with embedded etcd as privileged containers, with tmpfs on `/run`, `/var/run` and `/tmp` (containerd tests idmapped mounts under `/tmp`), and `conntrack-max-per-core=0`, since kube-proxy cannot set it in a container.
-- No SELinux and no secrets encryption, and docker opens low ports, so `host-check.sh` fails four checks, as [`host-check.feature`](../samples/features/host-check.feature) lists.
+- No SELinux, no `getent`, and docker opens low ports, so `host-check.sh` fails three checks, as [host-check.md](host-check.md#in-the-scenarios) says.
 - The company CA, the store and the client run as containers next to the nodes, and the company CA approves only the node names.
 - One backup at the start stands in for a schedule, since a scenario's cluster lives less than a day.
