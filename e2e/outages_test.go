@@ -103,9 +103,8 @@ func TestEndOutagesAfterAHalfStoppedStore(t *testing.T) {
 	}
 }
 
-// A kill whose stop failed before the node stopped leaves the node and its
-// pod's paused replay alone: the cleanup resumes the replay, and does not
-// start the node.
+// A kill whose stop failed before the node stopped leaves the node alone:
+// the cleanup does not start it, and resumes its pod's paused replay.
 func TestEndOutagesAfterAFailedKill(t *testing.T) {
 	calls := fakeTools(t,
 		`"stop -t 0 k3s-1") exit 1 ;;`,

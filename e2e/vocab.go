@@ -426,7 +426,9 @@ func onDashboard(ctx context.Context, s *scenario, a args, from time.Time) error
 		return errors.New("name the instances")
 	}
 	longest, err := s.w.mon.shownSince(ctx, "Instances", a.pods, from)
-	s.detail = "the longest gap " + seconds(longest)
+	if err == nil || longest > 0 {
+		s.detail = "the longest gap " + seconds(longest)
+	}
 	return err
 }
 
