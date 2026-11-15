@@ -46,5 +46,9 @@ Feature: The evidence scripts
 
   @compliance
   Scenario: Every instance reports the compliance checks as passing
+    It also checks the metric CNPGTransactionIDWraparound reads, which no
+    scenario causes (docs/monitoring.md).
+
     When 30 s pass
     Then compliance is healthy
+    And cnpg_pg_database_xid_age is exported for every database

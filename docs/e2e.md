@@ -13,6 +13,8 @@ Scenario: The primary's node is lost for 2 minutes
 
 Eight scenarios run the evidence scripts, one part each, so a gap in one part never hides another: `evidence-client-ca`, `evidence-logins`, `evidence-postgres`, `evidence-pods`, `evidence-tls` and `evidence-kubernetes` run one [part of `evidence.sh`](evidence.md#one-part), `prove` runs [`prove.sh`](prove.md) on every node, and `compliance` checks that every instance reports the compliance checks as passing.
 
+Ten scenarios, in [`alerts.feature`](../samples/features/alerts.feature), are one per alert of the [monitoring](monitoring.md#alerts), each named after its alert: each causes the alert's condition for real, checks that the alert fires with its labels and that Alertmanager sends it, ends the condition, and checks that the alert resolves and that Alertmanager sends it resolved.
+
 Two scenarios run [`host-check.sh`](host-check.md#in-the-scenarios) on every node. `host-check-docker` expects the three checks a node in a container can never pass to fail, each with its known value, so a change to them shows. `host-check` expects every other check to pass, in the samples and in a variant: those checks depend on the settings, so a failure there is a real gap.
 
 ## Run a scenario
@@ -206,17 +208,19 @@ A new kind of line needs a word in [`e2e/vocab.go`](../e2e/vocab.go) and a funct
 | `<thing> has been <word> since the <event>` | Checks the whole time from that event to now. |
 | `<thing> starts`, `stops`, `runs`, `passes` | The same lookup as `is`. |
 | `N s pass`, `N s pass after the <event>` | Waits. |
-| `<ALERT> fires`, `resolves for <role> < N s` | Waits up to N s until the alert fires, or no longer fires. Without a limit, checks now. |
-| `<ALERT> fired`, `has not fired`, `may fire for <role>` | Whether it fired since the scenario started; `may fire` allows it. |
+| `<ALERT> fires`, `resolves for <who> < N s` | Waits up to N s until the alert fires, or no longer fires. Without a limit, checks now. |
+| `<ALERT> fired`, `has not fired`, `may fire for <who>` | Whether it fired since the scenario started; `may fire` allows it. |
+| `<ALERT> <severity> fires for <who>`, and the other alert words | The same, for the alert of that severity, `warning` or `critical`. Not with `may fire`. |
 | `Alertmanager gets <ALERT> for <role>` | Sends Alertmanager the critical alert for 2 min, as the rule evaluator would. An event. |
-| `Alertmanager sends`, `mutes <ALERT> for <role> < N s` | Waits until a notification of it reached the receiver, or Alertmanager holds it muted. |
+| `Alertmanager sends`, `mutes <ALERT> [<severity>] for <who> < N s` | Waits until a notification of it as firing reached the receiver, or Alertmanager holds it muted. |
+| `Alertmanager sends the resolved <ALERT> [<severity>] for <who> < N s` | Waits until a notification of it as resolved reached the receiver. |
 | `no writes` | The client does not write in this scenario. |
 | `host-check.sh fails these checks on every node:` | With a table of `check` and `value`: on every node, each of these checks fails with its value. Other checks are not looked at. |
 | `host-check.sh passes every check on every node but these:` | With a table of `check`: on every node, every check not in the table passes. Each check in the table must exist. |
 
 `is` may be `are`, and `has` may be `have`. An event comes only in a Given or When line, a check only in a Given or Then line. The event names an `after the` or `since the` line can use are the words in quotes below. An event's time is when the run finished doing it.
 
-**Roles:** `the primary`, `replica 1` and `replica 2`, named when the cluster is ready; `the new primary`, the instance that became primary last; `another instance`, any instance but the primary; `a replica`, an instance other than the one that became primary last. An alert line names a role or `the cluster`.
+**Roles:** `the primary`, `replica 1` and `replica 2`, named when the cluster is ready; `the new primary`, the instance that became primary last; `another instance`, any instance but the primary; `a replica`, an instance other than the one that became primary last. An alert line names who the alert is for: a role, by the alert's `pod` label; `the cluster`, an alert of the cluster `pg` without a `pod`; or `the server certificate` or `the replication certificate`, by the `name` label of an alert about the chart's Certificate `pg-server` or `pg-replication`. `may fire` and `the alerts are healthy` tell alerts apart by their name and `pod` only. Any alert name works; a scenario names an alert only where its condition truly makes it fire, as a variant's own alerts on the same disk or certificate.
 
 ### Vocabulary
 
@@ -246,6 +250,14 @@ Events:
 | `replay on <role> is paused`, `is resumed`, and `on <role> and <role> are` | `pg_wal_replay_pause()` or `pg_wal_replay_resume()`. |
 | `<role> is cut off`, `<role> is reconnected` | A firewall rule in the pod's network namespace rejects its connections to 5432, and the primary ends its WAL sender; then the rule goes. |
 | `writing stops` | The client stops writing; reads go on. The line ends once every write it started has ended. |
+| `<role>'s data disk is filled to <n> %` | A ballast file on the data filesystem of the instance's node, allocated, brings it to that share used. A second line grows the same file. |
+| `the ballast is removed` | Deletes the ballast file. |
+| `sessions are held on <role> up to <n> % of max_connections` | psql sessions as `postgres` on the instance, each in `pg_sleep`, bring the sessions `cnpg_backends_total` counts to that share; they go on while the scenario does. |
+| `the held sessions are ended` | `pg_terminate_backend` of each held session. |
+| `an unapproved role is created on <role>`, `the unapproved role is dropped` | `create role e2e_unapproved`, which the compliance query does not expect; `drop role` on the current primary. |
+| `the exporter's grants are revoked on <role>`, `are given back on <role>` | Revokes, or grants, `cnpg_metrics_exporter` its two grants on `pg_ident_file_mappings`, which the compliance query needs. |
+| `the server certificate is reissued for <n> days`, and `the replication certificate` | Shortens the company CA's ACME role to that lifetime with a PATCH, has cert-manager issue the chart's Certificate again, as `cmctl renew` does, waits for the new certificate, then sets the role back to 90 days and runs `kubectl cnpg reload`. |
+| `the server certificate is reissued`, and `the replication certificate` | The same with the role's own 90 days. |
 | `desired.sh runs`, `prove.sh runs`, `host-check.sh runs` | Runs the script as its doc says: `desired.sh` against the cluster, `prove.sh` and `host-check.sh` as root on every node. |
 | `the <part> part of evidence.sh runs` | Runs `evidence.sh --part <part>` against the cluster: `client-ca`, `logins`, `postgres`, `pods`, `tls` or `kubernetes`. |
 
@@ -275,6 +287,7 @@ States, checked now, within the line's limit, or for its time:
 | `the replica lag panel is healthy` | The dashboard's Replica lag panel shows no alert state: the query it shows in red, while `CNPGReplicaLag` fires, has no result. With `for N s` it holds the whole time. The timing table gives the most each replica reported since the last event, of `cnpg_replica_lag_seconds` and of CNPG's own `cnpg_pg_replication_lag`. |
 | `compliance is healthy`, `compliance on pg-restore is healthy` | Every instance reported the four compliance checks as 0 in the last 30 s. |
 | `the exporters are healthy` | Every exporter answered in the last 30 s with its query metrics. |
+| `cnpg_pg_database_xid_age is exported for every database` | On every instance, the metric arrived in the last 60 s for each database with `datallowconn`, as CNPG's query reads them, and for no other. |
 | `the <part> part of evidence.sh passes`, `prove.sh passes` | No violation in that part; every probe as in the desired document, on every node. |
 | `no acknowledged write is lost`, `... lost in pg-restore` | Stops the client; every write it got acknowledged is in `e2e_writes` on the primary, or of `pg-restore`. |
 | `the alerts are healthy` | No alert fires. The alerts the scenario says `fired` or `fires` fired, and no other did but those it says `may fire`. |

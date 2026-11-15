@@ -1,6 +1,6 @@
 # Monitoring
 
-Alert rules, an Alertmanager route and a Grafana dashboard for the sample's cluster are in [`samples/monitoring/`](../samples/monitoring). The OTel collectors that send the metrics are in [`samples/charts/cnpg-opentelemetry-collector/`](../samples/charts/cnpg-opentelemetry-collector). Only the collectors run in Kubernetes. Outside it, an OTel service receives the metrics, a rule evaluator reads them, Alertmanager sends the notifications and Grafana shows the dashboard. Every scenario runs it this way and checks that only the expected alerts fire.
+Alert rules, an Alertmanager route and a Grafana dashboard for the sample's cluster are in [`samples/monitoring/`](../samples/monitoring). The OTel collectors that send the metrics are in [`samples/charts/cnpg-opentelemetry-collector/`](../samples/charts/cnpg-opentelemetry-collector). Only the collectors run in Kubernetes. Outside it, an OTel service receives the metrics, a rule evaluator reads them, Alertmanager sends the notifications and Grafana shows the dashboard. Every scenario runs it this way and checks that only the expected alerts fire. Each alert also has a [scenario](../samples/features/alerts.feature) of its own, below, that causes its condition for real, checks that it fires and that Alertmanager sends it, ends the condition, and checks that it resolves and that Alertmanager sends it resolved.
 
 | File | What |
 |---|---|
@@ -62,19 +62,19 @@ A collector lost with its node sends no stale marker, so its last samples stay f
 
 ## Alerts
 
-| Alert | Severity | Fires when | For |
-|---|---|---|---|
-| `CNPGDatabaseDown` | critical | No instance reports a running primary | 3 min |
-| `CNPGReplicaDown` | critical | An instance seen in the last day, other than the primary, is not in the primary's `pg_stat_replication`, or its metrics stopped | 5 min |
-| `CNPGReplicaLag` | critical | A replica's `cnpg_replica_lag_seconds` is above 15 s, while its metrics arrive | 2 min |
-| `CNPGWritesBlocked` | critical | Sessions on the primary wait for a standby to confirm their commit, at every scrape | 10 s |
-| `CNPGBackupFailing` | critical | The newest backup of the last 2 h is older than 26 h, missing or failed, or WAL archiving fails | 10 min |
-| `CNPGDataDiskFull` | warning, critical | An instance's data disk is over 70 % or 80 % used | 5 min |
-| `CNPGCertificateExpiring` | warning, critical | The chart's server or replication certificate expires within 14 or 3 days | 15 min |
-| `CNPGConnectionsHigh` | critical | An instance has over 90 % of `max_connections` open | 5 min |
-| `CNPGTransactionIDWraparound` | critical | A database's oldest transaction ID is over 1 billion old | 15 min |
-| `CNPGComplianceViolation` | critical | A check of the [compliance metric](samples.md#compliance-metric) counts a violation | 1 min |
-| `CNPGMetricsMissing` | critical | An instance answers without the four compliance checks, for example without the query's grants | 10 min |
+| Alert | Severity | Fires when | For | Scenario |
+|---|---|---|---|---|
+| `CNPGDatabaseDown` | critical | No instance reports a running primary | 3 min | `database-down`: two of three nodes lost for 5 min |
+| `CNPGReplicaDown` | critical | An instance seen in the last day, other than the primary, is not in the primary's `pg_stat_replication`, or its metrics stopped | 5 min | `replica-down`: a replica's node lost |
+| `CNPGReplicaLag` | critical | A replica's `cnpg_replica_lag_seconds` is above 15 s, while its metrics arrive | 2 min | `replica-lag`: replay paused on a replica |
+| `CNPGWritesBlocked` | critical | Sessions on the primary wait for a standby to confirm their commit, at every scrape | 10 s | `writes-blocked`: replay paused on both replicas |
+| `CNPGBackupFailing` | critical | The newest backup of the last 2 h is older than 26 h, missing or failed, or WAL archiving fails | 10 min | `backup-failing`: the store stopped, so archiving fails |
+| `CNPGDataDiskFull` | warning, critical | An instance's data disk is over 70 % or 80 % used | 5 min | `data-disk-full`: a ballast file fills a node's data disk to 75 %, then 82 % |
+| `CNPGCertificateExpiring` | warning, critical | The chart's server or replication certificate expires within 14 or 3 days | 15 min | `certificate-expiring`: the two certificates reissued for 7 and 2 days |
+| `CNPGConnectionsHigh` | critical | An instance has over 90 % of `max_connections` open | 5 min | `connections-high`: sessions held on a replica |
+| `CNPGTransactionIDWraparound` | critical | A database's oldest transaction ID is over 1 billion old | 15 min | None; see below |
+| `CNPGComplianceViolation` | critical | A check of the [compliance metric](samples.md#compliance-metric) counts a violation | 1 min | `compliance-violation`: a role it does not expect |
+| `CNPGMetricsMissing` | critical | An instance answers without the four compliance checks, for example without the query's grants | 10 min | `metrics-missing`: the exporter's grants revoked |
 
 Every alert is one a person must act on. Thresholds are in the expressions, each in one place; change the 26 h backup age to fit your schedule.
 
@@ -82,6 +82,7 @@ Every alert is one a person must act on. Thresholds are in the expressions, each
 - **Writes blocked.** `cnpg_sync_replication_waiting` counts sessions whose commit waits right now, so a long statement does not count. The rule group runs every 5 s.
 - **Data disks.** For `local-path` the kubelet reports the whole filesystem that holds the volume. A full data disk stops PostgreSQL, and CNPG does not fail over. When that filesystem is the node's root disk, k3s's kubelet also evicts pods once less than 5 % is free.
 - **Backups.** The plugin can report its last backup as 0 for a while when its list of the store misses the backup, as after the primary's node and another node were lost. The rule takes the newest value of the last 2 h, so such a 0 counts only after 2 h.
+- **Transaction ID wraparound.** No scenario causes it. A real cluster takes about 5 hours of transactions to pass 1 billion, and the only shortcut, `pg_resetwal` on a copy of the cluster, needs a lot of machinery for one threshold on a CNPG metric. The rule's unit tests in `rules.test.yaml` cover it, and the `compliance` scenario checks that `cnpg_pg_database_xid_age` arrives from every instance for every database that takes connections.
 
 **Notifications.** Alertmanager groups by `namespace`, `cluster` and alert name: one notification when a group fires, one when it resolves, a reminder every 4 h. `CNPGDatabaseDown` mutes the replica, lag, backup and missing-metrics alerts of its database, `CNPGReplicaDown` mutes the lag and missing metrics of its instance, and a critical alert mutes its own warning.
 

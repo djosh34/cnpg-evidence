@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -235,7 +236,7 @@ func TestHostCheckLines(t *testing.T) {
 
 // Every line of the feature files in samples/features binds to exactly one
 // line shape, every "is", "has been" and verb line is in the vocabulary, and
-// every alert line names a role. Each scenario has its own tag, and e2e.yml
+// every alert line names a role, the cluster or a certificate. Each scenario has its own tag, and e2e.yml
 // lists them all.
 func TestFeaturesUseTheVocabulary(t *testing.T) {
 	shapes := map[string]*regexp.Regexp{
@@ -279,9 +280,9 @@ func TestFeaturesUseTheVocabulary(t *testing.T) {
 						case "is", "verb", "since":
 							_, _, err = s.lookup(m[1], m[2])
 						case "alert":
-							_, err = s.alertPod(m[3])
+							_, err = s.alertLabels(m[1], m[2], m[4])
 						case "alertmanager":
-							_, err = s.role(m[3])
+							_, err = s.alertLabels(m[3], m[4], m[5])
 						}
 						if err != nil {
 							t.Errorf("%s: %q: %v", file, step.Text, err)
@@ -409,5 +410,41 @@ func TestPanelGap(t *testing.T) {
 		if got := longestGap(tt.shown, 0, 60, 15); got != tt.want {
 			t.Errorf("%s: got %v, want %v", tt.name, got, tt.want)
 		}
+	}
+}
+
+// An alert line's labels: the pod of a role, the cluster, or a
+// Certificate's name, with the severity when the line gives one. A
+// notification matches them when it has each, and lacks those that are "".
+func TestAlertLabels(t *testing.T) {
+	s := &scenario{roles: map[string]string{"the primary": "pg-1", "replica 1": "pg-2"}}
+	tests := []struct {
+		severity, who string
+		want          map[string]string
+	}{
+		{"", "replica 1", map[string]string{"alertname": "A", "pod": "pg-2"}},
+		{"critical", "the cluster", map[string]string{"alertname": "A", "pod": "", "cluster": "pg", "severity": "critical"}},
+		{"warning", "the server certificate", map[string]string{"alertname": "A", "pod": "", "cluster": "pg", "name": "pg-server", "severity": "warning"}},
+	}
+	for _, tt := range tests {
+		got, err := s.alertLabels("A", tt.severity, tt.who)
+		if err != nil || !maps.Equal(got, tt.want) {
+			t.Errorf("%s: got %v %v, want %v", tt.who, got, err, tt.want)
+		}
+	}
+	for _, who := range []string{"another instance", "the client certificate", "replica 3"} {
+		if _, err := s.alertLabels("A", "", who); err == nil {
+			t.Errorf("%s: no error", who)
+		}
+	}
+	labels := map[string]string{"alertname": "A", "pod": "", "cluster": "pg"}
+	if !hasLabels(map[string]string{"alertname": "A", "cluster": "pg", "severity": "critical"}, labels) {
+		t.Error("an alert of the cluster did not match")
+	}
+	if hasLabels(map[string]string{"alertname": "A", "cluster": "pg", "pod": "pg-1"}, labels) {
+		t.Error("an alert of an instance matched the cluster")
+	}
+	if got := selector(labels); got != `{alertname="A", cluster="pg", pod=""}` {
+		t.Errorf("selector: %s", got)
 	}
 }
