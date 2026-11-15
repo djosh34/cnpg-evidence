@@ -185,12 +185,24 @@ func killNodes(ctx context.Context, s *scenario, a args) error {
 		}
 		nodes = append(nodes, node)
 	}
-	// Kept before the stop, which can fail after some nodes stopped.
-	s.down = append(s.down, nodes...)
-	s.downPods = append(s.downPods, a.pods...)
 	if err := stopNodes(ctx, nodes...); err != nil {
+		// The stop can fail after some nodes stopped: those are kept for
+		// endOutages.
+		for i, node := range nodes {
+			running, inspectErr := command(ctx, "docker", "inspect", "-f", "{{.State.Running}}", node)
+			if inspectErr != nil {
+				err = errors.Join(err, inspectErr)
+				continue
+			}
+			if running == "false" {
+				s.down = append(s.down, node)
+				s.downPods = append(s.downPods, a.pods[i])
+			}
+		}
 		return err
 	}
+	s.down = append(s.down, nodes...)
+	s.downPods = append(s.downPods, a.pods...)
 	s.stops(a.pods...)
 	return useRunningAPI(s.down)
 }
