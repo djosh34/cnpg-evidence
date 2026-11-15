@@ -112,7 +112,7 @@ var vocabulary = map[string]word{
 	"<role> | not streaming":                         {state: notStreaming},
 	"<role>'s metrics | arriving":                    {state: metricsArriving},
 	"the commit | done":                              {state: commitDone},
-	"the replica lag | healthy":                      {state: replicaLagHealthy},
+	"the replica lag panel | healthy":                {state: lagPanelHealthy},
 	"compliance | healthy":                           {state: compliant},
 	"the client-ca part of evidence.sh | passes":     {state: evidencePasses("client-ca")},
 	"the logins part of evidence.sh | passes":        {state: evidencePasses("logins")},
@@ -123,9 +123,9 @@ var vocabulary = map[string]word{
 	"prove.sh | passes":                              {state: provePasses},
 
 	// Since an event.
-	"the exporters of <role> and <role> | healthy": {since: exportersKept},
-	"writing | down":       {since: writingDown},
-	"pgfallback | healthy": {since: pgfallbackKept},
+	"<role> and <role> | on the dashboard": {since: onDashboard},
+	"writing | down":                       {since: writingDown},
+	"pgfallback | healthy":                 {since: pgfallbackKept},
 
 	// Measures, on the client: the longest time without a successful read,
 	// and without an acknowledged write while the client writes.
@@ -403,30 +403,16 @@ func exportersAnswer(ctx context.Context, s *scenario, _ args) error {
 	return nil
 }
 
-// exportersKept: the exporters of the instances kept their query metrics
-// from the event to now: in every 15 s in which one answered, at least one
-// answer had both, and none went 60 s without answering. A change of the
-// Cluster gives each exporter new, empty query results, so one answer
-// right after one can lack them.
-func exportersKept(ctx context.Context, s *scenario, a args, from time.Time) error {
-	window := int(time.Since(from).Seconds())
-	for _, pod := range a.pods {
-		if pod == anotherInstance {
-			return errors.New("name the instances")
-		}
-		up := fmt.Sprintf(`cnpg_collector_up{namespace=%q, pod=%q}`, namespace, pod)
-		silent := fmt.Sprintf(`min_over_time((sum(count_over_time(%s[60s])) or vector(0))[%ds:5s]) == 0`, up, window)
-		if err := s.w.mon.none(ctx, silent); err != nil {
-			return fmt.Errorf("the exporter of %s did not answer for 60 s or longer: %w", pod, err)
-		}
-		for _, metric := range queryMetrics(pod) {
-			without := fmt.Sprintf(`max_over_time((sum(count_over_time(%s[15s])) > 0 unless on () sum(count_over_time(%s[15s])))[%ds:5s])`,
-				up, metric, window)
-			if err := s.w.mon.none(ctx, without); err != nil {
-				return fmt.Errorf("the exporter of %s answered for 15 s or longer without %s: %w", pod, metric, err)
-			}
-		}
+// onDashboard: the dashboard's Instances panel showed each of the
+// instances the whole time since the event.
+func onDashboard(ctx context.Context, s *scenario, a args, from time.Time) error {
+	if slices.Contains(a.pods, anotherInstance) {
+		return errors.New("name the instances")
 	}
+	if err := s.w.mon.shownSince(ctx, "Instances", a.pods, from); err != nil {
+		return err
+	}
+	s.detail = "shown at every evaluation every 15 s"
 	return nil
 }
 

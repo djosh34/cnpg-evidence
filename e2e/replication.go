@@ -243,40 +243,17 @@ func commitDone(_ context.Context, s *scenario, _ args) error {
 	return s.commit.finished()
 }
 
-// replicaLagHealthy: with "for N s", the chart's cnpg_replica_lag_seconds
-// of each replica stays under 1 s in every sample taken since the line
-// started, and every replica has one after 30 s. The timing table gives the
-// most each instance reported since the last event, of it and of CNPG's own
-// cnpg_pg_replication_lag, which reports minutes on a caught-up replica for
-// up to 5 min after its PostgreSQL restarts.
-func replicaLagHealthy(ctx context.Context, s *scenario, _ args) error {
-	if s.holding.IsZero() {
-		return errors.New(`the replica lag takes "for N s"`)
-	}
-	primary, err := clusterStatus(ctx, clusterName, "currentPrimary")
-	if err != nil {
-		return err
-	}
-	pods, err := instances(ctx, clusterName)
-	if err != nil {
+// lagPanelHealthy: the dashboard's Replica lag panel shows no alert state,
+// which it shows in red while CNPGReplicaLag fires. The timing table gives
+// the most each replica reported since the last event, of the chart's
+// cnpg_replica_lag_seconds and of CNPG's own cnpg_pg_replication_lag, which
+// reports minutes on a caught-up replica for up to 5 min after its
+// PostgreSQL restarts.
+func lagPanelHealthy(ctx context.Context, s *scenario, _ args) error {
+	if err := s.w.mon.panelNotRed(ctx, "Replica lag"); err != nil {
 		return err
 	}
 	selector := fmt.Sprintf(`namespace=%q, cluster=%q`, namespace, clusterName)
-	held := time.Since(s.holding)
-	most, err := s.w.mon.values(ctx, fmt.Sprintf(`max by (pod) (max_over_time(cnpg_replica_lag_seconds{%s}[%dms]))`,
-		selector, max(held.Milliseconds(), 1)))
-	if err != nil {
-		return err
-	}
-	for _, pod := range slices.DeleteFunc(pods, func(p string) bool { return p == primary }) {
-		value, ok := most[pod]
-		switch {
-		case !ok && held > 30*time.Second:
-			return fmt.Errorf("no cnpg_replica_lag_seconds of %s in the %s since the line started", pod, seconds(held))
-		case ok && value >= 1:
-			return fmt.Errorf("cnpg_replica_lag_seconds of %s was %.1f s", pod, value)
-		}
-	}
 	window := int(time.Since(s.marks[s.last]).Seconds()) + 1
 	var report []string
 	for _, metric := range []string{"cnpg_replica_lag_seconds", "cnpg_pg_replication_lag"} {

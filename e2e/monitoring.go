@@ -415,24 +415,45 @@ func (m *monitoring) amSend(ctx context.Context, name, pod string) error {
 	return callJSON(m.http, req, nil)
 }
 
-// dashboardHasData: Grafana has the dashboard, and each of its panels gets
-// data through Grafana's data source: at least one value that is not NaN,
-// with the dashboard's variables set to the database.
-func (m *monitoring) dashboardHasData(ctx context.Context) error {
-	type panel struct {
-		Title   string `json:"title"`
-		Targets []struct {
-			Expr string `json:"expr"`
-		} `json:"targets"`
-		Panels []json.RawMessage `json:"panels"`
-	}
+// A panel of the dashboard: its queries, and the queries whose value it
+// shows in red, by their refId.
+type panel struct {
+	Title   string `json:"title"`
+	Type    string `json:"type"`
+	Targets []struct {
+		Expr  string `json:"expr"`
+		RefID string `json:"refId"`
+	} `json:"targets"`
+	FieldConfig struct {
+		Overrides []struct {
+			Matcher struct {
+				ID      string `json:"id"`
+				Options string `json:"options"`
+			} `json:"matcher"`
+			Properties []struct {
+				ID    string `json:"id"`
+				Value struct {
+					FixedColor string `json:"fixedColor"`
+				} `json:"value"`
+			} `json:"properties"`
+		} `json:"overrides"`
+	} `json:"fieldConfig"`
+	Panels []json.RawMessage `json:"panels"`
+}
+
+// dashboardVars sets the dashboard's variables to the database.
+var dashboardVars = strings.NewReplacer("$namespace", namespace, "$cluster", clusterName, "$__rate_interval", "1m")
+
+// panels are the panels of the dashboard as Grafana has it, those in rows
+// included.
+func (m *monitoring) panels(ctx context.Context) ([]panel, error) {
 	var resp struct {
 		Dashboard struct {
 			Panels []panel `json:"panels"`
 		} `json:"dashboard"`
 	}
 	if err := m.get(ctx, grafanaURL+"/api/dashboards/uid/"+m.dashboard, &resp); err != nil {
-		return err
+		return nil, err
 	}
 	var panels []panel
 	for _, p := range resp.Dashboard.Panels {
@@ -440,12 +461,36 @@ func (m *monitoring) dashboardHasData(ctx context.Context) error {
 		for _, raw := range p.Panels {
 			var inner panel
 			if err := json.Unmarshal(raw, &inner); err != nil {
-				return err
+				return nil, err
 			}
 			panels = append(panels, inner)
 		}
 	}
-	vars := strings.NewReplacer("$namespace", namespace, "$cluster", clusterName, "$__rate_interval", "1m")
+	return panels, nil
+}
+
+// statPanel is the dashboard's first stat panel with the title.
+func (m *monitoring) statPanel(ctx context.Context, title string) (panel, error) {
+	panels, err := m.panels(ctx)
+	if err != nil {
+		return panel{}, err
+	}
+	for _, p := range panels {
+		if p.Title == title && p.Type == "stat" {
+			return p, nil
+		}
+	}
+	return panel{}, fmt.Errorf("the dashboard has no stat panel %s", title)
+}
+
+// dashboardHasData: Grafana has the dashboard, and each of its panels gets
+// data through Grafana's data source: at least one value that is not NaN,
+// with the dashboard's variables set to the database.
+func (m *monitoring) dashboardHasData(ctx context.Context) error {
+	panels, err := m.panels(ctx)
+	if err != nil {
+		return err
+	}
 	checked := 0
 	for _, p := range panels {
 		if len(p.Targets) == 0 {
@@ -453,7 +498,7 @@ func (m *monitoring) dashboardHasData(ctx context.Context) error {
 		}
 		values := 0
 		for _, t := range p.Targets {
-			result, err := m.query(ctx, vars.Replace(t.Expr), true)
+			result, err := m.query(ctx, dashboardVars.Replace(t.Expr), true)
 			if err != nil {
 				return fmt.Errorf("panel %s: %w", p.Title, err)
 			}
@@ -470,6 +515,86 @@ func (m *monitoring) dashboardHasData(ctx context.Context) error {
 	}
 	if checked == 0 {
 		return errors.New("the dashboard has no panel with a query")
+	}
+	return nil
+}
+
+// panelNotRed: the stat panel with the title shows no value in red now, as
+// it does while its alert fires: every query it colours red has no value.
+func (m *monitoring) panelNotRed(ctx context.Context, title string) error {
+	p, err := m.statPanel(ctx, title)
+	if err != nil {
+		return err
+	}
+	red := map[string]bool{}
+	for _, o := range p.FieldConfig.Overrides {
+		for _, prop := range o.Properties {
+			if o.Matcher.ID == "byFrameRefID" && prop.ID == "color" && prop.Value.FixedColor == "red" {
+				red[o.Matcher.Options] = true
+			}
+		}
+	}
+	if len(red) == 0 {
+		return fmt.Errorf("the dashboard's %s panel has no query it shows in red", title)
+	}
+	for _, t := range p.Targets {
+		if !red[t.RefID] {
+			continue
+		}
+		result, err := m.query(ctx, dashboardVars.Replace(t.Expr), true)
+		if err != nil {
+			return err
+		}
+		for _, s := range result {
+			if v, ok := s.Value[1].(string); ok && v != "NaN" {
+				return fmt.Errorf("the dashboard's %s panel shows %s in red", title, v)
+			}
+		}
+	}
+	return nil
+}
+
+// shownSince: the stat panel with the title showed each pod at every
+// evaluation from from to now, every 15 s, as a dashboard that refreshes
+// would have shown it.
+func (m *monitoring) shownSince(ctx context.Context, title string, pods []string, from time.Time) error {
+	p, err := m.statPanel(ctx, title)
+	if err != nil {
+		return err
+	}
+	if len(p.Targets) != 1 {
+		return fmt.Errorf("the dashboard's %s panel has %d queries, not one", title, len(p.Targets))
+	}
+	const step = 15
+	end := time.Now()
+	q := url.Values{}
+	q.Set("query", dashboardVars.Replace(p.Targets[0].Expr))
+	q.Set("start", strconv.FormatInt(from.Unix(), 10))
+	q.Set("end", strconv.FormatInt(end.Unix(), 10))
+	q.Set("step", strconv.Itoa(step))
+	var resp struct {
+		Data struct {
+			Result []struct {
+				Metric map[string]string `json:"metric"`
+				Values [][2]any          `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	err = m.get(ctx, grafanaURL+"/api/datasources/proxy/uid/"+grafanaSource+"/api/v1/query_range?"+q.Encode(), &resp)
+	if err != nil {
+		return err
+	}
+	want := int(end.Unix()-from.Unix())/step + 1
+	for _, pod := range pods {
+		shown := 0
+		for _, r := range resp.Data.Result {
+			if r.Metric["pod"] == pod {
+				shown += len(r.Values)
+			}
+		}
+		if shown < want {
+			return fmt.Errorf("the dashboard's %s panel showed %s at %d of the %d evaluations every %d s since then", title, pod, shown, want, step)
+		}
 	}
 	return nil
 }
@@ -497,18 +622,6 @@ func (m *monitoring) everySource(ctx context.Context) error {
 		if len(result) != want.n {
 			return fmt.Errorf("%d series of %s, not %d", len(result), want.promql, want.n)
 		}
-	}
-	return nil
-}
-
-// none: the query has no result.
-func (m *monitoring) none(ctx context.Context, promql string) error {
-	result, err := m.query(ctx, promql, false)
-	if err != nil {
-		return err
-	}
-	if len(result) > 0 {
-		return fmt.Errorf("%s has %d results", promql, len(result))
 	}
 	return nil
 }
