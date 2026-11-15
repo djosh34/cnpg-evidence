@@ -61,9 +61,11 @@ Feature: One scenario per alert
   @writes-blocked
   Scenario: CNPGWritesBlocked: no replica applies the commits
     Replay pauses on both replicas, so every commit waits for a standby to
-    apply it, as when no synchronous standby confirms. Reads go on.
+    apply it, as when no synchronous standby confirms. Reads go on. The
+    first row makes the table of the commit before the pause.
 
-    When replay on replica 1 and replica 2 is paused
+    When a row is written
+    And replay on replica 1 and replica 2 is paused
     And a commit is started on the primary
     Then CNPGWritesBlocked critical fires for the primary < 120 s
     And Alertmanager sends CNPGWritesBlocked critical for the primary < 60 s
