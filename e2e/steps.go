@@ -80,15 +80,19 @@ type scenario struct {
 	clientEnded time.Time // when the e2e test stopped it
 	writes      bool      // false after "Given no writes"
 
+	// The outages in place, which endOutages ends after a failed line.
 	down     []string // the nodes killed and not started again
 	downPods []string // the instances on them
+	fenced   []string // the instances fenced and not unfenced
+	paused   []string // the instances whose replay is paused
+	cut      []string // the instances cut off and not reconnected
 
 	needs    map[string]walNeed   // what each instance that was down needs of the WAL written meanwhile
 	switched map[string]string    // the WAL file each instance switched away from last
 	restarts map[string]int       // the restart count of an instance's postgres container before it was killed
 	ident    string               // the pg_ident lines every instance had at the first line about them
 	store    string               // how the store is broken: stopped, paused, or "" when it is not
-	drain    *drained             // the node a drain runs on, until it is uncordoned
+	drain    *drained             // the node a drain runs on or cordoned, until it is uncordoned
 	commit   *background          // the commit "a commit is started" started
 	scripts  map[string]scriptRun // what each script gave, by its name and node
 

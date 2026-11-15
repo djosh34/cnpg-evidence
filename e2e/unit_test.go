@@ -230,8 +230,8 @@ func TestHostCheckLines(t *testing.T) {
 
 // Every line of the feature files in samples/features binds to exactly one
 // line shape, every "is", "has been" and verb line is in the vocabulary, and
-// every alert line names a role. Each scenario has its own tag, and the
-// matrix of e2e.yml names them all.
+// every alert line names a role. Each scenario has its own tag, and e2e.yml
+// lists them all.
 func TestFeaturesUseTheVocabulary(t *testing.T) {
 	shapes := map[string]*regexp.Regexp{
 		"is": regexp.MustCompile(isLine), "since": regexp.MustCompile(sinceLine), "verb": regexp.MustCompile(verbLine),
@@ -304,7 +304,7 @@ func TestFeaturesUseTheVocabulary(t *testing.T) {
 	}
 	slices.Sort(listed)
 	if !slices.Equal(listed, tags) {
-		t.Errorf("e2e.yml runs %v, the feature files have %v", listed, tags)
+		t.Errorf("e2e.yml lists %v, the feature files have %v", listed, tags)
 	}
 	left := slices.Sorted(slices.Values(notInVariants))
 	slices.Sort(excluded)
@@ -318,8 +318,8 @@ func TestFeaturesUseTheVocabulary(t *testing.T) {
 	}
 }
 
-// workflowScenarios are the scenarios of the matrix of e2e.yml, and those
-// its exclude leaves out of a variant run.
+// workflowScenarios are the scenarios e2e.yml can run, SCENARIOS of its
+// plan step, and those a variant run leaves out, NOT_IN_VARIANTS.
 func workflowScenarios() (listed, excluded []string, err error) {
 	data, err := os.ReadFile("../.github/workflows/e2e.yml")
 	if err != nil {
@@ -327,20 +327,18 @@ func workflowScenarios() (listed, excluded []string, err error) {
 	}
 	var workflow struct {
 		Jobs map[string]struct {
-			Strategy struct {
-				Matrix struct {
-					Scenario []string `yaml:"scenario"`
-					Exclude  string   `yaml:"exclude"`
-				} `yaml:"matrix"`
-			} `yaml:"strategy"`
+			Steps []struct {
+				Env map[string]string `yaml:"env"`
+			} `yaml:"steps"`
 		} `yaml:"jobs"`
 	}
 	if err := yaml.Unmarshal(data, &workflow); err != nil {
 		return nil, nil, fmt.Errorf("e2e.yml: %w", err)
 	}
-	matrix := workflow.Jobs["scenario"].Strategy.Matrix
-	for _, m := range regexp.MustCompile(`"scenario":"([a-z0-9-]+)"`).FindAllStringSubmatch(matrix.Exclude, -1) {
-		excluded = append(excluded, m[1])
+	steps := workflow.Jobs["plan"].Steps
+	if len(steps) != 1 {
+		return nil, nil, fmt.Errorf("e2e.yml: the job plan has %d steps, not one", len(steps))
 	}
-	return matrix.Scenario, excluded, nil
+	env := steps[0].Env
+	return strings.Fields(env["SCENARIOS"]), strings.Fields(env["NOT_IN_VARIANTS"]), nil
 }

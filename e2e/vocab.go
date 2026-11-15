@@ -43,40 +43,45 @@ type word struct {
 
 var vocabulary = map[string]word{
 	// Events.
-	"<role> | promoted":                        {mark: "promote", event: promote},
-	"<role> | fenced":                          {mark: "fence", event: fence},
-	"<role> | unfenced":                        {mark: "unfence", event: unfence},
-	"writing | stops":                          {event: stopWriting},
-	"a row | written":                          {event: writeRow},
-	"<role>'s node | killed":                   {mark: "kill", event: killNodes},
-	"<role>'s node and <role>'s node | killed": {mark: "kill", event: killNodes},
-	"the node | starts":                        {mark: "start", event: startKilled(1)},
-	"the nodes | start":                        {mark: "start", event: startKilled(2)},
-	"<role>'s postgres container | killed":     {event: killPostgres},
-	"the catalog | read on <role>":             {event: readCatalog},
-	"<n> MB of WAL | written on <role>":        {event: writeWAL},
-	"<role>'s WAL | switched":                  {event: switchWAL},
-	"the instance image | changed":             {mark: "change", event: changeImage},
-	"wal_keep_size | set to <n>MB":             {mark: "change", event: setWalKeepSize},
-	"a backup | taken":                         {mark: "backup", event: backUp},
-	"pg-restore | restored from the store":     {mark: "restore", event: restore},
-	"the store | stopped":                      {event: breakStore("stopped")},
-	"the store | paused":                       {event: breakStore("paused")},
-	"the store | starts":                       {event: storeStarts},
-	"<role>'s node | drained":                  {mark: "drain", event: drainNode},
-	"the node | uncordoned":                    {mark: "uncordon", event: uncordon},
-	"<role> | cut off":                         {event: cutOff},
-	"<role> | reconnected":                     {event: reconnect},
-	"replay on <role> | paused":                {event: replay("pause")},
-	"replay on <role> | resumed":               {event: replay("resume")},
-	"replay on <role> and <role> | paused":     {event: replay("pause")},
-	"replay on <role> and <role> | resumed":    {event: replay("resume")},
-	"a <n> s statement | committed on <role>":  {event: longCommit},
-	"a commit | started on <role>":             {event: startCommit},
-	"desired.sh | runs":                        {event: runDesired},
-	"evidence.sh | runs":                       {event: runEvidence},
-	"prove.sh | runs":                          {event: runProve},
-	"host-check.sh | runs":                     {event: runHostCheck},
+	"<role> | promoted":                         {mark: "promote", event: promote},
+	"<role> | fenced":                           {mark: "fence", event: fence},
+	"<role> | unfenced":                         {mark: "unfence", event: unfence},
+	"writing | stops":                           {event: stopWriting},
+	"a row | written":                           {event: writeRow},
+	"<role>'s node | killed":                    {mark: "kill", event: killNodes},
+	"<role>'s node and <role>'s node | killed":  {mark: "kill", event: killNodes},
+	"the node | starts":                         {mark: "start", event: startKilled(1)},
+	"the nodes | start":                         {mark: "start", event: startKilled(2)},
+	"<role>'s postgres container | killed":      {event: killPostgres},
+	"the catalog | read on <role>":              {event: readCatalog},
+	"<n> MB of WAL | written on <role>":         {event: writeWAL},
+	"<role>'s WAL | switched":                   {event: switchWAL},
+	"the instance image | changed":              {mark: "change", event: changeImage},
+	"wal_keep_size | set to <n>MB":              {mark: "change", event: setWalKeepSize},
+	"a backup | taken":                          {mark: "backup", event: backUp},
+	"pg-restore | restored from the store":      {mark: "restore", event: restore},
+	"the store | stopped":                       {event: breakStore("stopped")},
+	"the store | paused":                        {event: breakStore("paused")},
+	"the store | starts":                        {event: storeStarts},
+	"<role>'s node | drained":                   {mark: "drain", event: drainNode},
+	"the node | uncordoned":                     {mark: "uncordon", event: uncordon},
+	"<role> | cut off":                          {event: cutOff},
+	"<role> | reconnected":                      {event: reconnect},
+	"replay on <role> | paused":                 {event: replay("pause")},
+	"replay on <role> | resumed":                {event: replay("resume")},
+	"replay on <role> and <role> | paused":      {event: replay("pause")},
+	"replay on <role> and <role> | resumed":     {event: replay("resume")},
+	"a <n> s statement | committed on <role>":   {event: longCommit},
+	"a commit | started on <role>":              {event: startCommit},
+	"desired.sh | runs":                         {event: runDesired},
+	"the client-ca part of evidence.sh | runs":  {event: runEvidence("client-ca")},
+	"the logins part of evidence.sh | runs":     {event: runEvidence("logins")},
+	"the postgres part of evidence.sh | runs":   {event: runEvidence("postgres")},
+	"the pods part of evidence.sh | runs":       {event: runEvidence("pods")},
+	"the tls part of evidence.sh | runs":        {event: runEvidence("tls")},
+	"the kubernetes part of evidence.sh | runs": {event: runEvidence("kubernetes")},
+	"prove.sh | runs":                           {event: runProve},
+	"host-check.sh | runs":                      {event: runHostCheck},
 
 	// States.
 	"the cluster | healthy":                          {state: clusterHealthy},
@@ -108,7 +113,12 @@ var vocabulary = map[string]word{
 	"the commit | done":                              {state: commitDone},
 	"the replica lag | healthy":                      {state: replicaLagHealthy},
 	"compliance | healthy":                           {state: compliant},
-	"evidence.sh | passes":                           {state: evidencePasses},
+	"the client-ca part of evidence.sh | passes":     {state: evidencePasses("client-ca")},
+	"the logins part of evidence.sh | passes":        {state: evidencePasses("logins")},
+	"the postgres part of evidence.sh | passes":      {state: evidencePasses("postgres")},
+	"the pods part of evidence.sh | passes":          {state: evidencePasses("pods")},
+	"the tls part of evidence.sh | passes":           {state: evidencePasses("tls")},
+	"the kubernetes part of evidence.sh | passes":    {state: evidencePasses("kubernetes")},
 	"prove.sh | passes":                              {state: provePasses},
 
 	// Since an event.
@@ -137,13 +147,24 @@ func promote(ctx context.Context, s *scenario, a args) error {
 
 // fence: kubectl cnpg fencing on, which stops the instance's PostgreSQL;
 // unfence: off, which starts it again.
-func fence(ctx context.Context, _ *scenario, a args) error {
-	_, err := kubectl(ctx, "cnpg", "fencing", "on", clusterName, a.pods[0], "-n", namespace)
-	return err
+func fence(ctx context.Context, s *scenario, a args) error {
+	if _, err := kubectl(ctx, "cnpg", "fencing", "on", clusterName, a.pods[0], "-n", namespace); err != nil {
+		return err
+	}
+	s.fenced = append(s.fenced, a.pods[0])
+	return nil
 }
 
-func unfence(ctx context.Context, _ *scenario, a args) error {
-	_, err := kubectl(ctx, "cnpg", "fencing", "off", clusterName, a.pods[0], "-n", namespace)
+func unfence(ctx context.Context, s *scenario, a args) error {
+	if err := fencingOff(ctx, a.pods[0]); err != nil {
+		return err
+	}
+	s.fenced = slices.DeleteFunc(s.fenced, func(p string) bool { return p == a.pods[0] })
+	return nil
+}
+
+func fencingOff(ctx context.Context, pod string) error {
+	_, err := kubectl(ctx, "cnpg", "fencing", "off", clusterName, pod, "-n", namespace)
 	return err
 }
 

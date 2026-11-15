@@ -20,8 +20,8 @@ import (
 )
 
 // The words of the vocabulary about the scripts of the repository:
-// desired.sh, evidence.sh and prove.sh, run as docs/evidence.md and
-// docs/prove.md say, and host-check.sh on every node. The e2e image has
+// desired.sh, evidence.sh part by part and prove.sh, run as
+// docs/evidence.md and docs/prove.md say, and host-check.sh on every node. The e2e image has
 // the scripts under scriptsDir, and under nodeTools a static bash and jq,
 // which it copies onto a node for host-check.sh: the k3s image has neither.
 const (
@@ -119,46 +119,51 @@ func runDesired(ctx context.Context, s *scenario, _ args) error {
 	return nil
 }
 
-// runEvidence: evidence.sh, from the e2e test, with the CA of client-ca.
-func runEvidence(ctx context.Context, s *scenario, _ args) error {
-	values, err := desiredValues(ctx)
-	if err != nil {
-		return err
+// runEvidence: one part of evidence.sh, from the e2e test, with the CA of
+// client-ca.
+func runEvidence(part string) func(context.Context, *scenario, args) error {
+	return func(ctx context.Context, s *scenario, _ args) error {
+		values, err := desiredValues(ctx)
+		if err != nil {
+			return err
+		}
+		ca, err := clientCA(ctx)
+		if err != nil {
+			return err
+		}
+		r, err := script(ctx, values, "evidence/evidence.sh", "--ca", ca, "--part", part)
+		if err != nil {
+			return err
+		}
+		return s.keep("evidence.sh "+part, "evidence."+part+".json", r)
 	}
-	ca, err := clientCA(ctx)
-	if err != nil {
-		return err
-	}
-	r, err := script(ctx, values, "evidence/evidence.sh", "--ca", ca)
-	if err != nil {
-		return err
-	}
-	return s.keep("evidence.sh", "evidence.json", r)
 }
 
-// evidencePasses: evidence.sh found no violation.
-func evidencePasses(_ context.Context, s *scenario, _ args) error {
-	r, ok := s.scripts["evidence.sh"]
-	if !ok {
-		return errors.New("evidence.sh did not run")
-	}
-	var doc struct {
-		Violations []struct {
-			Sentence string `json:"sentence"`
-		} `json:"violations"`
-	}
-	if err := json.Unmarshal([]byte(r.out), &doc); err != nil {
-		return fmt.Errorf("the output of evidence.sh: %w", err)
-	}
-	if r.code != 0 || len(doc.Violations) > 0 {
-		var sentences []string
-		for _, v := range doc.Violations {
-			sentences = append(sentences, v.Sentence)
+// evidencePasses: the part of evidence.sh found no violation.
+func evidencePasses(part string) func(context.Context, *scenario, args) error {
+	return func(_ context.Context, s *scenario, _ args) error {
+		r, ok := s.scripts["evidence.sh "+part]
+		if !ok {
+			return fmt.Errorf("the %s part of evidence.sh did not run", part)
 		}
-		return fmt.Errorf("evidence.sh exited with %d, violations: %s", r.code, strings.Join(sentences, "; "))
+		var doc struct {
+			Violations []struct {
+				Sentence string `json:"sentence"`
+			} `json:"violations"`
+		}
+		if err := json.Unmarshal([]byte(r.out), &doc); err != nil {
+			return fmt.Errorf("the output of evidence.sh: %w", err)
+		}
+		if r.code != 0 || len(doc.Violations) > 0 {
+			var sentences []string
+			for _, v := range doc.Violations {
+				sentences = append(sentences, v.Sentence)
+			}
+			return fmt.Errorf("evidence.sh --part %s exited with %d, violations: %s", part, r.code, strings.Join(sentences, "; "))
+		}
+		s.detail = "no violations"
+		return nil
 	}
-	s.detail = "no violations"
-	return nil
 }
 
 // runProve: prove.sh as root on every node, which the e2e test sees through

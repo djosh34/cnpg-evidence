@@ -17,17 +17,25 @@ import (
 
 // background is a command that runs on while the scenario goes on.
 type background struct {
-	done chan struct{}
-	err  error
+	done   chan struct{}
+	err    error
+	cancel context.CancelFunc
 }
 
 func inBackground(ctx context.Context, name string, args ...string) *background {
-	b := &background{done: make(chan struct{})}
+	ctx, cancel := context.WithCancel(ctx)
+	b := &background{done: make(chan struct{}), cancel: cancel}
 	go func() {
 		_, b.err = command(ctx, name, args...)
 		close(b.done)
 	}()
 	return b
+}
+
+// stop ends the command if it still runs, and waits until it has.
+func (b *background) stop() {
+	b.cancel()
+	<-b.done
 }
 
 // finished is the command's error once it ended, and an error while it
@@ -91,11 +99,12 @@ func uncordon(ctx context.Context, s *scenario, a args) error {
 // its connections to port 5432, and the primary ends the instance's WAL
 // sender. The replica stops streaming, while its exporter, which others
 // connect to, goes on answering.
-func cutOff(ctx context.Context, _ *scenario, a args) error {
+func cutOff(ctx context.Context, s *scenario, a args) error {
 	pod := a.pods[0]
 	if err := podFirewall(ctx, pod, "-I"); err != nil {
 		return err
 	}
+	s.cut = append(s.cut, pod)
 	primary, err := clusterStatus(ctx, clusterName, "currentPrimary")
 	if err != nil {
 		return err
@@ -106,8 +115,12 @@ func cutOff(ctx context.Context, _ *scenario, a args) error {
 }
 
 // reconnect: the rule of cutOff is gone.
-func reconnect(ctx context.Context, _ *scenario, a args) error {
-	return podFirewall(ctx, a.pods[0], "-D")
+func reconnect(ctx context.Context, s *scenario, a args) error {
+	if err := podFirewall(ctx, a.pods[0], "-D"); err != nil {
+		return err
+	}
+	s.cut = slices.DeleteFunc(s.cut, func(p string) bool { return p == a.pods[0] })
+	return nil
 }
 
 var sandboxID = regexp.MustCompile(`^[0-9a-f]+$`)
@@ -172,13 +185,17 @@ func metricsArriving(ctx context.Context, s *scenario, a args) error {
 
 // replay pauses or resumes WAL replay on the instances.
 func replay(action string) func(context.Context, *scenario, args) error {
-	return func(ctx context.Context, _ *scenario, a args) error {
+	return func(ctx context.Context, s *scenario, a args) error {
 		for _, pod := range a.pods {
 			if pod == anotherInstance {
 				return errors.New("name the instances")
 			}
 			if _, err := psql(ctx, pod, "postgres", "select pg_wal_replay_"+action+"()"); err != nil {
 				return err
+			}
+			s.paused = slices.DeleteFunc(s.paused, func(p string) bool { return p == pod })
+			if action == "pause" {
+				s.paused = append(s.paused, pod)
 			}
 		}
 		return nil

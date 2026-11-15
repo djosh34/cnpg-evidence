@@ -45,6 +45,8 @@ kubectl() { echo 'Error from server (Forbidden): secrets is forbidden' >&2; retu
 export -f kubectl
 
 exits "no --ca" 2 "$values"
+exits "a part that does not exist" 2 "$values" --ca <(echo "$ca") --part software
+exits "--part without a part" 2 "$values" --ca <(echo "$ca") --part
 exits "empty stdin" 2 "" --ca <(echo "$ca")
 exits "values that are not JSON" 2 "cluster: pg" --ca <(echo "$ca")
 exits "values without the cluster" 2 '{}' --ca <(echo "$ca")
@@ -98,5 +100,21 @@ out=$(violations='["rule 4: role app exists"]' bash "$copy/scripts/evidence/evid
 same_text "a run with violations exits 1" 1 "$code"
 same "a run with violations fails" '{"status": "fail", "violations": ["rule 4: role app exists"]}' \
   "$(jq '{status, violations}' <<<"$out")"
+
+# A run of one part reads only that part: every other part's stub fails.
+for other in postgres/postgres.sh logins/logins.sh client-ca/client-ca.sh software/software.sh kubernetes/kubernetes.sh; do
+  echo 'exit 3' >"$copy/scripts/evidence/$other"
+done
+# The stub expands $* when it runs.
+# shellcheck disable=SC2016
+printf 'cat >/dev/null\necho "$*" >"%s/sections"\necho "[]"\n' "$copy" >"$copy/scripts/evidence/violations/violations.sh"
+code=0
+out=$(bash "$copy/scripts/evidence/evidence.sh" --ca <(echo "$ca") --part tls <<<"$values" 2>/dev/null) || code=$?
+same_text "a run of the tls part exits 0" 0 "$code"
+same_text "it names the part and has only its facts" \
+  "kind source collected_at cluster part status violations tls details" \
+  "$(jq -r 'keys_unsorted | join(" ")' <<<"$out")"
+same "its details keep the primary and the instances" '{"primary": "pg-1", "instances": ["pg-1"]}' "$(jq .details <<<"$out")"
+same_text "it judges only the tls section" tls "$(cat "$copy/sections")"
 
 finish

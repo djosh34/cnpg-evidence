@@ -39,6 +39,16 @@ same "the violations of every section, in order" \
     {"path": ["pods_sharing_host_uids"], "sentence": "rule 5: pod pg-1 shares host uids"}]' \
   "$(bash "$here/violations.sh" <<<"$input")"
 
+same "the violations of one section" \
+  '[{"path": ["pods_sharing_host_uids"], "sentence": "rule 5: pod pg-1 shares host uids"}]' \
+  "$(bash "$here/violations.sh" pods <<<"$input")"
+
+if bash "$here/violations.sh" software <<<"$input" >/dev/null 2>&1; then
+  fail "a section that does not exist fails"
+else
+  pass "a section that does not exist fails"
+fi
+
 if bash "$here/violations.sh" <<<'{"facts": {}}' >/dev/null 2>&1; then
   fail "facts it cannot read fail"
 else
