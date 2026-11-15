@@ -331,7 +331,6 @@ func (s *scenario) hostCheckPassesBut(table *godog.Table) error {
 				wrong = append(wrong, id+" did not run")
 			}
 		}
-		passed = 0
 		for _, id := range slices.Sorted(maps.Keys(checks)) {
 			if _, skipped := skip[id]; skipped {
 				continue
@@ -346,7 +345,7 @@ func (s *scenario) hostCheckPassesBut(table *godog.Table) error {
 			return fmt.Errorf("on %s: %s", node, strings.Join(wrong, "; "))
 		}
 	}
-	s.detail = fmt.Sprintf("%d other checks passed on each node", passed)
+	s.detail = fmt.Sprintf("%d other checks passed on %d nodes", passed, nodeCount)
 	return nil
 }
 
@@ -366,8 +365,11 @@ func (s *scenario) hostCheckTable(table *godog.Table, withValue bool) (map[strin
 	}
 	checkCol, okCheck := column["check"]
 	valueCol, okValue := column["value"]
-	if !okCheck || withValue && !okValue {
-		return nil, errors.New("the table lacks the column check or value")
+	if !okCheck {
+		return nil, errors.New("the table has no column check")
+	}
+	if withValue && !okValue {
+		return nil, errors.New("the table has no column value")
 	}
 	rows := map[string]string{}
 	for _, row := range table.Rows[1:] {
