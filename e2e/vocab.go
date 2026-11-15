@@ -422,11 +422,9 @@ func onDashboard(ctx context.Context, s *scenario, a args, from time.Time) error
 	if slices.Contains(a.pods, anotherInstance) {
 		return errors.New("name the instances")
 	}
-	if err := s.w.mon.shownSince(ctx, "Instances", a.pods, from); err != nil {
-		return err
-	}
-	s.detail = "shown at every evaluation every 15 s"
-	return nil
+	longest, err := s.w.mon.shownSince(ctx, "Instances", a.pods, from)
+	s.detail = "the longest gap " + seconds(longest)
+	return err
 }
 
 // stopWriting: the client stops writing and goes on reading. The write

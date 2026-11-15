@@ -544,6 +544,23 @@ func (m *monitoring) panelNotRed(ctx context.Context, title string) error {
 	return nil
 }
 
+// longestGap is the longest time a panel did not show a pod: the
+// evaluations from from to end, every step seconds, that showed it are
+// shown. A pod missing from one evaluation between two that show it was
+// gone for two steps.
+func longestGap(shown map[int64]bool, from, end, step int64) time.Duration {
+	var longest int64
+	last := from - step
+	for t := from; t <= end; t += step {
+		if shown[t] {
+			last = t
+			continue
+		}
+		longest = max(longest, t-last+step)
+	}
+	return time.Duration(longest) * time.Second
+}
+
 // redQueries are the refIds of the queries the panel shows in red.
 func (p panel) redQueries() (map[string]bool, error) {
 	red := map[string]bool{}
@@ -569,16 +586,19 @@ func (p panel) redQueries() (map[string]bool, error) {
 	return red, nil
 }
 
-// shownSince: the stat panel with the title showed each pod at every
-// evaluation from from to now, every 15 s, as a dashboard that refreshes
-// would have shown it.
-func (m *monitoring) shownSince(ctx context.Context, title string, pods []string, from time.Time) error {
+// shownSince: the stat panel with the title never lost one of the pods for
+// 60 s or longer from from to now, evaluated every 15 s as a dashboard that
+// refreshes would show it. An exporter can answer once without its query
+// metrics after a change of the Cluster, which drops the instance from one
+// evaluation; that is no gap on-call needs to see. It returns the longest
+// gap of any pod.
+func (m *monitoring) shownSince(ctx context.Context, title string, pods []string, from time.Time) (time.Duration, error) {
 	p, err := m.statPanel(ctx, title)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if len(p.Targets) != 1 {
-		return fmt.Errorf("the dashboard's %s panel has %d queries, not one", title, len(p.Targets))
+		return 0, fmt.Errorf("the dashboard's %s panel has %d queries, not one", title, len(p.Targets))
 	}
 	const step = 15
 	end := time.Now()
@@ -597,21 +617,24 @@ func (m *monitoring) shownSince(ctx context.Context, title string, pods []string
 	}
 	err = m.get(ctx, grafanaURL+"/api/datasources/proxy/uid/"+grafanaSource+"/api/v1/query_range?"+q.Encode(), &resp)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	want := int(end.Unix()-from.Unix())/step + 1
+	var longest time.Duration
 	for _, pod := range pods {
-		shown := 0
+		shown := map[int64]bool{}
 		for _, r := range resp.Data.Result {
-			if r.Metric["pod"] == pod {
-				shown += len(r.Values)
+			for _, v := range r.Values {
+				if t, ok := v[0].(float64); ok && r.Metric["pod"] == pod {
+					shown[int64(t)] = true
+				}
 			}
 		}
-		if shown < want {
-			return fmt.Errorf("the dashboard's %s panel showed %s at %d of the %d evaluations every %d s since then", title, pod, shown, want, step)
+		longest = max(longest, longestGap(shown, from.Unix(), end.Unix(), step))
+		if longest >= time.Minute {
+			return longest, fmt.Errorf("the dashboard's %s panel lost %s for %s", title, pod, seconds(longest))
 		}
 	}
-	return nil
+	return longest, nil
 }
 
 // everySource: Prometheus has the metrics of every source the rules read:

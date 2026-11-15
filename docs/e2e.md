@@ -287,7 +287,7 @@ Measures and since lines:
 | `reading is healthy < N s` | The client never went N s without a successful read. |
 | `writing is healthy < N s` | The client never went N s without an acknowledged write, until the writes stop. A scenario's own limit also replaces the one in `always.feature`. With `after the <event>`: an acknowledged write sent after the event, by N s after it. |
 | `writing has been down since the <event>` | No write sent since the event was acknowledged. |
-| `<role> and <role> have been on the dashboard since the <event>` | The dashboard's Instances panel showed both instances at every evaluation every 15 s since the event, as a dashboard that refreshes would have. |
+| `<role> and <role> have been on the dashboard since the <event>` | The dashboard's Instances panel, evaluated every 15 s since the event as a dashboard that refreshes would show it, never lost either instance for 60 s or longer. An exporter can answer once without its query metrics after a change of the `Cluster`, which drops the instance from one evaluation; on-call need not see that. The timing table gives the longest gap. |
 | `pgfallback has been healthy since the <event>` | The [pgfallback report](#the-pgfallback-report) finds nothing `pgfallback` must not do. |
 
 ### The pgfallback report
