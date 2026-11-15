@@ -43,7 +43,8 @@ func fakeTools(t *testing.T, more ...string) func() []string {
 }
 
 // After a failed line with a killed node and a fenced instance, the run
-// starts the node, then unfences the instance, and does nothing else. An
+// starts the node, waits for the API server, then unfences the instance,
+// and does nothing else. An
 // outage the scenario ended itself is not ended again.
 func TestEndOutages(t *testing.T) {
 	calls := fakeTools(t)
@@ -66,11 +67,11 @@ func TestEndOutages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"docker start k3s-1", "kubectl cnpg fencing off " + clusterName + " pg-2 -n " + namespace}
+	want := []string{"docker start k3s-1", "kubectl get --raw /readyz", "kubectl cnpg fencing off " + clusterName + " pg-2 -n " + namespace}
 	if got := calls(); !slices.Equal(got, want) {
 		t.Errorf("after the failed line: got %q, want %q", got, want)
 	}
-	if done != "started k3s-1; unfenced pg-2" {
+	if done != "started k3s-1; the API server answered; unfenced pg-2" {
 		t.Errorf("what it did: %q", done)
 	}
 	if done, err := s.endOutages(ctx); err != nil || done != "" {

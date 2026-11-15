@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 )
 
 // endOutages ends the outages a failed scenario left in place, before
@@ -38,6 +39,14 @@ func (s *scenario) endOutages(ctx context.Context) (string, error) {
 			s.down, s.downPods = nil, nil
 		}
 		step(what, err)
+	}
+	// The next steps need the API server, which waits for etcd's quorum
+	// when two nodes were down.
+	if len(restarted) > 0 && (len(s.fenced)+len(s.paused)+len(s.cut) > 0 || s.drain != nil) {
+		step("the API server answered", poll(ctx, time.Now().Add(5*time.Minute), func(ctx context.Context) error {
+			_, err := kubectl(ctx, "get", "--raw", "/readyz")
+			return err
+		}))
 	}
 	if s.store != "" {
 		what := "the " + s.store + " store back"

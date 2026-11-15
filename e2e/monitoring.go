@@ -517,8 +517,9 @@ func (m *monitoring) dashboardHasData(ctx context.Context) error {
 	return nil
 }
 
-// panelNotRed: the stat panel with the title shows no value in red now, as
-// it does while its alert fires: every query it colours red has no value.
+// panelNotRed: the stat panel with the title shows nothing in red now, as
+// it does while its alert fires: every query it colours red has no result.
+// A NaN result shows as red "Missing".
 func (m *monitoring) panelNotRed(ctx context.Context, title string) error {
 	p, err := m.statPanel(ctx, title)
 	if err != nil {
@@ -536,10 +537,8 @@ func (m *monitoring) panelNotRed(ctx context.Context, title string) error {
 		if err != nil {
 			return err
 		}
-		for _, s := range result {
-			if v, ok := s.Value[1].(string); ok && v != "NaN" {
-				return fmt.Errorf("the dashboard's %s panel shows %s in red", title, v)
-			}
+		if len(result) > 0 {
+			return fmt.Errorf("the dashboard's %s panel shows %v in red", title, result[0].Value[1])
 		}
 	}
 	return nil

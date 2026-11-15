@@ -185,12 +185,13 @@ func killNodes(ctx context.Context, s *scenario, a args) error {
 		}
 		nodes = append(nodes, node)
 	}
+	// Kept before the stop, which can fail after some nodes stopped.
+	s.down = append(s.down, nodes...)
+	s.downPods = append(s.downPods, a.pods...)
 	if err := stopNodes(ctx, nodes...); err != nil {
 		return err
 	}
 	s.stops(a.pods...)
-	s.down = append(s.down, nodes...)
-	s.downPods = append(s.downPods, a.pods...)
 	return useRunningAPI(s.down)
 }
 

@@ -177,7 +177,7 @@ When it starts the store, the run checks with CNPG's keys that a write and a rea
 
 Each scenario ends its own faults in its own lines. When a line fails partway, the run first ends the outages still in place, then runs `always.feature`:
 
-- it starts the killed nodes;
+- it starts the killed nodes, and waits up to 5 min for the API server before the steps that need it;
 - it brings back a stopped or paused store;
 - it removes the firewall rule of a cut-off instance;
 - it unfences the fenced instances;
@@ -272,7 +272,7 @@ States, checked now, within the line's limit, or for its time:
 | `the backup is done` | The backup's phase is completed. |
 | `the commit is done` | The started insert ended and succeeded. |
 | `<role>'s metrics are arriving` | Prometheus has its `cnpg_collector_up` 1 from the last 30 s. |
-| `the replica lag panel is healthy` | The dashboard's Replica lag panel shows no alert state: the query it shows in red, while `CNPGReplicaLag` fires, has no value. With `for N s` it holds the whole time. The timing table gives the most each replica reported since the last event, of `cnpg_replica_lag_seconds` and of CNPG's own `cnpg_pg_replication_lag`. |
+| `the replica lag panel is healthy` | The dashboard's Replica lag panel shows no alert state: the query it shows in red, while `CNPGReplicaLag` fires, has no result. With `for N s` it holds the whole time. The timing table gives the most each replica reported since the last event, of `cnpg_replica_lag_seconds` and of CNPG's own `cnpg_pg_replication_lag`. |
 | `compliance is healthy`, `compliance on pg-restore is healthy` | Every instance reported the four compliance checks as 0 in the last 30 s. |
 | `the exporters are healthy` | Every exporter answered in the last 30 s with its query metrics. |
 | `the <part> part of evidence.sh passes`, `prove.sh passes` | No violation in that part; every probe as in the desired document, on every node. |

@@ -86,7 +86,7 @@ jobs:
               else ($wanted | split(",") | map(gsub("^ +| +$"; "")) | map(select(. != ""))) as $want
               | if ($want - $all) != [] then error("no scenario has the tag: \($want - $all | join(", "))")
                 elif ($want - ($all - $left)) != [] then error("a variant run leaves out: \($want - ($all - $left) | join(", "))")
-                else $want end
+                else $want | unique end
               end')
           echo "Scenarios: $picked"
           echo "scenarios=$picked" >>"$GITHUB_OUTPUT"

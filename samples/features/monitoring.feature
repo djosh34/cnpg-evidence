@@ -8,10 +8,10 @@ Feature: Monitoring
   Scenario: The other instances raise no false metrics alert while a node is lost for over 5 minutes
     Each node is lost for longer than the 5 min after which Kubernetes marks
     its pods for deletion. On-call must see the other instances on the
-    dashboard all the time, and no CNPGMetricsMissing or
-    CNPGComplianceViolation for them. While CNPGReplicaDown fires for
-    replica 1, the sample's Alertmanager configuration mutes its
-    CNPGMetricsMissing, and not that of replica 2.
+    dashboard all the time. No CNPGMetricsMissing fires, which waits 10 min,
+    and no CNPGComplianceViolation, which is about the whole cluster. While
+    CNPGReplicaDown fires for replica 1, the sample's Alertmanager
+    configuration mutes its CNPGMetricsMissing, and not that of replica 2.
 
     Given the exporters are healthy < 60 s
     When replica 1's node is killed
@@ -24,10 +24,6 @@ Feature: Monitoring
     When 400 s pass after the kill
     Then the primary is still primary
     And the primary and replica 2 have been on the dashboard since the kill
-    And CNPGMetricsMissing has not fired for the primary
-    And CNPGMetricsMissing has not fired for replica 2
-    And CNPGComplianceViolation has not fired for the primary
-    And CNPGComplianceViolation has not fired for replica 2
     When the node starts
     Then the cluster is healthy < 600 s
     And the exporters are healthy < 60 s
@@ -36,13 +32,13 @@ Feature: Monitoring
     And CNPGReplicaDown fires for the primary < 420 s after the kill
     When 400 s pass after the kill
     Then replica 1 and replica 2 have been on the dashboard since the kill
-    And CNPGMetricsMissing has not fired for replica 1
-    And CNPGMetricsMissing has not fired for replica 2
-    And CNPGComplianceViolation has not fired for replica 1
-    And CNPGComplianceViolation has not fired for replica 2
     When the node starts
     Then the cluster is healthy < 600 s
     And the exporters are healthy < 60 s
+    And CNPGMetricsMissing has not fired for the primary
+    And CNPGMetricsMissing has not fired for replica 1
+    And CNPGMetricsMissing has not fired for replica 2
+    And CNPGComplianceViolation has not fired for the cluster
 
   @replica-not-streaming
   Scenario: A replica stops streaming while its exporter keeps answering
