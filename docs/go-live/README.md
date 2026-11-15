@@ -7,7 +7,7 @@ It assumes:
 - a new cluster that imports the old one's databases;
 - clients outside the cluster that list every node, set a short `connect_timeout`, and treat a COMMIT that got no answer as unknown: it may have been committed.
 
-Everything here was measured in the [scenarios](../e2e.md) or read from the upstream source, unless it says otherwise. The variant [`first-list`](../../variants/first-list) of the scenarios applies the base and the list below, and leaves everything else at its default.
+Everything here was measured in the [scenarios](../e2e.md) or read from the upstream source, unless it says otherwise. The variant [`first-list`](../../variants/first-list) of the scenarios applies the base and the list below, and leaves everything else at its default. The variant [`every-item`](../../variants/every-item) also applies [Later](#later).
 
 ## The base
 

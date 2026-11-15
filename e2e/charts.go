@@ -100,14 +100,15 @@ func helm(ctx context.Context, limit time.Duration, args ...string) (string, err
 }
 
 // spreadK3sServices runs one CoreDNS pod on every node, as the first list of
-// docs/go-live says, and for the samples also one metrics-server pod, as
-// docs/samples.md does: they come from k3s's own manifests, not from a chart.
-// It waits for them and for Traefik, which answers the http-01 challenges:
-// a DaemonSet for the samples, from k3s/manifests, and a Deployment unless a
-// variant's k3s/manifests say otherwise.
+// docs/go-live says, and for the samples and the variant every-item also one
+// metrics-server pod, as docs/samples.md and docs/go-live/later.md do: they
+// come from k3s's own manifests, not from a chart. It waits for them and for
+// Traefik, which answers the http-01 challenges: a DaemonSet or a Deployment,
+// as the settings' k3s/manifests say.
 func spreadK3sServices(ctx context.Context) error {
 	spread := []string{"deployment/coredns"}
-	if variant == "" {
+	metricsServer := variant == "" || variant == "every-item"
+	if metricsServer {
 		spread = append(spread, "deployment/metrics-server")
 	}
 	var traefik string
@@ -115,7 +116,7 @@ func spreadK3sServices(ctx context.Context) error {
 		if _, err := kubectl(ctx, "scale", "deployment", "coredns", "-n", "kube-system", "--replicas=3"); err != nil {
 			return err
 		}
-		if variant == "" {
+		if metricsServer {
 			_, err := kubectl(ctx, "patch", "deployment", "metrics-server", "-n", "kube-system", "--type=merge", "-p",
 				`{"spec": {"replicas": 3, "template": {"spec": {"affinity": {"podAntiAffinity": {
 				"requiredDuringSchedulingIgnoredDuringExecution": [{"topologyKey": "kubernetes.io/hostname",

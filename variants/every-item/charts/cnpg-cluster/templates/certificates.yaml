@@ -1,0 +1,37 @@
+{{- $c := .Values.cluster }}
+{{- $r := .Values.replication }}
+# Each Certificate has its own Issuer, and so its own ACME account.
+{{ include "cnpg-cluster.issuer" (dict "name" (printf "%s-server" $c.name) "namespace" $c.namespace "acme" .Values.acme) }}
+---
+# Server certificate for 5432 and 8000, with the names from replication in
+# desired.yaml.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $c.name }}-server
+  namespace: {{ $c.namespace }}
+spec:
+  secretName: {{ $c.name }}-server
+  commonName: {{ $r.commonName }}
+  dnsNames: {{ toJson $r.dnsNames }}
+  usages: [server auth]
+  issuerRef:
+    kind: Issuer
+    name: {{ $c.name }}-server
+---
+{{ include "cnpg-cluster.issuer" (dict "name" (printf "%s-replication" $c.name) "namespace" $c.namespace "acme" .Values.acme) }}
+---
+# The one replication client certificate, mounted into every instance.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $c.name }}-replication
+  namespace: {{ $c.namespace }}
+spec:
+  secretName: {{ $c.name }}-replication
+  commonName: {{ $r.commonName }}
+  dnsNames: {{ toJson $r.dnsNames }}
+  usages: [client auth]  # CNPG requires clientAuth on this certificate
+  issuerRef:
+    kind: Issuer
+    name: {{ $c.name }}-replication

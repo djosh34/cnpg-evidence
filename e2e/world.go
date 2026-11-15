@@ -51,7 +51,7 @@ func newWorld(ctx context.Context) (*world, error) {
 	if err := startNodes(ctx); err != nil {
 		return nil, err
 	}
-	logf("one CoreDNS, metrics-server and Traefik pod per node")
+	logf("one CoreDNS pod per node; metrics-server and Traefik as the settings have them")
 	if err := spreadK3sServices(ctx); err != nil {
 		return nil, err
 	}

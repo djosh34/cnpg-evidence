@@ -1,0 +1,21 @@
+# The releases the e2e test installs, top to bottom, each with
+# helm upgrade --install --wait. chart is a directory next to this file.
+# values are more values files of this variant; the e2e test adds
+# values/<name>.yaml after them when it exists. No ClusterIssuer: each
+# Certificate has its own Issuer, in the chart that makes the Certificate.
+- name: cert-manager
+  namespace: cert-manager
+  chart: cnpg-cert-manager
+- name: cnpg
+  namespace: cnpg-system
+  chart: cnpg-cloudnative-pg
+- name: barman-cloud
+  namespace: cnpg-system
+  chart: cnpg-plugin-barman-cloud
+- name: otel
+  namespace: otel
+  chart: cnpg-opentelemetry-collector
+- name: pg
+  namespace: databases
+  chart: cnpg-cluster
+  values: [desired.yaml]
