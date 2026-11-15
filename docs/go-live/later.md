@@ -1,6 +1,6 @@
 # Later
 
-What the samples do that can wait until after go-live. [samples.md](../samples.md#what-the-samples-change-and-why) gives the reason for each. The variant [`every-item`](../../variants/every-item) of the scenarios applies the base, the first list and every item below.
+What the samples do that can wait until after go-live. [samples.md](../samples.md#what-the-samples-change-and-why) gives the reason for each. The variant [`every-item`](../../variants/every-item) of the scenarios applies the base, the first list and every item below, except that its audit log stays on the node: the scenarios have no log store to ship it to.
 
 **Cluster**
 - **Metrics over TLS** (`monitoring.tls.enabled: true`). A change rolls every instance, and the collectors must scrape with `https`.
