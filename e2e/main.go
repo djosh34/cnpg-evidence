@@ -92,7 +92,21 @@ func run(scenario string) int {
 		say(os.Stderr, "e2e: %v\n", err)
 		return 2
 	}
-	return runScenario(scenario, results)
+	disks := &dataDisks{}
+	code := 2
+	if err := disks.prepare(context.Background()); err != nil {
+		say(os.Stderr, "e2e: the nodes' data filesystems: %v\n", err)
+	} else {
+		disks.watch()
+		code = runScenario(scenario, results)
+	}
+	// A run that cannot clean up is a fault of the run, also when its
+	// scenario passed.
+	if err := disks.finish(context.Background(), results); err != nil {
+		say(os.Stderr, "e2e: cleaning up the nodes' data filesystems: %v\n", err)
+		code = max(code, 2)
+	}
+	return code
 }
 
 // A run needs this many inotify instances. The limit is the host's, for

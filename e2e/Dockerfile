@@ -49,8 +49,10 @@ RUN set -eu; \
   install -m 755 jq node/jq
 
 FROM docker:29-dind@sha256:08a98015fce594af7c382883bea080ea206de74402a95da9dc52b6428c8cd121
-# What the scripts of scripts/ need.
-RUN apk add --no-cache bash coreutils jq openssl postgresql-client procps-ng python3 setpriv
+# What the scripts of scripts/ need, and what the nodes' data filesystems
+# need: fallocate, mkfs.ext4, and util-linux's mount, umount and losetup.
+RUN apk add --no-cache bash coreutils jq openssl postgresql-client procps-ng python3 setpriv \
+  e2fsprogs losetup mount umount util-linux-misc
 COPY --from=tools /tools/out/ /usr/local/bin/
 COPY --from=tools /tools/node/ /opt/cnpg-evidence/node/
 COPY scripts/ /opt/cnpg-evidence/scripts/
@@ -61,4 +63,7 @@ COPY --from=build /out/e2e /usr/local/bin/e2e
 # copy-out works. TestScenario copies the settings into /samples and
 # /variants.
 RUN mkdir /results /samples /variants
+# The images of the nodes' data filesystems, on the runner's disk rather
+# than in the container's own layer.
+VOLUME ["/e2e-disks"]
 ENTRYPOINT ["e2e"]

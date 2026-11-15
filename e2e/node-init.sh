@@ -24,6 +24,13 @@ if [ -f "$cgroup/cgroup.controllers" ]; then
   done
 fi
 
+# The node's own data filesystem, which the e2e test binds to k3s's storage
+# directory. Without it the volumes would land on the node's volume.
+if ! grep -q " /var/lib/rancher/k3s/storage ext4 " /proc/mounts; then
+  echo "node-init.sh: /var/lib/rancher/k3s/storage is not the node's own data filesystem" >&2
+  exit 1
+fi
+
 # The manifests of k3s/ of the run's settings, which k3s applies. k3s makes
 # its server directory 700 when it creates it.
 server=/var/lib/rancher/k3s/server
