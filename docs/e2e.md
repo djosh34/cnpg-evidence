@@ -11,6 +11,8 @@ Scenario: The primary's node is lost for 2 minutes
   And the node starts
 ```
 
+Two scenarios run [`host-check.sh`](host-check.md#in-the-scenarios) on every node. `host-check-docker` expects the three checks a node in a container can never pass to fail, each with its known value, so a change to them shows. `host-check` expects every other check to pass, in the samples and in a variant: those checks depend on the settings, so a failure there is a real gap.
+
 ## Run a scenario
 
 ```bash
@@ -169,7 +171,8 @@ A new kind of line needs a word in [`e2e/vocab.go`](../e2e/vocab.go) and a funct
 | `Alertmanager gets <ALERT> for <role>` | Sends Alertmanager the critical alert for 2 min, as the rule evaluator would. An event. |
 | `Alertmanager sends`, `mutes <ALERT> for <role> < N s` | Waits until a notification of it reached the receiver, or Alertmanager holds it muted. |
 | `no writes` | The client does not write in this scenario. |
-| `host-check.sh fails exactly these checks on every node:` | With a table of `check` and `value`: the checks that fail on every node, and no other. |
+| `host-check.sh fails these checks on every node:` | With a table of `check` and `value`: on every node, each of these checks fails with its value. Other checks are not looked at. |
+| `host-check.sh passes every check on every node but these:` | With a table of `check`: on every node, every check not in the table passes. Each check in the table must exist. |
 
 `is` may be `are`, and `has` may be `have`. An event comes only in a Given or When line, a check only in a Given or Then line. The event names an `after the` or `since the` line can use are the words in quotes below. An event's time is when the run finished doing it.
 

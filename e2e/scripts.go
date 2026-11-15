@@ -278,15 +278,87 @@ func runHostCheck(ctx context.Context, s *scenario, _ args) error {
 	return nil
 }
 
-// hostCheckFails: on every node, the checks host-check.sh failed are those
-// of the table, each with the table's value. The table's first row names
-// its columns; it needs check and value, and may have more, such as why.
+// hostCheckFails: on every node, each check of the table fails with the
+// table's value. The checks the table does not name are not looked at.
 func (s *scenario) hostCheckFails(table *godog.Table) error {
+	want, err := s.hostCheckTable(table, true)
+	if err != nil {
+		return err
+	}
+	for i := range nodeCount {
+		node := nodeName(i)
+		checks, err := s.hostChecks(node)
+		if err != nil {
+			return err
+		}
+		var wrong []string
+		for _, id := range slices.Sorted(maps.Keys(want)) {
+			c, ok := checks[id]
+			switch {
+			case !ok:
+				wrong = append(wrong, id+" did not run")
+			case c.OK:
+				wrong = append(wrong, id+" passed: "+c.Value)
+			case c.Value != want[id]:
+				wrong = append(wrong, id+" failed with "+c.Value+", not "+want[id])
+			}
+		}
+		if len(wrong) > 0 {
+			return fmt.Errorf("on %s: %s", node, strings.Join(wrong, "; "))
+		}
+	}
+	s.detail = fmt.Sprintf("%d checks failed on each node with the listed values", len(want))
+	return nil
+}
+
+// hostCheckPassesBut: on every node, each check the table does not name
+// passes. Each check the table names must exist, so a typo shows.
+func (s *scenario) hostCheckPassesBut(table *godog.Table) error {
+	skip, err := s.hostCheckTable(table, false)
+	if err != nil {
+		return err
+	}
+	passed := 0
+	for i := range nodeCount {
+		node := nodeName(i)
+		checks, err := s.hostChecks(node)
+		if err != nil {
+			return err
+		}
+		var wrong []string
+		for _, id := range slices.Sorted(maps.Keys(skip)) {
+			if _, ok := checks[id]; !ok {
+				wrong = append(wrong, id+" did not run")
+			}
+		}
+		passed = 0
+		for _, id := range slices.Sorted(maps.Keys(checks)) {
+			if _, skipped := skip[id]; skipped {
+				continue
+			}
+			if !checks[id].OK {
+				wrong = append(wrong, id+" failed: "+checks[id].Value)
+				continue
+			}
+			passed++
+		}
+		if len(wrong) > 0 {
+			return fmt.Errorf("on %s: %s", node, strings.Join(wrong, "; "))
+		}
+	}
+	s.detail = fmt.Sprintf("%d other checks passed on each node", passed)
+	return nil
+}
+
+// hostCheckTable: the rows of a host-check table, the check by its value.
+// The first row names the columns: check, value when withValue, and any
+// others, such as why.
+func (s *scenario) hostCheckTable(table *godog.Table, withValue bool) (map[string]string, error) {
 	if s.kind != messages.PickleStepType_OUTCOME {
-		return errors.New("a check in a Given or When line")
+		return nil, errors.New("a check in a Given or When line")
 	}
 	if len(table.Rows) < 2 {
-		return errors.New("the table has no checks")
+		return nil, errors.New("the table has no checks")
 	}
 	column := map[string]int{}
 	for i, cell := range table.Rows[0].Cells {
@@ -294,43 +366,45 @@ func (s *scenario) hostCheckFails(table *godog.Table) error {
 	}
 	checkCol, okCheck := column["check"]
 	valueCol, okValue := column["value"]
-	if !okCheck || !okValue {
-		return errors.New("the table needs the columns check and value")
+	if !okCheck || withValue && !okValue {
+		return nil, errors.New("the table lacks the column check or value")
 	}
-	want := map[string]string{}
+	rows := map[string]string{}
 	for _, row := range table.Rows[1:] {
-		want[row.Cells[checkCol].Value] = row.Cells[valueCol].Value
+		value := ""
+		if withValue {
+			value = row.Cells[valueCol].Value
+		}
+		rows[row.Cells[checkCol].Value] = value
 	}
-	for i := range nodeCount {
-		node := nodeName(i)
-		r, ok := s.scripts["host-check.sh "+node]
-		if !ok {
-			return fmt.Errorf("host-check.sh did not run on %s", node)
-		}
-		var doc struct {
-			Checks []struct {
-				ID    string `json:"id"`
-				OK    bool   `json:"ok"`
-				Value string `json:"value"`
-			} `json:"checks"`
-		}
-		if err := json.Unmarshal([]byte(r.out), &doc); err != nil {
-			return fmt.Errorf("the output of host-check.sh on %s: %w", node, err)
-		}
-		failed := map[string]string{}
-		for _, c := range doc.Checks {
-			if !c.OK {
-				failed[c.ID] = c.Value
-			}
-		}
-		if !maps.Equal(failed, want) {
-			var got []string
-			for _, id := range slices.Sorted(maps.Keys(failed)) {
-				got = append(got, id+": "+failed[id])
-			}
-			return fmt.Errorf("on %s host-check.sh failed: %s", node, strings.Join(got, "; "))
-		}
+	return rows, nil
+}
+
+// hostCheck is one check of the output of host-check.sh.
+type hostCheck struct {
+	ID    string `json:"id"`
+	OK    bool   `json:"ok"`
+	Value string `json:"value"`
+}
+
+// hostChecks: the checks host-check.sh gave on a node, by id.
+func (s *scenario) hostChecks(node string) (map[string]hostCheck, error) {
+	r, ok := s.scripts["host-check.sh "+node]
+	if !ok {
+		return nil, fmt.Errorf("host-check.sh did not run on %s", node)
 	}
-	s.detail = fmt.Sprintf("%d checks failed on each node, as listed", len(want))
-	return nil
+	var doc struct {
+		Checks []hostCheck `json:"checks"`
+	}
+	if err := json.Unmarshal([]byte(r.out), &doc); err != nil {
+		return nil, fmt.Errorf("the output of host-check.sh on %s: %w", node, err)
+	}
+	if len(doc.Checks) == 0 {
+		return nil, fmt.Errorf("host-check.sh gave no checks on %s", node)
+	}
+	checks := map[string]hostCheck{}
+	for _, c := range doc.Checks {
+		checks[c.ID] = c
+	}
+	return checks, nil
 }

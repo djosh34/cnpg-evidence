@@ -1,6 +1,6 @@
 # host-check.sh
 
-`scripts/host-check/host-check.sh` checks one node for the host side of [rule 5](../README.md#rules) and for rule 8. It only reads. The `host-check` scenario runs it on every node.
+`scripts/host-check/host-check.sh` checks one node for the host side of [rule 5](../README.md#rules) and for rule 8. It only reads. The `host-check` and `host-check-docker` scenarios run it on every node, as [below](#in-the-scenarios).
 
 ## Run
 
@@ -44,7 +44,14 @@ Exit 0: every check passed. 1: a check failed. 2: an argument, privilege or coll
 
 A failing value lists what is wrong, items joined with `; `. Group members, sudoers lines and installed `postgresql*-server` packages are listed in `raw` only. `bash scripts/host-check/postgres-sudoers/postgres-sudoers.sh UID GID [FILE...]` runs the sudoers search alone.
 
-A node that runs in a container, as in the scenarios, fails some checks; [`host-check.feature`](../samples/features/host-check.feature) lists them with the reason for each.
+## In the scenarios
+
+A scenario's node is a k3s server in a container, which can never pass three checks. [`host-check.feature`](../samples/features/host-check.feature) has two scenarios, so a real failure is not hidden among these three:
+
+| Scenario | Expects on every node | Why |
+|---|---|---|
+| `host-check-docker` | `selinux`, `postgres-account` and `low-ports` fail, each with exactly the value the feature file lists. Other checks are not looked at. | These three depend on the container, not on the settings: the runner's kernel has no SELinux, the k3s image has no `getent`, and docker sets `ip_unprivileged_port_start` to 0. A changed value shows that the container or the script changed. |
+| `host-check` | Every check but those three passes. | These checks depend on the settings, such as secrets encryption in `k3s/config.yaml`. A failure is a real gap of the samples or the variant. |
 
 ## Limits
 

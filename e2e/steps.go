@@ -28,7 +28,8 @@ import (
 //	<ALERT> fired|may fire|fires|resolves|has not fired for <role>|the cluster [< N s [after the <event>]]
 //	Alertmanager gets|sends|mutes <ALERT> for <role> [< N s [after the <event>]]
 //	no writes
-//	host-check.sh fails exactly these checks on every node:, with a table
+//	host-check.sh fails these checks on every node:, with a table
+//	host-check.sh passes every check on every node but these:, with a table
 //
 // "< N s" counts from the line above, "< N s after the <event>" from that
 // event, "for N s" watches the state for the next N s, and "since the
@@ -45,7 +46,8 @@ const (
 	alertLine = `^(CNPG\w+) (fired|may fire|fires|resolves|has not fired) for (.+?)(?:` + within + `)?$`
 	amLine    = `^Alertmanager (gets|sends|mutes) (CNPG\w+) for (.+?)(?:` + within + `)?$`
 	quietLine = `^no writes$`
-	tableLine = `^host-check\.sh fails exactly these checks on every node:$`
+	failsLine = `^host-check\.sh fails these checks on every node:$`
+	butLine   = `^host-check\.sh passes every check on every node but these:$`
 )
 
 func (s *scenario) bind(sc *godog.ScenarioContext) {
@@ -59,7 +61,8 @@ func (s *scenario) bind(sc *godog.ScenarioContext) {
 	sc.Step(alertLine, s.alert)
 	sc.Step(amLine, s.alertmanager)
 	sc.Step(quietLine, s.noWrites)
-	sc.Step(tableLine, s.hostCheckFails)
+	sc.Step(failsLine, s.hostCheckFails)
+	sc.Step(butLine, s.hostCheckPassesBut)
 }
 
 // scenario is the state of the run's one scenario.
