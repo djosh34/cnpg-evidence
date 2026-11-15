@@ -120,7 +120,8 @@ func (d *dataDisks) sample() {
 			}
 			continue
 		}
-		if used >= d.most[node].used {
+		// The first time it held the most.
+		if used > d.most[node].used || d.most[node].at.IsZero() {
 			d.most[node] = diskUse{used: used, size: size, at: time.Now()}
 		}
 	}
