@@ -42,6 +42,7 @@ jobs:
           SCENARIOS: |
             backup-failing
             backup-restore
+            ca-rotation
             certificate-expiring
             compliance
             compliance-violation

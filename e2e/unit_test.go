@@ -139,6 +139,10 @@ func TestLookup(t *testing.T) {
 	if err != nil || key != "wal_keep_size | set to <n>MB" || a.ns[0] != 64 {
 		t.Errorf("wal_keep_size is set to 64MB: got %q %v %v", key, a.ns, err)
 	}
+	key, a, err = s.lookup("k3s", "restarted on node 2")
+	if err != nil || key != "k3s | restarted on node <n>" || len(a.ns) != 1 || a.ns[0] != 2 {
+		t.Errorf("k3s is restarted on node 2: got %q %v %v", key, a.ns, err)
+	}
 }
 
 func TestNewPrimary(t *testing.T) {

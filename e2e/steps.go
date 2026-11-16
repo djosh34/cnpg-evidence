@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -88,16 +89,17 @@ type scenario struct {
 	paused   []string // the instances whose replay is paused
 	cut      []string // the instances cut off and not reconnected
 
-	needs    map[string]walNeed   // what each instance that was down needs of the WAL written meanwhile
-	switched map[string]string    // the WAL file each instance switched away from last
-	restarts map[string]int       // the restart count of an instance's postgres container before it was killed
-	ident    string               // the pg_ident lines every instance had at the first line about them
-	store    string               // how the store is broken: stopped, paused, or "" when it is not
-	drain    *drained             // the node a drain runs on or cordoned, until it is uncordoned
-	commit   *background          // the commit "a commit is started" started
-	scripts  map[string]scriptRun // what each script gave, by its name and node
-	ballast  string               // the ballast file on a data disk, until it is removed
-	held     *held                // the sessions held on an instance, until they are ended
+	needs    map[string]walNeed            // what each instance that was down needs of the WAL written meanwhile
+	switched map[string]string             // the WAL file each instance switched away from last
+	restarts map[string]int                // the restart count of an instance's postgres container before it was killed
+	ident    string                        // the pg_ident lines every instance had at the first line about them
+	store    string                        // how the store is broken: stopped, paused, or "" when it is not
+	drain    *drained                      // the node a drain runs on or cordoned, until it is uncordoned
+	commit   *background                   // the commit "a commit is started" started
+	scripts  map[string]scriptRun          // what each script gave, by its name and node
+	ballast  string                        // the ballast file on a data disk, until it is removed
+	held     *held                         // the sessions held on an instance, until they are ended
+	newCAs   map[string]x509.VerifyOptions // the new k3s CAs stored in etcd, by name
 
 	started time.Time       // when the scenario started, after the monitoring was ready
 	alerts  map[string]bool // the alerts the scenario names, "<alertname> <pod>": true when they must fire, false when they may
@@ -555,7 +557,8 @@ type args struct {
 }
 
 // lookup turns thing and word into a vocabulary key, replacing each role
-// with <role> and keeping its pod, and each number with <n>.
+// with <role> and keeping its pod, and each number with <n>. Digits right
+// after a letter are part of a word, as in k3s.
 func (s *scenario) lookup(thing, word string) (string, args, error) {
 	var a args
 	key := ""
@@ -574,7 +577,7 @@ next:
 				continue next
 			}
 		}
-		if digits := leadingDigits(text[i:]); digits != "" {
+		if digits := leadingDigits(text[i:]); digits != "" && (i == 0 || !isLetter(text[i-1])) {
 			n, err := strconv.Atoi(digits)
 			if err != nil {
 				return "", a, err
@@ -592,6 +595,8 @@ next:
 	}
 	return key, a, nil
 }
+
+func isLetter(c byte) bool { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' }
 
 func leadingDigits(text string) string {
 	end := 0

@@ -95,6 +95,8 @@ var vocabulary = map[string]word{
 	"the replication certificate | reissued for <n> days":      {event: reissue("replication")},
 	"the server certificate | reissued":                        {event: reissue("server")},
 	"the replication certificate | reissued":                   {event: reissue("replication")},
+	"new k3s CAs | stored in etcd":                             {event: storeNewCAs},
+	"k3s | restarted on node <n>":                              {event: restartK3s},
 
 	// States.
 	"the cluster | healthy":                                  {state: clusterHealthy},
@@ -134,6 +136,9 @@ var vocabulary = map[string]word{
 	"the kubernetes part of evidence.sh | passes":            {state: evidencePasses("kubernetes")},
 	"prove.sh | passes":                                      {state: provePasses},
 	"cnpg_pg_database_xid_age | exported for every database": {state: xidAgeExported},
+	"node <n> | on the new CAs":                              {state: onNewCAs},
+	"etcd | healthy":                                         {state: etcdHealthy},
+	"every node | Ready":                                     {state: everyNodeReady},
 
 	// Since an event.
 	"<role> and <role> | on the dashboard": {since: onDashboard},

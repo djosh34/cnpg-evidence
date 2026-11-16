@@ -1,9 +1,9 @@
 # The e2e image, built from the repository root for the machine's own
 # architecture: docker-in-docker with the e2e runner, the client binary and
 # its two-line Dockerfile, helm, kubectl and kubectl cnpg. It also has the
-# scripts of scripts/ with the tools they need, and a static bash and jq that
-# it copies onto a node for host-check.sh. TestScenario of scenario_test.go
-# builds and runs it.
+# scripts of scripts/ with the tools they need, a static bash and jq that it
+# copies onto a node for host-check.sh, and k3s's script for new CAs.
+# TestScenario of scenario_test.go builds and runs it.
 
 FROM golang:1.27-alpine@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18 AS build
 WORKDIR /src
@@ -47,6 +47,14 @@ RUN set -eu; \
   tar -xJf data.tar.xz ./usr/bin/bash-static; \
   install -m 755 usr/bin/bash-static node/bash; \
   install -m 755 jq node/jq
+# k3s's own script that makes new CAs, cross-signed by the old ones, for k3s
+# certificate rotate-ca, of the k3s version the nodes run (e2e/nodes.go).
+RUN set -eu; \
+  wget -q -O rotate-default-ca-certs.sh \
+    "https://raw.githubusercontent.com/k3s-io/k3s/v1.33.13%2Bk3s2/contrib/util/rotate-default-ca-certs.sh"; \
+  echo "62ef79f530cd285b3cfce884746abe6c3712ad70d0ef66e81f76aaa93c30551b  rotate-default-ca-certs.sh" | sha256sum -c -; \
+  mkdir k3s; \
+  install -m 755 rotate-default-ca-certs.sh k3s/
 
 FROM docker:29-dind@sha256:08a98015fce594af7c382883bea080ea206de74402a95da9dc52b6428c8cd121
 # What the scripts of scripts/ need, and what the nodes' data filesystems
@@ -55,6 +63,7 @@ RUN apk add --no-cache bash coreutils jq openssl postgresql-client procps-ng pyt
   e2fsprogs losetup mount umount util-linux-misc
 COPY --from=tools /tools/out/ /usr/local/bin/
 COPY --from=tools /tools/node/ /opt/cnpg-evidence/node/
+COPY --from=tools /tools/k3s/ /opt/cnpg-evidence/k3s/
 COPY scripts/ /opt/cnpg-evidence/scripts/
 COPY e2e/client/Dockerfile /opt/cnpg-evidence/client/
 COPY --from=build /out/client /opt/cnpg-evidence/client/

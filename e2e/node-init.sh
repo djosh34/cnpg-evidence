@@ -5,7 +5,8 @@
 # KillMode=process). So the node's pods keep running while k3s is down, as on
 # a VM. k3s exits, for example, when it loses a leader lease because two of
 # three nodes are gone; as the container's first process, its exit would stop
-# every pod on the node.
+# every pod on the node. It writes k3s's process ID to /run/k3s.pid, so the
+# e2e test can restart k3s alone, as systemctl restart k3s does.
 #
 # First it moves itself out of the container's root cgroup and enables the
 # controllers for the cgroups below it, which k3s does itself only when it
@@ -44,7 +45,9 @@ done
 
 while true; do
   status=0
-  /bin/k3s server "$@" || status=$?
+  /bin/k3s server "$@" &
+  echo $! >/run/k3s.pid
+  wait $! || status=$?
   echo "node-init.sh: k3s exited with code $status; starting it again in 5 s" >&2
   sleep 5
 done
