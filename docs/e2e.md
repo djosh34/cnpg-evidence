@@ -297,7 +297,7 @@ States, checked now, within the line's limit, or for its time:
 | `the alerts are healthy` | No alert fires. The alerts the scenario says `fired` or `fires` fired, and no other did but those it says `may fire`. |
 | `the dashboard is healthy` | Every panel of the dashboard gives a value through Grafana. |
 | `node <n> is on the new CAs` | On `k3s-<n>`, the API server and the kubelet serve a certificate of the new server CA, etcd's client and peer ports one of the new etcd server and peer CAs, each checked against the new CA alone. The node's admin kubeconfig has a client certificate of the new client CA, which its API server takes. The API server's proxy certificate is of the new request-header CA, and a request through it to metrics-server works, as does one to the node's kubelet. |
-| `etcd is healthy` | etcd on every node answers `/health` as healthy and lists three members, none a learner, asked with the first node's etcd client certificate. |
+| `etcd is healthy` | etcd lists three members, none a learner, and each member, asked over gRPC on its node's client port, gives its status without errors and knows a leader. The run asks with the first node's etcd client certificate. |
 | `every node is Ready` | Each node's `Ready` condition is `True`. |
 
 Measures and since lines:

@@ -9,12 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
+
+	clientv3 "go.etcd.io/etcd/client/v3"
+	"go.uber.org/zap"
 )
 
 // The rotation of the k3s CAs, as docs.k3s.io says for the CAs k3s made
@@ -272,8 +274,10 @@ func nodeKubeconfig(ctx context.Context, node, ip string) (string, *x509.Certifi
 	return config, cert, os.WriteFile(config, data, 0o600)
 }
 
-// etcdHealthy: etcd has three members, none a learner, and each answers
-// healthy. It asks with the etcd client certificate of the first node.
+// etcdHealthy: etcd has three members, none a learner, and each member
+// answers its status without errors and knows a leader. It asks over gRPC
+// on each node's client port, with the etcd client certificate of the first
+// node.
 func etcdHealthy(ctx context.Context, s *scenario, _ args) error {
 	node := nodeName(0)
 	certPEM, err := copyFromNode(ctx, node, k3sServerDir+"/tls/etcd/client.crt")
@@ -288,49 +292,46 @@ func etcdHealthy(ctx context.Context, s *scenario, _ args) error {
 	if err != nil {
 		return err
 	}
-	// Which CA etcd's certificate is of is onNewCAs's check.
-	client := &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{
-		TLSClientConfig: &tls.Config{Certificates: []tls.Certificate{pair}, InsecureSkipVerify: true},
-	}}
+	endpoints := make([]string, nodeCount)
+	for i := range endpoints {
+		endpoints[i] = net.JoinHostPort(nodeIP(i), "2379")
+	}
+	client, err := clientv3.New(clientv3.Config{
+		Endpoints: endpoints, DialTimeout: 10 * time.Second, Logger: zap.NewNop(),
+		// Which CA etcd's certificate is of is onNewCAs's check.
+		TLS: &tls.Config{Certificates: []tls.Certificate{pair}, InsecureSkipVerify: true},
+	})
+	if err != nil {
+		return err
+	}
+	err = etcdMembersHealthy(ctx, client, endpoints, s)
+	return errors.Join(err, client.Close())
+}
+
+func etcdMembersHealthy(ctx context.Context, client *clientv3.Client, endpoints []string, s *scenario) error {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	list, err := client.MemberList(ctx)
+	if err != nil {
+		return err
+	}
 	var names []string
-	for i := range nodeCount {
-		base := "https://" + net.JoinHostPort(nodeIP(i), "2379")
-		var health struct {
-			Health string `json:"health"`
-			Reason string `json:"reason"`
+	for _, m := range list.Members {
+		if m.IsLearner {
+			return fmt.Errorf("etcd member %s is a learner", m.Name)
 		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/health", nil)
+		names = append(names, m.Name)
+	}
+	if len(names) != nodeCount {
+		return fmt.Errorf("etcd has %d members: %s", len(names), strings.Join(names, ", "))
+	}
+	for _, endpoint := range endpoints {
+		status, err := client.Status(ctx, endpoint)
 		if err != nil {
-			return err
+			return fmt.Errorf("etcd at %s: %w", endpoint, err)
 		}
-		if err := callJSON(client, req, &health); err != nil {
-			return err
-		}
-		if health.Health != "true" {
-			return fmt.Errorf("etcd on %s: health %q %s", nodeName(i), health.Health, health.Reason)
-		}
-		var list struct {
-			Members []struct {
-				Name      string `json:"name"`
-				IsLearner bool   `json:"isLearner"`
-			} `json:"members"`
-		}
-		req, err = http.NewRequestWithContext(ctx, http.MethodPost, base+"/v3/cluster/member/list", strings.NewReader("{}"))
-		if err != nil {
-			return err
-		}
-		if err := callJSON(client, req, &list); err != nil {
-			return err
-		}
-		names = names[:0]
-		for _, m := range list.Members {
-			if m.IsLearner {
-				return fmt.Errorf("etcd on %s: %s is a learner", nodeName(i), m.Name)
-			}
-			names = append(names, m.Name)
-		}
-		if len(names) != nodeCount {
-			return fmt.Errorf("etcd on %s has %d members: %s", nodeName(i), len(names), strings.Join(names, ", "))
+		if len(status.Errors) > 0 || status.Leader == 0 {
+			return fmt.Errorf("etcd at %s: leader %x, errors %v", endpoint, status.Leader, status.Errors)
 		}
 	}
 	s.detail = "members " + strings.Join(names, ", ")
