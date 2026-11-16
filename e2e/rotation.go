@@ -74,9 +74,26 @@ func storeNewCAs(ctx context.Context, s *scenario, _ args) error {
 	if err != nil {
 		return err
 	}
+	// rotate-ca leaves the marker only on the node it ran on, so only that
+	// node signs its serving certificate again on its restart. The others
+	// keep the old CA's in dynamic-cert.json, and on a restart one can write
+	// it back into the shared k3s-serving Secret, which every server then
+	// serves: dynamiclistener prefers a certificate with all the names, of
+	// whichever CA. With the marker, each server signs a new one on its
+	// restart, and k3s removes the marker.
+	for i := 1; i < nodeCount; i++ {
+		if _, err := command(ctx, "docker", "exec", nodeName(i), "touch", k3sServerDir+"/"+dynamicCertRegenerate); err != nil {
+			return err
+		}
+	}
 	s.newCAs, s.detail = pools, out
 	return nil
 }
+
+// dynamicCertRegenerate is the marker under the server directory that makes
+// k3s sign its serving certificate again at its next start, as
+// "k3s certificate rotate-ca" and "k3s certificate rotate" leave it.
+const dynamicCertRegenerate = "tls/dynamic-cert-regenerate"
 
 // newCAPools are the new CAs of the script's output, each with its new root
 // as the only root, so that only a certificate a new CA issued verifies.

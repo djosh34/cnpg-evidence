@@ -52,11 +52,41 @@ func startNodes(ctx context.Context) error {
 			return nodeReady(ctx, name)
 		})
 		if err != nil {
+			traceNode(ctx, name)
 			return fmt.Errorf("node %s Ready: %w", name, err)
 		}
 		logf("node %s is Ready", name)
 	}
 	return nil
+}
+
+// traceStuck writes to the node's log, the stderr of its first process,
+// where its k3s is stuck: the kernel's stack of each thread of k3s that
+// waits in the kernel, then the stack of every goroutine, which Go prints
+// when k3s gets SIGQUIT. node-init.sh starts k3s again after that.
+const traceStuck = `read -r pid <` + k3sPIDFile + `
+{
+  for task in "/proc/$pid"/task/*; do
+    if grep -q '^State:[[:space:]]*D' "$task/status"; then
+      echo "e2e: thread ${task##*/} of k3s waits in the kernel:"
+      cat "$task/stack"
+    fi
+  done
+  echo "e2e: the goroutines of k3s follow"
+} >/proc/1/fd/2 2>&1
+kill -QUIT "$pid"`
+
+// traceNode leaves in the log of a node that never turned Ready where its
+// k3s is stuck, then gives Go 5 s to print the goroutines.
+func traceNode(ctx context.Context, node string) {
+	if _, err := command(ctx, "docker", "exec", node, "sh", "-c", traceStuck); err != nil {
+		logf("tracing k3s on %s: %v", node, err)
+		return
+	}
+	select {
+	case <-ctx.Done():
+	case <-time.After(5 * time.Second):
+	}
 }
 
 // startNode starts node i, with k3s/ of the settings at /e2e/k3s: k3s reads
