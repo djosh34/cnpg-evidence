@@ -353,9 +353,6 @@ func workflowScenarios() (listed, excluded []string, err error) {
 	return strings.Fields(env["SCENARIOS"]), strings.Fields(env["NOT_IN_VARIANTS"]), nil
 }
 
-// The dashboards of the samples and of every variant decode as the e2e test
-// reads them, and have the two stat panels its lines read: Replica lag, with
-// a query it shows in red, and Instances, with one query.
 // Every settings directory's k3s/patches.yaml reads, and each patches
 // CoreDNS to one pod per node, as the first list asks.
 func TestK3sPatches(t *testing.T) {
@@ -390,6 +387,9 @@ func TestK3sPatches(t *testing.T) {
 	}
 }
 
+// The dashboards of the samples and of every variant decode as the e2e test
+// reads them, and have the two stat panels its lines read: Replica lag, with
+// a query it shows in red, and Instances, with one query.
 func TestDashboards(t *testing.T) {
 	files, err := filepath.Glob("../variants/*/monitoring/dashboard.json")
 	if err != nil {

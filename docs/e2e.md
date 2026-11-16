@@ -73,7 +73,7 @@ What the run adds to a variant's settings is only what a run alone knows:
 - **The nodes:** each node's `--node-ip`, `--tls-san`, `--resolv-conf` and join address.
 - **The nodes' data filesystems**, one per node, as in [Each node's data filesystem](#each-nodes-data-filesystem).
 
-[`variants/first-list`](../variants/first-list) applies the [base and the first list](go-live/README.md) of `docs/go-live/`, and leaves every other setting at the CNPG, chart or k3s default. It keeps four settings of the samples, each named with its reason in the [go-live README](go-live/README.md): the samples' image with its uid and gid, `storageSize: 50Gi`, a bootstrap with no `app` database in place of the import, and kube-proxy's conntrack setting for a node in docker. As for the samples, the run's first backup stands in for a schedule.
+[`variants/first-list`](../variants/first-list) applies the [base and the first list](go-live/README.md) of `docs/go-live/`, and leaves every other setting at the CNPG, chart or k3s default. It keeps four settings of the samples, also named in the [go-live README](go-live/README.md): the samples' image with its uid and gid 999, since the list's uid item needs an image whose `postgres` is not CNPG's uid 26; `storageSize: 50Gi`, since CNPG has no default size; a bootstrap with no `app` database, in place of the import the scenarios cannot do; and `conntrack-max-per-core=0` for kube-proxy, which cannot set `nf_conntrack_max` in a node in docker. As for the samples, the run's first backup stands in for a schedule.
 
 [`variants/every-item`](../variants/every-item) is `first-list` plus every item of [later.md](go-live/later.md): metrics over TLS, no NodePorts on the rw LoadBalancer, the queries in a Secret, the operator's and the plugin's RBAC cut to their namespaces, cert-manager, Traefik and metrics-server on every node, plugin-barman-cloud 0.16.0, and an API audit log. The audit log stays on the node; the state dump shows its newest lines.
 
@@ -81,7 +81,7 @@ What the run adds to a variant's settings is only what a run alone knows:
 
 A variant that lacks a setting of the samples fails the scenarios that show what it lacks, and that is the point of running it. Its `gaps.md` lists them: one row per scenario expected to fail, with the line that fails, the gap, and the go-live item that closes it. See [first-list's](../variants/first-list/gaps.md) and [every-item's](../variants/every-item/gaps.md).
 
-A run of the variant is right when its red scenarios are exactly those rows. A red scenario not in the list, and a listed scenario that passes, are both defects: the first is fixed in the test or in the settings it shows, never added to the list without its gap; for the second, the row goes only once evidence shows the gap is closed. The list is checked by reading the run.
+A run of the variant is right when its red scenarios are exactly those rows. A red scenario not in the list, and a listed scenario that passes, are both defects. For the first, read its failed line: a gap the variant really has gets its row; any other cause, such as a test bug or a timing, is fixed in the test. A variant's settings never change just to make a run pass. For the second, the row goes only once evidence shows the gap is closed. The list is checked by reading the run.
 
 On GitHub, give the variant as the workflow's input:
 

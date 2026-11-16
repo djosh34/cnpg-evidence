@@ -106,7 +106,7 @@ Check: `kubectl get pods -n cert-manager -o wide` and `kubectl get pods -n kube-
 
 **Problem.** Nothing records who opened a shell in an instance's pod, which reaches all its data, or who read a Secret of the database namespace.
 
-**What changes.** Each API server logs these requests, without their bodies: `pods/exec`, `pods/attach` and `secrets` in the database namespace, and across all namespaces. Nothing else is logged. The log is rotated, so it never fills the node's disk, and a log collector ships it off the node, where whoever takes over a node cannot erase what was shipped.
+**What changes.** Each API server logs these requests, without their bodies: `pods/exec`, `pods/attach` and `secrets` in the database namespace, and requests across all namespaces at once, such as `kubectl get secrets -A`, which return those Secrets too. Nothing else is logged. The log is rotated, so it never fills the node's disk, and a log collector ships it off the node, where whoever takes over a node cannot erase what was shipped.
 
 **How.** The policy file [`audit-policy.yaml`](../../variants/every-item/k3s/audit-policy.yaml) on every server, and in each server's k3s config, as in [`every-item`'s](../../variants/every-item/k3s/config.yaml):
 
