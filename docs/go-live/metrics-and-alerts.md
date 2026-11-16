@@ -64,7 +64,7 @@ k3s's leaf certificates last a year and are renewed only when k3s starts within 
 
 **Problem.** CNPG's exporter adds the backup plugin's metrics to every scrape, and the plugin reads its `ObjectStore` from the Kubernetes API, with no time limit. While the API does not answer, as with two of three nodes lost and so no etcd quorum, every scrape of the instance left waits and fails. No instance's metrics arrive. `cnpg_sample:instance_reports` compares each instance only with the newest of its cluster, so all of them, the lost primary too, count as reporting until their last samples leave the evaluator's 5 minute lookback. In a scenario with the primary's node and a replica's node lost, `CNPGDatabaseDown` had not fired after 5 minutes; it would have fired about 8 minutes in, not 4.
 
-**What changes.** An instance counts as reporting only while its newest sample is also at most 90 s old. When every exporter stops, nothing reports after 90 s, and `CNPGDatabaseDown` fires 3 minutes later: its description already says it covers a primary whose metrics do not arrive. The short failed scrapes while etcd elects a new leader after one node is lost, about 40 s, stay under 90 s and change nothing.
+**What changes.** An instance counts as reporting only while its newest sample is also at most 90 s old. When every exporter stops, nothing reports after 90 s, and `CNPGDatabaseDown` fires 3 minutes later: its description already says it covers a primary whose metrics do not arrive. The up to about 40 s of failed scrapes seen right after one node is lost stay under 90 s and change nothing.
 
 **How.** In the sample rules, the record:
 

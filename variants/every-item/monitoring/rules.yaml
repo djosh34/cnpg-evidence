@@ -24,8 +24,9 @@ groups:
       # whole lookback, 5 min in Prometheus. The 90 s covers every exporter
       # stopping at once: while the Kubernetes API does not answer, as with
       # two of three nodes lost, each scrape waits on the plugin's metrics,
-      # which read the API. A shorter wait, as while etcd elects a new
-      # leader, stays under it. The value is the time of the newest sample.
+      # which read the API. The up to about 40 s of failed scrapes seen right
+      # after one node is lost stay under it. The value is the time of the
+      # newest sample.
       - record: cnpg_sample:instance_reports
         expr: |
           (

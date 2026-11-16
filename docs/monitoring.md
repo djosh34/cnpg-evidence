@@ -91,7 +91,7 @@ Every alert is one a person must act on. Thresholds are in the expressions, each
 - `CNPGDatabaseDown` cannot tell a down primary from one whose metrics stopped.
 - An instance removed on purpose keeps `CNPGReplicaDown` for a day; silence it.
 - `CNPGCertificateExpiring` covers only the chart's two certificates, not client certificates or the CAs in `caSecret`.
-- While the Kubernetes API does not answer, each exporter's scrape waits on the backup plugin's metrics, which read the API, and fails. Right after a node loss, while etcd elects a new leader, that is up to about 40 s; no alert waits less than 3 minutes for missing metrics. With two of three nodes lost it lasts until they are back, so no instance reports and `CNPGDatabaseDown` fires.
+- While the Kubernetes API does not answer, each exporter's scrape waits on the backup plugin's metrics, which read the API, and fails. With two of three nodes lost that lasts until they are back, so no instance reports and `CNPGDatabaseDown` fires. Right after one node is lost, the other exporters' scrapes can also fail for up to about 40 s, probably for the same reason while the API recovers; no alert waits less than 3 minutes for missing metrics.
 - On a cluster without writes, a failover over 2 minutes fires `CNPGReplicaLag` before `CNPGDatabaseDown` mutes it.
 - `CNPGDataDiskFull` sees only the data volume.
 

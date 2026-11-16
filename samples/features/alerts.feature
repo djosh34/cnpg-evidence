@@ -18,9 +18,10 @@ Feature: One scenario per alert
     The nodes start once Alertmanager sent the alert, at least 5 minutes
     after the kill. Writes stop until the primary is back. In the samples the
     client reads on through replica 2; in a variant run, reading takes the
-    limit of writing. With no primary to stream from, replica 2 reports the
-    age of its last replayed transaction as its lag, and no instance reports
-    for about 5 minutes, so CNPGReplicaLag and CNPGReplicaDown can fire.
+    limit of writing. No instance reports for about 5 minutes, so
+    CNPGReplicaDown can fire. Once the nodes start, replica 2 reports again
+    before it streams from the primary, with the age of its last replayed
+    transaction as its lag, so CNPGReplicaLag can fire for it.
 
     When the primary's node and replica 1's node are killed
     Then CNPGDatabaseDown critical fires for the cluster < 420 s after the kill
@@ -65,8 +66,9 @@ Feature: One scenario per alert
   @writes-blocked
   Scenario: CNPGWritesBlocked: no replica applies the commits
     Replay pauses on both replicas, so every commit waits for a standby to
-    apply it, as when no synchronous standby confirms. Reads go on. The
-    first row makes the table of the commit before the pause.
+    apply it, as when no synchronous standby confirms. Reads go on. A row is
+    written first, so the table the commit inserts into exists before the
+    pause.
 
     When a row is written
     And replay on replica 1 and replica 2 is paused
