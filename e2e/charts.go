@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -99,32 +100,62 @@ func helm(ctx context.Context, limit time.Duration, args ...string) (string, err
 	return command(ctx, "helm", args...)
 }
 
-// spreadK3sServices runs one CoreDNS pod on every node, as the first list of
-// docs/go-live says, and for the samples and the variant every-item also one
-// metrics-server pod, as docs/samples.md and docs/go-live/later.md do: they
-// come from k3s's own manifests, not from a chart. It waits for them and for
-// Traefik, which answers the http-01 challenges: a DaemonSet or a Deployment,
-// as the settings' k3s/manifests say.
-func spreadK3sServices(ctx context.Context) error {
-	spread := []string{"deployment/coredns"}
-	metricsServer := variant == "" || variant == "every-item"
-	if metricsServer {
-		spread = append(spread, "deployment/metrics-server")
+// A patch of k3s/patches.yaml: kubectl patch --type=merge of an object of
+// k3s's own manifests, as a person runs it once on a new cluster.
+type k3sPatch struct {
+	Target    string         `yaml:"target"` // such as deployment/coredns
+	Namespace string         `yaml:"namespace"`
+	Patch     map[string]any `yaml:"patch"`
+}
+
+func readK3sPatches(file string) ([]k3sPatch, error) {
+	data, err := os.ReadFile(file)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
 	}
-	var traefik string
-	err := poll(ctx, time.Now().Add(5*time.Minute), func(ctx context.Context) error {
-		if _, err := kubectl(ctx, "scale", "deployment", "coredns", "-n", "kube-system", "--replicas=3"); err != nil {
+	if err != nil {
+		return nil, err
+	}
+	var patches []k3sPatch
+	if err := yaml.Unmarshal(data, &patches); err != nil {
+		return nil, fmt.Errorf("%s: %w", file, err)
+	}
+	for _, p := range patches {
+		if strings.Count(p.Target, "/") != 1 || p.Namespace == "" || len(p.Patch) == 0 {
+			return nil, fmt.Errorf("%s: every patch needs a target kind/name, a namespace and a patch", file)
+		}
+	}
+	return patches, nil
+}
+
+// patchK3s applies the settings' k3s/patches.yaml, such as one CoreDNS pod
+// per node, and waits for each patched object and for Traefik, which answers
+// the http-01 challenges: a DaemonSet or a Deployment, as the settings'
+// k3s/manifests say.
+func patchK3s(ctx context.Context) error {
+	patches, err := readK3sPatches(filepath.Join(settingsDir(), "k3s", "patches.yaml"))
+	if err != nil {
+		return err
+	}
+	type object struct{ target, namespace string }
+	var wait []object
+	for _, p := range patches {
+		patch, err := json.Marshal(p.Patch)
+		if err != nil {
+			return fmt.Errorf("the patch of %s: %w", p.Target, err)
+		}
+		// k3s creates its objects a little after the node is Ready.
+		err = poll(ctx, time.Now().Add(5*time.Minute), func(ctx context.Context) error {
+			_, err := kubectl(ctx, "patch", p.Target, "-n", p.Namespace, "--type=merge", "-p", string(patch))
+			return err
+		})
+		if err != nil {
 			return err
 		}
-		if metricsServer {
-			_, err := kubectl(ctx, "patch", "deployment", "metrics-server", "-n", "kube-system", "--type=merge", "-p",
-				`{"spec": {"replicas": 3, "template": {"spec": {"affinity": {"podAntiAffinity": {
-				"requiredDuringSchedulingIgnoredDuringExecution": [{"topologyKey": "kubernetes.io/hostname",
-				"labelSelector": {"matchLabels": {"k8s-app": "metrics-server"}}}]}}}}}}`)
-			if err != nil {
-				return err
-			}
-		}
+		wait = append(wait, object{p.Target, p.Namespace})
+	}
+	var traefik string
+	err = poll(ctx, time.Now().Add(5*time.Minute), func(ctx context.Context) error {
 		var err error
 		traefik, err = kubectl(ctx, "get", "daemonset,deployment", "-n", "kube-system",
 			"-l", "app.kubernetes.io/name=traefik", "-o", "name")
@@ -136,9 +167,9 @@ func spreadK3sServices(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	for _, d := range append(spread, strings.TrimSpace(traefik)) {
+	for _, o := range append(wait, object{strings.TrimSpace(traefik), "kube-system"}) {
 		rollout, cancel := context.WithTimeout(ctx, 5*time.Minute)
-		_, err := command(rollout, "kubectl", "rollout", "status", d, "-n", "kube-system", "--timeout=5m")
+		_, err := command(rollout, "kubectl", "rollout", "status", o.target, "-n", o.namespace, "--timeout=5m")
 		cancel()
 		if err != nil {
 			return err

@@ -1,0 +1,12 @@
+# Changes to objects of k3s's own manifests, each a kubectl patch --type=merge
+# that the e2e test applies once k3s runs, before the charts, as a person runs
+# it once on a new cluster. k3s's manifests set none of these fields, so they
+# hold across k3s restarts and upgrades.
+
+# One CoreDNS pod per node, so a lost node takes no name lookups with it.
+# Same as: kubectl scale deployment coredns -n kube-system --replicas=3
+- target: deployment/coredns
+  namespace: kube-system
+  patch:
+    spec:
+      replicas: 3

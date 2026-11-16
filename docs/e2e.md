@@ -53,6 +53,8 @@ A variant is another set of settings for the same scenarios: a directory `varian
 | `values/new-image.yaml` | The instance image of the rollout scenario. |
 | `desired.yaml` | The cluster's values, which the evidence scripts read. |
 | `k3s/config.yaml`, `k3s/manifests/` | Each node's k3s config, and the manifests k3s applies. |
+| `k3s/patches.yaml` | Changes to objects of k3s's own manifests, such as 3 CoreDNS replicas: each a `kubectl patch --type=merge` the run applies once k3s runs. |
+| `gaps.md` | The scenarios the variant fails on purpose, [below](#a-variants-gaps). |
 | `monitoring/` | `rules.yaml`, `alertmanager.yaml` and `dashboard.json`, which the run's monitoring loads. |
 
 The scenarios are always those of `samples/features/`; a variant has no `features/`. A run refuses a variant with a symlink, as it would not copy it. The release of the cluster is `pg`, its cluster `pg` in the namespace `databases`.
@@ -68,12 +70,18 @@ What the run adds to a variant's settings is only what a run alone knows:
 - **The CA root:** the company CA gets a new root on every run, in the Secrets below and in the client.
 - **The run Secrets**, made before the charts: `company-acme-eab` (the EAB key of the samples' ClusterIssuer) and `company-ca` in `cert-manager`; `client-ca`, `s3-ca`, `company-ca` and `backup-creds` (CNPG's keys of the [store](#the-store)) in `databases`; `company-ca` in `otel`. For a variant with one Issuer per Certificate, also an EAB key per Issuer, since a key is good for one ACME account: `pg-server-acme-eab`, `pg-replication-acme-eab`, `pg-restore-server-acme-eab` and `pg-restore-replication-acme-eab` in `databases`, and `otel-client-acme-eab` in `otel`. An EAB Secret has `keyID` and `secret`.
 - **The test endpoints:** the containers outside k3s, by the names in [What a run does](#what-a-run-does). A variant's values name them as the samples do: `https://acme.example.test/v1/pki/acme/directory` and `https://s3.example.test` in [`samples/values/`](../samples/values), `otel.example.test:4317` in the collector's chart, the node names `k3s-1.example.test` to `k3s-3.example.test`, and the client `orders-app.test` in `desired.yaml`.
-- **The nodes:** each node's `--node-ip`, `--tls-san`, `--resolv-conf` and join address, and one CoreDNS pod per node, as in step 4 below. Traefik runs as the variant's `k3s/manifests` say. metrics-server runs as in step 4.
+- **The nodes:** each node's `--node-ip`, `--tls-san`, `--resolv-conf` and join address.
 - **The nodes' data filesystems**, one per node, as in [Each node's data filesystem](#each-nodes-data-filesystem).
 
-[`variants/first-list`](../variants/first-list) applies the [base and the first list](go-live/README.md) of `docs/go-live/`, and leaves every other setting at the CNPG, chart or k3s default. It also keeps the samples' image (the list's uid item needs an image whose `postgres` is not CNPG's uid 26) and what the docker nodes need. As for the samples, the run's first backup stands in for a schedule.
+[`variants/first-list`](../variants/first-list) applies the [base and the first list](go-live/README.md) of `docs/go-live/`, and leaves every other setting at the CNPG, chart or k3s default. It keeps four settings of the samples, each named with its reason in the [go-live README](go-live/README.md): the samples' image with its uid and gid, `storageSize: 50Gi`, a bootstrap with no `app` database in place of the import, and kube-proxy's conntrack setting for a node in docker. As for the samples, the run's first backup stands in for a schedule.
 
-[`variants/every-item`](../variants/every-item) is `first-list` plus every item of [later.md](go-live/later.md): metrics over TLS, no NodePorts on the rw LoadBalancer, the queries in a Secret without a cache, the operator's and the plugin's RBAC cut to their namespaces, cert-manager, Traefik and metrics-server on every node, plugin-barman-cloud 0.16.0, and an API audit log. The audit log stays on the node; the state dump shows its newest lines.
+[`variants/every-item`](../variants/every-item) is `first-list` plus every item of [later.md](go-live/later.md): metrics over TLS, no NodePorts on the rw LoadBalancer, the queries in a Secret, the operator's and the plugin's RBAC cut to their namespaces, cert-manager, Traefik and metrics-server on every node, plugin-barman-cloud 0.16.0, and an API audit log. The audit log stays on the node; the state dump shows its newest lines.
+
+### A variant's gaps
+
+A variant that lacks a setting of the samples fails the scenarios that show what it lacks, and that is the point of running it. Its `gaps.md` lists them: one row per scenario expected to fail, with the line that fails, the gap, and the go-live item that closes it. See [first-list's](../variants/first-list/gaps.md) and [every-item's](../variants/every-item/gaps.md).
+
+A run of the variant is right when its red scenarios are exactly those rows. A red scenario not in the list, and a listed scenario that passes, are both defects: the first is fixed in the test or in the settings it shows, never added to the list without its gap; for the second, the row goes only once evidence shows the gap is closed. The list is checked by reading the run.
 
 On GitHub, give the variant as the workflow's input:
 
@@ -153,7 +161,7 @@ What runs outside k3s in production runs as a container next to the k3s nodes, n
 1. Checks the inotify limit and starts its own dockerd. Checks that the runner's disk has room, then makes each node's [data filesystem](#each-nodes-data-filesystem).
 2. Builds the `client` image, then creates the outside containers, copies their files in with `docker cp`, and starts them. The company CA gets a new root on every run.
 3. Starts three k3s servers with embedded etcd, `k3s-1.example.test` to `k3s-3.example.test`, with [`samples/k3s/`](../samples/k3s) or the variant's `k3s/`. Each node runs [`e2e/node-init.sh`](../e2e/node-init.sh), which restarts k3s when it exits, so the pods outlive k3s as they do under systemd. It keeps k3s's process ID in `/run/k3s.pid`, for a scenario that restarts k3s.
-4. Runs one CoreDNS, metrics-server and Traefik pod per node, as [samples.md](samples.md#one-pod-per-node) says. For a variant, CoreDNS, as the [first list](go-live/README.md#failover-happens-by-itself) says; for `every-item` also metrics-server, as [later.md](go-live/later.md) says. Traefik as the variant's `k3s/manifests` say.
+4. Applies the settings' `k3s/patches.yaml`, such as one CoreDNS pod per node, and waits for each patched object and for Traefik.
 5. Makes the Secrets only the run knows, then installs the releases of [`samples/charts/releases.yaml`](../samples/charts/releases.yaml), or of the variant's, in order.
 6. Waits until the cluster is healthy, takes a first backup, and waits until Prometheus has every source's metrics. It then names the instances: the primary, replica 1 and replica 2.
 7. Runs the scenario. Its first When line starts the client.

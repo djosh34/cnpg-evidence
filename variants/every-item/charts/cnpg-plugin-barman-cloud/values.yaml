@@ -4,6 +4,10 @@ plugin-barman-cloud:
   # RBAC comes from templates/rbac.yaml in this values chart.
   rbac:
     create: false  # the chart would grant secret create, delete and read in every namespace
+  additionalEnv:
+    # The plugin watches only the cluster's namespace.
+    - name: WATCH_NAMESPACE
+      value: databases
   # One plugin pod per node of a three-node cluster. CNPG reconciles a cluster,
   # failover included, only while the plugin answers, so no single lost node may
   # take the plugin with it. The pods elect a leader. The chart always replaces

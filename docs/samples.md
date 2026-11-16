@@ -11,7 +11,7 @@
 | [`charts/company-acme/`](../samples/charts/company-acme) | A ClusterIssuer of a company CA that serves ACME. Used only by the scenarios. |
 | [`charts/releases.yaml`](../samples/charts/releases.yaml) | The releases a scenario installs, in order. |
 | [`values/`](../samples/values) | The scenarios' own values per release, on top of the others. `new-image.yaml` is the image the `rollout` scenario changes to. |
-| [`k3s/`](../samples/k3s) | `config.yaml`, the k3s server settings of every node, and `manifests/`, which k3s applies on every server. |
+| [`k3s/`](../samples/k3s) | `config.yaml`, the k3s server settings of every node, `manifests/`, which k3s applies on every server, and `patches.yaml`, changes to objects of k3s's own manifests that the run applies with `kubectl patch`. |
 | [`monitoring/`](../samples/monitoring) | Alert rules, the Alertmanager route and the Grafana dashboard ([monitoring.md](monitoring.md)). |
 | [`features/`](../samples/features) | The scenarios ([e2e.md](e2e.md)). |
 
@@ -21,7 +21,7 @@ A scenario installs each release of `releases.yaml` with `helm upgrade --install
 
 - **A setting that production uses too:** change the values chart's `values.yaml`, or `desired.yaml` for the cluster's shape.
 - **A setting only the scenarios need:** change `values/<release>.yaml`.
-- **The k3s settings:** change `k3s/config.yaml`, or add a manifest to `k3s/manifests/`. The run adds each node's address, the join and the DNS server itself.
+- **The k3s settings:** change `k3s/config.yaml`, add a manifest to `k3s/manifests/`, or a patch to `k3s/patches.yaml`. The run adds each node's address, the join and the DNS server itself.
 - **A new release:** add it to `releases.yaml` with `name`, `namespace` and `chart`, at the point in the order where its dependencies are installed.
 - **A new upstream chart version:** compare the RBAC as [below](#rbac-on-chart-upgrades), replace the directory, and set the same version in the values chart's `Chart.yaml`; `helm dependency build` fails while the two differ.
 
@@ -194,8 +194,8 @@ Every service the cluster relies on runs one pod on each node, so a lost node ta
 | Service | How |
 |---|---|
 | CNPG operator, barman-cloud plugin, cert-manager's three components | Their values charts: 3 replicas, required anti-affinity by host name, and `maxSurge: 0`, since an extra pod has no node to go to. |
-| CoreDNS | `kubectl scale deployment coredns -n kube-system --replicas=3` |
-| metrics-server | The patch below |
+| CoreDNS | `kubectl scale deployment coredns -n kube-system --replicas=3`, as in `k3s/patches.yaml` |
+| metrics-server | The patch below, as in `k3s/patches.yaml` |
 | Traefik | Put `k3s/manifests/traefik-config.yaml` into `/var/lib/rancher/k3s/server/manifests/` on every server |
 
 ```bash
