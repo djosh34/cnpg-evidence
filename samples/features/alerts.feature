@@ -13,16 +13,17 @@ Feature: One scenario per alert
   @database-down
   Scenario: CNPGDatabaseDown: two of three nodes are lost for 5 minutes
     One etcd member of three leaves no Kubernetes API, so nothing is
-    promoted, and replica 2 reports on. The nodes start 5 minutes after the
-    kill, once Alertmanager sent the alert. Writes stop until the primary is back. In the samples the
+    promoted. Replica 2 serves reads on, but its exporter waits on the backup
+    plugin's metrics, which read the API, so no instance reports after 90 s.
+    The nodes start once Alertmanager sent the alert, at least 5 minutes
+    after the kill. Writes stop until the primary is back. In the samples the
     client reads on through replica 2; in a variant run, reading takes the
     limit of writing. With no primary to stream from, replica 2 reports the
-    age of its last replayed transaction as its lag, and the killed
-    instances report nothing for over 5 minutes, so CNPGReplicaLag can fire
-    for replica 2 and CNPGReplicaDown for them.
+    age of its last replayed transaction as its lag, and no instance reports
+    for about 5 minutes, so CNPGReplicaLag and CNPGReplicaDown can fire.
 
     When the primary's node and replica 1's node are killed
-    Then CNPGDatabaseDown critical fires for the cluster < 300 s after the kill
+    Then CNPGDatabaseDown critical fires for the cluster < 420 s after the kill
     And Alertmanager sends CNPGDatabaseDown critical for the cluster < 60 s
     When 300 s pass after the kill
     And the nodes start
@@ -32,10 +33,12 @@ Feature: One scenario per alert
     And CNPGReplicaLag may fire for replica 2
     And CNPGReplicaDown may fire for the primary
     And CNPGReplicaDown may fire for replica 1
+    And CNPGReplicaDown may fire for replica 2
     And CNPGReplicaLag resolves for replica 2 < 120 s
     And CNPGReplicaDown resolves for the primary < 120 s
     And CNPGReplicaDown resolves for replica 1 < 120 s
-    And writing is healthy < 600 s
+    And CNPGReplicaDown resolves for replica 2 < 120 s
+    And writing is healthy < 720 s
 
   @replica-down
   Scenario: CNPGReplicaDown: a replica's node is lost for over 5 minutes

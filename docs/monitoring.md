@@ -58,7 +58,7 @@ scrape_configs:
 
 The chart runs `otel-agent`, a DaemonSet that scrapes the exporters and kubelet of its node, and `otel-cluster`, one pod that scrapes cert-manager. Both send OTLP with mTLS to `otel.example.test:4317`, which remote-writes to the evaluator with `translation_strategy: UnderscoreEscapingWithoutSuffixes`, so every name and label arrives as scraped. Run the collectors without `hostNetwork`.
 
-A collector lost with its node sends no stale marker, so its last samples stay for the evaluator's 5 minute lookback. The rules therefore count an instance only while its newest `cnpg_collector_up` is at most 30 s older than its cluster's newest (`cnpg_sample:instance_reports`).
+A collector lost with its node sends no stale marker, so its last samples stay for the evaluator's 5 minute lookback. The rules therefore count an instance only while its newest `cnpg_collector_up` is at most 30 s older than its cluster's newest, and at most 90 s old (`cnpg_sample:instance_reports`).
 
 ## Alerts
 
@@ -91,7 +91,7 @@ Every alert is one a person must act on. Thresholds are in the expressions, each
 - `CNPGDatabaseDown` cannot tell a down primary from one whose metrics stopped.
 - An instance removed on purpose keeps `CNPGReplicaDown` for a day; silence it.
 - `CNPGCertificateExpiring` covers only the chart's two certificates, not client certificates or the CAs in `caSecret`.
-- Right after a node loss, the other exporters' scrapes can fail for up to about 40 s. The cause is not known; no alert waits less than 3 minutes for missing metrics.
+- While the Kubernetes API does not answer, each exporter's scrape waits on the backup plugin's metrics, which read the API, and fails. Right after a node loss, while etcd elects a new leader, that is up to about 40 s; no alert waits less than 3 minutes for missing metrics. With two of three nodes lost it lasts until they are back, so no instance reports and `CNPGDatabaseDown` fires.
 - On a cluster without writes, a failover over 2 minutes fires `CNPGReplicaLag` before `CNPGDatabaseDown` mutes it.
 - `CNPGDataDiskFull` sees only the data volume.
 
