@@ -110,8 +110,8 @@ Each run writes a new directory `results/<scenario>-<time>/`, time in UTC:
 | `timing.md` | One row per line of the scenario and of `always.feature`: its result, how long it took, the time since the event it refers to, and what it measured. It is printed at the end of the log too. |
 | `cucumber.json`, `junit.xml` | The scenario's steps and results. |
 | `always.cucumber.json`, `always.junit.xml` | The same for `always.feature`. |
-| `state.txt` | `docker ps`, the last log lines of every container, the nodes, pods, events and CNPG objects, and the alert history. After a failure it is also printed at the end of the log. |
-| `k3s-1.log` to `k3s-3.log` | Each node's whole log, k3s's and the kubelet's, with docker's timestamps. When a node never turns Ready while the run builds the cluster, its log ends with the kernel's stack of each k3s thread that waits in the kernel and the stack of every goroutine of k3s, and the run's log has the kernel's last messages. |
+| `state.txt` | `docker ps`, the kernel's last messages, the last log lines of every container, the nodes, pods, events and CNPG objects, and the alert history. After a failure it is also printed at the end of the log. |
+| `k3s-1.log` to `k3s-3.log` | Each node's whole log, k3s's and the kubelet's, with docker's timestamps. When a node never turns Ready while the run builds the cluster, its log then has the kernel's stack of each k3s thread that waits in the kernel and the stack of every goroutine of k3s, before k3s starts again. |
 | `disks.md` | Each node's [data filesystem](#each-nodes-data-filesystem): its size, the most it held and when, what it held at the end, and what each volume holds then. Also the runner's free space before the run. |
 | `client.log` | The client's log: one line per read, write, connect and attempt, with the address it used ([format](../e2e/client/main.go)). |
 | `pgfallback.md` | The [pgfallback report](#the-pgfallback-report), for scenarios with a `pgfallback has been healthy` line. |

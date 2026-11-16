@@ -77,14 +77,8 @@ const traceStuck = `read -r pid <` + k3sPIDFile + `
 kill -QUIT "$pid"`
 
 // traceNode leaves in the log of a node that never turned Ready where its
-// k3s is stuck, then gives Go 5 s to print the goroutines. The kernel's last
-// messages, which tell of a task blocked for minutes, go to the e2e log.
+// k3s is stuck, then gives Go 5 s to print the goroutines.
 func traceNode(ctx context.Context, node string) {
-	if kernel, err := command(ctx, "sh", "-c", "dmesg | tail -n 50"); err != nil {
-		logf("the kernel's messages: %v", err)
-	} else {
-		logf("the kernel's last messages:\n%s", kernel)
-	}
 	if _, err := command(ctx, "docker", "exec", node, "sh", "-c", traceStuck); err != nil {
 		logf("tracing k3s on %s: %v", node, err)
 		return

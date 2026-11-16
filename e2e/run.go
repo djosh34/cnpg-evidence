@@ -143,6 +143,8 @@ func (s *scenario) table(name string) string {
 // What the state dump of a failed scenario shows.
 var stateCommands = [][]string{
 	{"docker", "ps", "-a"},
+	// The kernel's last messages: a task blocked for minutes shows here.
+	{"sh", "-c", "set -o pipefail; dmesg | tail -n 50"},
 	{"docker", "logs", "--tail", "30", "dns"},
 	{"docker", "logs", "--tail", "30", "acme"},
 	{"docker", "logs", "--tail", "30", "s3"},

@@ -78,7 +78,7 @@ openssl s_client -connect <node>:443 </dev/null                              # c
 
 ## A new serving certificate on every server after a CA rotation
 
-**Problem.** Every k3s server serves 6443 with one certificate, which they share through the Secret `k3s-serving` in `kube-system`, each with a copy in `server/tls/dynamic-cert.json`. `k3s certificate rotate-ca` makes only the server it runs on sign that certificate again with the new server CA on its restart: it leaves the marker `server/tls/dynamic-cert-regenerate` there alone. When another server restarts, it can write its copy, of the old CA, back into the Secret: k3s's dynamiclistener prefers a certificate with all the names, whichever CA signed it. Every server then serves the old CA's certificate. In a run of the `ca-rotation` scenario, the second server restarted with the new CAs, wrote its old certificate back, and all three servers switched to it; a client that trusts only the new CA refuses every API server. It happens on some restarts and not others, by which reaches the Secret first. [docs.k3s.io](https://docs.k3s.io/cli/certificate#rotating-self-signed-ca-certificates) only says to restart every server.
+**Problem.** Every k3s server serves 6443 with one certificate, which they share through the Secret `k3s-serving` in `kube-system`, each with a copy in `server/tls/dynamic-cert.json`. `k3s certificate rotate-ca` makes only the server it runs on sign that certificate again with the new server CA on its restart: it leaves the marker `server/tls/dynamic-cert-regenerate` there alone. When another server restarts, it can write its copy, of the old CA, back into the Secret: k3s's dynamiclistener prefers a certificate with all the names, whichever CA signed it. Every server then serves the old CA's certificate. A restarting server always writes its own copy, so it depends on whether that copy already holds the first server's new certificate. In a run of the `ca-rotation` scenario, the second server stopped less than a second after the first had written its new certificate, before it had taken it in. It restarted with the new CAs, wrote its old certificate back, and all three servers switched to it; a client that trusts only the new CA refuses every API server. In another run, the second server had taken in the new certificate 7 s before its restart, and nothing went wrong. [docs.k3s.io](https://docs.k3s.io/cli/certificate#rotating-self-signed-ca-certificates) only says to restart every server.
 
 **What changes.** Each server signs a new serving certificate with the new server CA on its restart, so whichever copy reaches the Secret is of the new CA.
 
@@ -91,8 +91,11 @@ touch /var/lib/rancher/k3s/server/tls/dynamic-cert-regenerate   # k3s removes it
 Then restart k3s on one server after another. Check, on each server:
 
 ```bash
-openssl s_client -connect <server>:6443 </dev/null 2>/dev/null | openssl x509 -noout -issuer   # the new k3s-server-ca
+openssl s_client -connect <server>:6443 </dev/null 2>/dev/null | openssl x509 -noout -issuer
+openssl x509 -noout -subject -in /var/lib/rancher/k3s/server/tls/server-ca.crt   # the same k3s-server-ca@<time>
 ```
+
+The second line gives the server CA that `rotate-ca` stored, after the restart; the old CA has another time in its name.
 
 The `ca-rotation` scenario does this and checks each server against the new CAs alone.
 
