@@ -51,8 +51,8 @@ func newWorld(ctx context.Context) (*world, error) {
 	if err := startNodes(ctx); err != nil {
 		return nil, err
 	}
-	logf("one CoreDNS pod per node; metrics-server and Traefik as the settings have them")
-	if err := spreadK3sServices(ctx); err != nil {
+	logf("patching k3s's own objects as k3s/patches.yaml says, and waiting for Traefik")
+	if err := patchK3s(ctx); err != nil {
 		return nil, err
 	}
 	keys := make([]eab, len(eabSecrets))

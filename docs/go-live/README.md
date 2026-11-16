@@ -7,7 +7,7 @@ It assumes:
 - a new cluster that imports the old one's databases;
 - clients outside the cluster that list every node, set a short `connect_timeout`, and treat a COMMIT that got no answer as unknown: it may have been committed.
 
-Everything here was measured in the [scenarios](../e2e.md) or read from the upstream source, unless it says otherwise. The variant [`first-list`](../../variants/first-list) of the scenarios applies the base and the list below, and leaves everything else at its default. The variant [`every-item`](../../variants/every-item) also applies [Later](#later).
+Everything here was measured in the [scenarios](../e2e.md) or read from the upstream source, unless it says otherwise. The variant [`first-list`](../../variants/first-list) of the scenarios applies the base and the list below, and leaves everything else at its default, but for the settings it keeps below. The variant [`every-item`](../../variants/every-item) also applies [Later](#later). Each variant's `gaps.md` lists the scenarios it fails because it lacks something the samples have: [`first-list`](../../variants/first-list/gaps.md), [`every-item`](../../variants/every-item/gaps.md).
 
 Neither variant applies these items of the list, because the scenarios cannot:
 
@@ -15,6 +15,13 @@ Neither variant applies these items of the list, because the scenarios cannot:
 - **SELinux in containerd.** The runner's kernel has no SELinux, so a node in a container runs k3s without it; the scenario `host-check-docker` shows that check failing.
 - **Object Lock on the bucket**, which [disk-and-bucket.md](disk-and-bucket.md#a-bucket-nothing-can-delete-from) leaves to choice. The test store has every other part: a versioned bucket, that page's bucket policy, CNPG's own keys, no retention policy, and no lifecycle rules, which the store does not support at all ([e2e.md](../e2e.md#the-store)).
 - **A data disk with room for the data.** Each node's data is on a filesystem of its own, as [the data disk](disk-and-bucket.md#the-data-disk) asks, but of 4 GiB, sized for the scenarios ([e2e.md](../e2e.md#each-nodes-data-filesystem)).
+
+Both variants keep these settings of the samples, which are neither in the base nor in the list:
+
+- **The samples' image, with its uid and gid 999.** The [uid item](new-cluster.md#the-postgres-uid-and-gid-of-the-image) needs an image whose `postgres` is not CNPG's uid 26; CNPG's own image would not show it.
+- **`storageSize: 50Gi`.** CNPG has no default size for the data volume.
+- **A bootstrap with no `app` database**: `database: postgres`, `owner: postgres`, in place of the import, so the cluster starts as after it.
+- **`conntrack-max-per-core=0` for kube-proxy.** kube-proxy cannot set `nf_conntrack_max` in a node that runs in a container. A real node needs nothing.
 
 ## The base
 
@@ -71,6 +78,7 @@ These cannot change on a running cluster.
 - **Certificate expiry and disk usage as metrics.** k3s (for its own and etcd's certificates) and cert-manager already export their certificate expiry, and the kubelet the volume usage; the collectors only need to scrape them. [metrics-and-alerts.md](metrics-and-alerts.md)
 - **The alerts on them.** [metrics-and-alerts.md](metrics-and-alerts.md#alerts)
 - **The replica lag alert only for instances that report.** A replica lost with its node leaves its last lag sample for 5 minutes; when that sample came just after a pause in writes, `CNPGReplicaLag` pages for minutes of lag that never were. [metrics-and-alerts.md](metrics-and-alerts.md#the-replica-lag-alert-only-for-instances-that-report)
+- **`metricsQueriesTTL: 0s`.** CNPG keeps its query results for 30 s, so one sample of commits waiting during a failover repeats, and `CNPGWritesBlocked` pages after writes are back. [metrics-and-alerts.md](metrics-and-alerts.md#metricsqueriesttl-0s)
 - **An instance reports only while its metrics are fresh.** With two of three nodes lost, the instance left stops answering its scrapes too; every instance's last samples then count for 5 minutes, and `CNPGDatabaseDown` pages about 4 minutes late. [metrics-and-alerts.md](metrics-and-alerts.md#an-instance-reports-only-while-its-metrics-are-fresh)
 
 ## To weigh

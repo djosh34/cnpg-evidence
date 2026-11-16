@@ -60,6 +60,22 @@ k3s's leaf certificates last a year and are renewed only when k3s starts within 
 
 `cnpg_sample:instance_reports` keeps an instance while its newest `cnpg_collector_up` is at most 30 s older than its cluster's newest, and at most 90 s old ([below](#an-instance-reports-only-while-its-metrics-are-fresh)). The unit test "a lost replica's last lag sample" in [`rules.test.yaml`](../../samples/monitoring/rules.test.yaml) checks it.
 
+## metricsQueriesTTL: 0s
+
+**Problem.** CNPG's exporter keeps the results of its monitoring queries for 30 s by default, and every scrape in that time gets the same values. During a failover the new primary's first commits wait a few seconds for a standby. When one query run catches them, the next scrapes repeat that count for up to 30 s. `CNPGWritesBlocked` fires after two such samples within 15 s and 10 s more, so it paged critical for the new primary 10 to 15 s after writes were back. In runs of the variant `first-list` without this setting, it fired after some failovers and not others; in a full run with it, it fired after none.
+
+**What changes.** Every scrape runs the queries. A wait shows at the next scrape, and it is gone from the one after it ends. With the samples' 5 s scrape, the queries run every 5 s on each instance.
+
+**How.** On the `Cluster`:
+
+```yaml
+spec:
+  monitoring:
+    metricsQueriesTTL: 0s
+```
+
+Check: `kubectl get cluster <cluster> -n <namespace> -o jsonpath='{.spec.monitoring.metricsQueriesTTL}'` gives `0s`.
+
 ## An instance reports only while its metrics are fresh
 
 **Problem.** CNPG's exporter adds the backup plugin's metrics to every scrape, and the plugin reads its `ObjectStore` from the Kubernetes API, with no time limit. While the API does not answer, as with two of three nodes lost and so no etcd quorum, every scrape of the instance left waits and fails. No instance's metrics arrive. `cnpg_sample:instance_reports` compares each instance only with the newest of its cluster, so all of them, the lost primary too, count as reporting until their last samples leave the evaluator's 5 minute lookback. In a scenario with the primary's node and a replica's node lost, `CNPGDatabaseDown` had not fired after 5 minutes; it would have fired about 8 minutes in, not 4.

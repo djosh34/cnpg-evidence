@@ -114,6 +114,8 @@ spec:
     customQueriesConfigMap:
       - name: {{ $c.name }}-queries
         key: queries
+    # Every scrape runs the queries, without CNPG's 30 s cache.
+    metricsQueriesTTL: 0s
 
   plugins:
     - name: barman-cloud.cloudnative-pg.io

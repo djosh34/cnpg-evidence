@@ -353,6 +353,40 @@ func workflowScenarios() (listed, excluded []string, err error) {
 	return strings.Fields(env["SCENARIOS"]), strings.Fields(env["NOT_IN_VARIANTS"]), nil
 }
 
+// Every settings directory's k3s/patches.yaml reads, and each patches
+// CoreDNS to one pod per node, as the first list asks.
+func TestK3sPatches(t *testing.T) {
+	files, err := filepath.Glob("../variants/*/k3s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range append(files, "../samples/k3s") {
+		patches, err := readK3sPatches(filepath.Join(dir, "patches.yaml"))
+		if err != nil {
+			t.Errorf("%s: %v", dir, err)
+			continue
+		}
+		coredns := slices.ContainsFunc(patches, func(p k3sPatch) bool {
+			spec, ok := p.Patch["spec"].(map[string]any)
+			return ok && p.Target == "deployment/coredns" && spec["replicas"] == 3
+		})
+		if !coredns {
+			t.Errorf("%s/patches.yaml: no 3 CoreDNS replicas in %+v", dir, patches)
+		}
+	}
+	dir := t.TempDir()
+	file := filepath.Join(dir, "patches.yaml")
+	if err := os.WriteFile(file, []byte("- target: coredns\n  namespace: kube-system\n  patch: {spec: {replicas: 3}}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readK3sPatches(file); err == nil {
+		t.Error("a target without its kind: no error")
+	}
+	if patches, err := readK3sPatches(filepath.Join(dir, "none.yaml")); err != nil || patches != nil {
+		t.Errorf("no file: %v, %v", patches, err)
+	}
+}
+
 // The dashboards of the samples and of every variant decode as the e2e test
 // reads them, and have the two stat panels its lines read: Replica lag, with
 // a query it shows in red, and Instances, with one query.
