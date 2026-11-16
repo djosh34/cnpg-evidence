@@ -51,9 +51,10 @@ func storeNewCAs(ctx context.Context, s *scenario, _ args) error {
 		return err
 	}
 	// The script reads the CAs with their keys, and the tokens, which it
-	// prints with the new CA's hash.
+	// prints with the new CA's hash. agent-token is a link to token when
+	// the nodes have no agent token of their own, so -L copies the file.
 	for _, file := range []string{"tls", "token", "agent-token"} {
-		_, err := command(ctx, "docker", "cp", node+":"+k3sServerDir+"/"+file, filepath.Join(dir, "server", file))
+		_, err := command(ctx, "docker", "cp", "-L", node+":"+k3sServerDir+"/"+file, filepath.Join(dir, "server", file))
 		if err != nil {
 			return err
 		}
@@ -168,7 +169,7 @@ func onNewCAs(ctx context.Context, s *scenario, a args) error {
 	if err != nil {
 		return fmt.Errorf("the admin kubeconfig of %s: %w", node, err)
 	}
-	proxy, err := nodeFile(ctx, node, k3sServerDir+"/tls/client-auth-proxy.crt")
+	proxy, err := nodeCert(ctx, node, k3sServerDir+"/tls/client-auth-proxy.crt")
 	if err == nil {
 		err = verifyNew(s.newCAs, "request-header", proxy)
 	}
@@ -230,8 +231,8 @@ func firstCert(data []byte) (*x509.Certificate, error) {
 	return x509.ParseCertificate(block.Bytes)
 }
 
-// nodeFile is the certificate in a file of the node.
-func nodeFile(ctx context.Context, node, path string) (*x509.Certificate, error) {
+// nodeCert is the certificate in a file of the node.
+func nodeCert(ctx context.Context, node, path string) (*x509.Certificate, error) {
 	data, err := copyFromNode(ctx, node, path)
 	if err != nil {
 		return nil, err
