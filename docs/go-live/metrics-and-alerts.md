@@ -62,7 +62,7 @@ k3s's leaf certificates last a year and are renewed only when k3s starts within 
 
 ## metricsQueriesTTL: 0s
 
-**Problem.** CNPG's exporter keeps the results of its monitoring queries for 30 s by default, and every scrape in that time gets the same values. During a failover the new primary's first commits wait a few seconds for a standby. When one query run catches them, the next scrapes repeat that count for up to 30 s. `CNPGWritesBlocked` fires after two such samples within 15 s and 10 s more, so it paged critical for the new primary 10 to 15 s after writes were back. In runs of the variant `first-list`, without this setting, it fired after some failovers and not others.
+**Problem.** CNPG's exporter keeps the results of its monitoring queries for 30 s by default, and every scrape in that time gets the same values. During a failover the new primary's first commits wait a few seconds for a standby. When one query run catches them, the next scrapes repeat that count for up to 30 s. `CNPGWritesBlocked` fires after two such samples within 15 s and 10 s more, so it paged critical for the new primary 10 to 15 s after writes were back. In runs of the variant `first-list` without this setting, it fired after some failovers and not others; in a full run with it, it fired after none.
 
 **What changes.** Every scrape runs the queries. A wait shows at the next scrape, and it is gone from the one after it ends. With the samples' 5 s scrape, the queries run every 5 s on each instance.
 
