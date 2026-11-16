@@ -3,19 +3,22 @@
 # its two-line Dockerfile, helm, kubectl and kubectl cnpg. It also has the
 # scripts of scripts/ with the tools they need, a static bash and jq that it
 # copies onto a node for host-check.sh, and k3s's script for new CAs.
+# Every download from outside goes through retry.sh.
 # TestScenario of scenario_test.go builds and runs it.
 
 FROM golang:1.27-alpine@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18 AS build
 WORKDIR /src
+COPY e2e/retry.sh /usr/local/bin/retry
 COPY e2e/go.mod e2e/go.sum e2e/
-RUN cd e2e && go mod download
+RUN cd e2e && retry go mod download
 COPY e2e/ e2e/
 RUN cd e2e && CGO_ENABLED=0 go build -trimpath -o /out/e2e . \
   && CGO_ENABLED=0 go build -trimpath -o /out/client ./client
 
 FROM alpine:3.22@sha256:49340b346798875b5592e5d420241f2f9cfba5f47e62ebb1446a1b34734e898f AS tools
+COPY e2e/retry.sh /usr/local/bin/retry
 # ar, to unpack the Debian package of the static bash.
-RUN apk add --no-cache binutils
+RUN retry apk add --no-cache binutils
 WORKDIR /tools
 RUN set -eu; \
   case $(uname -m) in \
@@ -33,11 +36,11 @@ RUN set -eu; \
       jq=4dd2d8a0661df0b22f1bb9a1f9830f06b6f3b8f7d91211a1ef5d7c4f06a8b4a5 ;; \
     *) echo "no tools for $(uname -m)" >&2; exit 1 ;; \
   esac; \
-  wget -q -O helm.tar.gz "https://get.helm.sh/helm-v4.3.0-linux-$arch.tar.gz"; \
-  wget -q -O kubectl "https://dl.k8s.io/release/v1.33.13/bin/linux/$arch/kubectl"; \
-  wget -q -O cnpg.tar.gz "https://github.com/cloudnative-pg/cloudnative-pg/releases/download/v1.30.1/kubectl-cnpg_1.30.1_linux_$cnpgarch.tar.gz"; \
-  wget -q -O bash.deb "https://deb.debian.org/debian/pool/main/b/bash/bash-static_5.2.37-2+b10_$arch.deb"; \
-  wget -q -O jq "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$arch"; \
+  retry wget -q -O helm.tar.gz "https://get.helm.sh/helm-v4.3.0-linux-$arch.tar.gz"; \
+  retry wget -q -O kubectl "https://dl.k8s.io/release/v1.33.13/bin/linux/$arch/kubectl"; \
+  retry wget -q -O cnpg.tar.gz "https://github.com/cloudnative-pg/cloudnative-pg/releases/download/v1.30.1/kubectl-cnpg_1.30.1_linux_$cnpgarch.tar.gz"; \
+  retry wget -q -O bash.deb "https://deb.debian.org/debian/pool/main/b/bash/bash-static_5.2.37-2+b10_$arch.deb"; \
+  retry wget -q -O jq "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$arch"; \
   printf '%s  %s\n' "$helm" helm.tar.gz "$kubectl" kubectl "$cnpg" cnpg.tar.gz "$bash" bash.deb "$jq" jq | sha256sum -c -; \
   mkdir out node; \
   tar -xzf helm.tar.gz -C out --strip-components=1 "linux-$arch/helm"; \
@@ -50,7 +53,7 @@ RUN set -eu; \
 # k3s's own script that makes new CAs, cross-signed by the old ones, for k3s
 # certificate rotate-ca, of the k3s version the nodes run (e2e/nodes.go).
 RUN set -eu; \
-  wget -q -O rotate-default-ca-certs.sh \
+  retry wget -q -O rotate-default-ca-certs.sh \
     "https://raw.githubusercontent.com/k3s-io/k3s/v1.33.13%2Bk3s2/contrib/util/rotate-default-ca-certs.sh"; \
   echo "62ef79f530cd285b3cfce884746abe6c3712ad70d0ef66e81f76aaa93c30551b  rotate-default-ca-certs.sh" | sha256sum -c -; \
   mkdir k3s; \
@@ -59,7 +62,8 @@ RUN set -eu; \
 FROM docker:29-dind@sha256:08a98015fce594af7c382883bea080ea206de74402a95da9dc52b6428c8cd121
 # What the scripts of scripts/ need, and what the nodes' data filesystems
 # need: fallocate, mkfs.ext4, and util-linux's mount, umount and losetup.
-RUN apk add --no-cache bash coreutils jq openssl postgresql-client procps-ng python3 setpriv \
+COPY e2e/retry.sh /usr/local/bin/retry
+RUN retry apk add --no-cache bash coreutils jq openssl postgresql-client procps-ng python3 setpriv \
   e2fsprogs losetup mount umount util-linux-misc
 COPY --from=tools /tools/out/ /usr/local/bin/
 COPY --from=tools /tools/node/ /opt/cnpg-evidence/node/
