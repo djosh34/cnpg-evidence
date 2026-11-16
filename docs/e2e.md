@@ -15,6 +15,8 @@ Eight scenarios run the evidence scripts, one part each, so a gap in one part ne
 
 Ten scenarios, in [`alerts.feature`](../samples/features/alerts.feature), are one per alert of the [monitoring](monitoring.md#alerts), each named after its alert: each causes the alert's condition for real, checks that the alert fires with its labels and that Alertmanager sends it, ends the condition, and checks that the alert resolves and that Alertmanager sends it resolved.
 
+`ca-rotation`, in [`k3s.feature`](../samples/features/k3s.feature), rotates the k3s CAs, etcd's included, while the client writes and reads, as [docs.k3s.io](https://docs.k3s.io/cli/certificate#rotating-self-signed-ca-certificates) says for the CAs k3s made itself. k3s's own `rotate-default-ca-certs.sh`, of the k3s version the nodes run, makes new server, client, request-header, etcd server and etcd peer CAs, each cross-signed by the old one, and `k3s certificate rotate-ca` stores them in etcd. k3s then restarts on one node after another. After each restart the scenario checks that the node serves and uses certificates of the new CAs alone, and that etcd has three healthy members; at the end, that every node is Ready and the cluster is healthy. The test does nothing for the cluster in between.
+
 Two scenarios run [`host-check.sh`](host-check.md#in-the-scenarios) on every node. `host-check-docker` expects the three checks a node in a container can never pass to fail, each with its known value, so a change to them shows. `host-check` expects every other check to pass, in the samples and in a variant: those checks depend on the settings, so a failure there is a real gap.
 
 ## Run a scenario
@@ -150,7 +152,7 @@ What runs outside k3s in production runs as a container next to the k3s nodes, n
 
 1. Checks the inotify limit and starts its own dockerd. Checks that the runner's disk has room, then makes each node's [data filesystem](#each-nodes-data-filesystem).
 2. Builds the `client` image, then creates the outside containers, copies their files in with `docker cp`, and starts them. The company CA gets a new root on every run.
-3. Starts three k3s servers with embedded etcd, `k3s-1.example.test` to `k3s-3.example.test`, with [`samples/k3s/`](../samples/k3s) or the variant's `k3s/`. Each node runs [`e2e/node-init.sh`](../e2e/node-init.sh), which restarts k3s when it exits, so the pods outlive k3s as they do under systemd.
+3. Starts three k3s servers with embedded etcd, `k3s-1.example.test` to `k3s-3.example.test`, with [`samples/k3s/`](../samples/k3s) or the variant's `k3s/`. Each node runs [`e2e/node-init.sh`](../e2e/node-init.sh), which restarts k3s when it exits, so the pods outlive k3s as they do under systemd. It keeps k3s's process ID in `/run/k3s.pid`, for a scenario that restarts k3s.
 4. Runs one CoreDNS, metrics-server and Traefik pod per node, as [samples.md](samples.md#one-pod-per-node) says. For a variant, CoreDNS, as the [first list](go-live/README.md#failover-happens-by-itself) says; for `every-item` also metrics-server, as [later.md](go-live/later.md) says. Traefik as the variant's `k3s/manifests` say.
 5. Makes the Secrets only the run knows, then installs the releases of [`samples/charts/releases.yaml`](../samples/charts/releases.yaml), or of the variant's, in order.
 6. Waits until the cluster is healthy, takes a first backup, and waits until Prometheus has every source's metrics. It then names the instances: the primary, replica 1 and replica 2.
@@ -260,6 +262,8 @@ Events:
 | `the server certificate is reissued`, and `the replication certificate` | The same with the role's own 90 days. |
 | `desired.sh runs`, `prove.sh runs`, `host-check.sh runs` | Runs the script as its doc says: `desired.sh` against the cluster, `prove.sh` and `host-check.sh` as root on every node. |
 | `the <part> part of evidence.sh runs` | Runs `evidence.sh --part <part>` against the cluster: `client-ca`, `logins`, `postgres`, `pods`, `tls` or `kubernetes`. |
+| `new k3s CAs are stored in etcd` | Runs k3s's `rotate-default-ca-certs.sh` in the e2e container on a copy of the first node's CAs, copies the new CAs to that node, and runs `k3s certificate rotate-ca` there. The scenario keeps the new CAs for the lines below. |
+| `k3s is restarted on node <n>` | Stops k3s on the node `k3s-<n>` with SIGTERM, as `systemctl restart k3s` does; `node-init.sh` starts it again 5 s later, and the pods keep running. The line ends once the new k3s runs. |
 
 States, checked now, within the line's limit, or for its time:
 
@@ -292,6 +296,9 @@ States, checked now, within the line's limit, or for its time:
 | `no acknowledged write is lost`, `... lost in pg-restore` | Stops the client; every write it got acknowledged is in `e2e_writes` on the primary, or of `pg-restore`. |
 | `the alerts are healthy` | No alert fires. The alerts the scenario says `fired` or `fires` fired, and no other did but those it says `may fire`. |
 | `the dashboard is healthy` | Every panel of the dashboard gives a value through Grafana. |
+| `node <n> is on the new CAs` | On `k3s-<n>`, the API server and the kubelet serve a certificate of the new server CA, etcd's client and peer ports one of the new etcd server and peer CAs, each checked against the new CA alone. The node's admin kubeconfig has a client certificate of the new client CA, which its API server takes. The API server's proxy certificate is of the new request-header CA, and a request through it to metrics-server works, as does one to the node's kubelet. |
+| `etcd is healthy` | etcd on every node answers `/health` as healthy and lists three members, none a learner, asked with the first node's etcd client certificate. |
+| `every node is Ready` | Each node's `Ready` condition is `True`. |
 
 Measures and since lines:
 
