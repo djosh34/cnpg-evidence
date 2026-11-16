@@ -3,7 +3,8 @@
 # its two-line Dockerfile, helm, kubectl and kubectl cnpg. It also has the
 # scripts of scripts/ with the tools they need, a static bash and jq that it
 # copies onto a node for host-check.sh, and k3s's script for new CAs.
-# Every download from outside goes through retry.sh.
+# Each package, module and tool download of its RUN steps goes through
+# retry.sh; the base images are not.
 # TestScenario of scenario_test.go builds and runs it.
 
 FROM golang:1.27-alpine@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18 AS build
