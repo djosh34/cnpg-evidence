@@ -26,8 +26,14 @@ const (
 	s3Image      = "versity/versitygw:v1.10.0@sha256:89cad13cc981986ee284cbafea4613f9533ce6fd5f37a2c96c4c4fb8adb3a316"
 )
 
-// The ACME directory of the company CA.
+// The ACME directory of the company CA, and the role its certificates come
+// from, with their lifetime.
 var acmeDirectory = "https://" + acmeName + "/v1/pki/acme/directory"
+
+const (
+	acmeRole = "pki/roles/approved"
+	acmeTTL  = "2160h"
+)
 
 // hosts is the DNS container's hosts file: every name of the e2e test.
 func hosts() string {
@@ -146,11 +152,11 @@ func startACME(ctx context.Context, root *ca) (*openbao, error) {
 			"path":     "https://" + acmeName + "/v1/pki",
 			"aia_path": "https://" + acmeName + "/v1/pki",
 		}},
-		{"pki/roles/approved", map[string]any{
+		{acmeRole, map[string]any{
 			"allowed_domains":    approved,
 			"allow_bare_domains": true, "allow_subdomains": false, "allow_wildcard_certificates": false,
 			"allow_localhost": false, "server_flag": true, "client_flag": true,
-			"key_type": "any", "ttl": "2160h", "max_ttl": "2160h",
+			"key_type": "any", "ttl": acmeTTL, "max_ttl": acmeTTL,
 		}},
 		{"pki/config/acme", map[string]any{
 			"enabled": true, "allowed_roles": []string{"approved"}, "default_directory_policy": "role:approved",
@@ -194,6 +200,10 @@ func (b *openbao) call(ctx context.Context, method, path string, body, out any) 
 	}
 	if b.token != "" {
 		req.Header.Set("X-Vault-Token", b.token)
+	}
+	// OpenBao answers a PATCH without this type with 415.
+	if method == http.MethodPatch {
+		req.Header.Set("Content-Type", "application/merge-patch+json")
 	}
 	if err := callJSON(b.http, req, out); err != nil {
 		return fmt.Errorf("OpenBao: %w", err)

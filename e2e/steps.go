@@ -26,8 +26,8 @@ import (
 //	<thing> has|have been <word> since the <event>
 //	<thing> starts|stops|runs|passes
 //	N s pass [after the <event>]
-//	<ALERT> fired|may fire|fires|resolves|has not fired for <role>|the cluster [< N s [after the <event>]]
-//	Alertmanager gets|sends|mutes <ALERT> for <role> [< N s [after the <event>]]
+//	<ALERT> [<severity>] fired|may fire|fires|resolves|has not fired for <who> [< N s [after the <event>]]
+//	Alertmanager gets|sends|mutes [the resolved] <ALERT> [<severity>] for <who> [< N s [after the <event>]]
 //	no writes
 //	host-check.sh fails these checks on every node:, with a table
 //	host-check.sh passes every check on every node but these:, with a table
@@ -44,8 +44,8 @@ const (
 	sinceLine = `^(.+?) (?:has|have) been (.+) since the (\w+)$`
 	verbLine  = `^(.+?) (starts?|stops|runs|passes)$`
 	passLine  = `^(\d+) s pass(?: after the (\w+))?$`
-	alertLine = `^(CNPG\w+) (fired|may fire|fires|resolves|has not fired) for (.+?)(?:` + within + `)?$`
-	amLine    = `^Alertmanager (gets|sends|mutes) (CNPG\w+) for (.+?)(?:` + within + `)?$`
+	alertLine = `^([A-Z]\w+)(?: (warning|critical))? (fired|may fire|fires|resolves|has not fired) for (.+?)(?:` + within + `)?$`
+	amLine    = `^Alertmanager (gets|sends|mutes) (the resolved )?([A-Z]\w+)(?: (warning|critical))? for (.+?)(?:` + within + `)?$`
 	quietLine = `^no writes$`
 	failsLine = `^host-check\.sh fails these checks on every node:$`
 	butLine   = `^host-check\.sh passes every check on every node but these:$`
@@ -96,6 +96,8 @@ type scenario struct {
 	drain    *drained             // the node a drain runs on or cordoned, until it is uncordoned
 	commit   *background          // the commit "a commit is started" started
 	scripts  map[string]scriptRun // what each script gave, by its name and node
+	ballast  string               // the ballast file on a data disk, until it is removed
+	held     *held                // the sessions held on an instance, until they are ended
 
 	started time.Time       // when the scenario started, after the monitoring was ready
 	alerts  map[string]bool // the alerts the scenario names, "<alertname> <pod>": true when they must fire, false when they may
@@ -222,68 +224,92 @@ func (s *scenario) since(thing, word, event string) error {
 	return w.since(s.ctx, s, a, from)
 }
 
-// alert: "<ALERT> fires for <role> < N s" and the other alert words. fires
+// alert: "<ALERT> fires for <who> < N s" and the other alert words. fires
 // and resolves wait up to N s, or check now; fired and has not fired check
 // the whole scenario. fired and fires name an alert that must fire, may fire
 // one that may; always.feature's "the alerts are healthy" fails on any
-// other.
-func (s *scenario) alert(name, verb, who, n, after string) error {
+// other. A severity limits the check to the alert of that severity.
+func (s *scenario) alert(name, severity, verb, who, n, after string) error {
 	if s.kind == messages.PickleStepType_ACTION {
 		return errors.New("an alert check in a When line")
 	}
-	pod, err := s.alertPod(who)
+	labels, err := s.alertLabels(name, severity, who)
 	if err != nil {
 		return err
 	}
-	key := alertKey(name, pod)
+	key := alertKey(name, labels["pod"])
 	var check func(context.Context) error
 	switch verb {
 	case "may fire":
+		if severity != "" || n != "" {
+			return errors.New("may fire takes no severity and no limit")
+		}
 		if !s.alerts[key] {
 			s.alerts[key] = false
 		}
 		return nil
 	case "fires":
 		s.alerts[key] = true
-		check = s.alertIs(key, true, false)
+		check = s.alertIs(labels, true, false)
 	case "resolves":
-		check = s.alertIs(key, false, false)
+		check = s.alertIs(labels, false, false)
 	case "fired":
 		s.alerts[key] = true
-		check = s.alertIs(key, true, true)
+		check = s.alertIs(labels, true, true)
 	case "has not fired":
-		check = s.alertIs(key, false, true)
+		check = s.alertIs(labels, false, true)
 	}
 	return s.within(n, after, check)
 }
 
-// alertPod is the pod an alert line names: an instance by its role, or ""
-// for "the cluster", an alert of the whole cluster such as CNPGDatabaseDown.
-func (s *scenario) alertPod(who string) (string, error) {
-	if who == "the cluster" {
-		return "", nil
+// alertLabels are the labels of the alert a line names. who is an instance
+// by its role, with its pod; "the cluster", an alert of the whole cluster,
+// with the cluster and no pod; or "the server certificate" or "the
+// replication certificate", with the Certificate's name and no pod.
+func (s *scenario) alertLabels(name, severity, who string) (map[string]string, error) {
+	labels := map[string]string{"alertname": name, "pod": ""}
+	if severity != "" {
+		labels["severity"] = severity
 	}
-	pod, err := s.role(who)
-	if err == nil && pod == anotherInstance {
-		err = errors.New("an alert names one instance, or the cluster")
+	switch who {
+	case "the cluster":
+		labels["cluster"] = clusterName
+	case "the server certificate", "the replication certificate":
+		labels["cluster"] = clusterName
+		labels["name"] = clusterName + "-" + strings.Fields(who)[1]
+	default:
+		pod, err := s.role(who)
+		if err == nil && pod == anotherInstance {
+			err = errors.New("an alert names one instance, the cluster or a certificate")
+		}
+		if err != nil {
+			return nil, err
+		}
+		labels["pod"] = pod
 	}
-	return pod, err
+	return labels, nil
 }
 
-// alertIs checks that key fires now, or fired in the scenario, or not.
-func (s *scenario) alertIs(key string, want, inScenario bool) func(context.Context) error {
+// alertIs checks that an alert with the labels fires now, or fired in the
+// scenario, or not.
+func (s *scenario) alertIs(labels map[string]string, want, inScenario bool) func(context.Context) error {
 	return func(ctx context.Context) error {
-		alerts, err := s.w.mon.firing(ctx)
+		var from time.Time
 		what := "fires"
 		if inScenario {
-			alerts, err = s.w.mon.fired(ctx, s.started)
-			what = "fired in the scenario"
+			from, what = s.started, "fired in the scenario"
 		}
+		got, err := s.w.mon.alertFires(ctx, labels, from)
 		if err != nil {
 			return err
 		}
-		if alerts[key] != want {
-			return fmt.Errorf("%s %s: %t; the alerts: %s", key, what, alerts[key], strings.Join(slices.Sorted(maps.Keys(alerts)), ", "))
+		if got != want {
+			all, err := s.w.mon.firing(ctx)
+			if inScenario {
+				all, err = s.w.mon.fired(ctx, s.started)
+			}
+			return errors.Join(fmt.Errorf("%s %s: %t; the alerts: %s", selector(labels), what, got,
+				strings.Join(slices.Sorted(maps.Keys(all)), ", ")), err)
 		}
 		return nil
 	}
@@ -291,30 +317,35 @@ func (s *scenario) alertIs(key string, want, inScenario bool) func(context.Conte
 
 // alertmanager: "Alertmanager gets <ALERT> for <role>" sends Alertmanager
 // that alert as the rule evaluator would; "sends" waits until the receiver
-// got it, "mutes" until Alertmanager holds it suppressed.
-func (s *scenario) alertmanager(verb, name, who, n, after string) error {
-	pod, err := s.role(who)
+// got it as firing, or "sends the resolved" as resolved, and "mutes" until
+// Alertmanager holds it suppressed.
+func (s *scenario) alertmanager(verb, resolved, name, severity, who, n, after string) error {
+	labels, err := s.alertLabels(name, severity, who)
 	if err != nil {
 		return err
 	}
-	if pod == anotherInstance {
-		return errors.New("an alert names one instance")
+	if resolved != "" && verb != "sends" {
+		return errors.New("only sends takes the resolved")
 	}
 	if verb == "gets" {
-		if s.kind == messages.PickleStepType_OUTCOME || n != "" {
-			return errors.New("gets: an event, with no limit")
+		if s.kind == messages.PickleStepType_OUTCOME || n != "" || severity != "" || labels["pod"] == "" {
+			return errors.New("gets: an event of one instance, with no limit and no severity")
 		}
-		return s.w.mon.amSend(s.ctx, name, pod)
+		return s.w.mon.amSend(s.ctx, name, labels["pod"])
 	}
 	if s.kind == messages.PickleStepType_ACTION {
 		return errors.New("an Alertmanager check in a When line")
 	}
-	check := func(ctx context.Context) error { return s.w.mon.sent(name, pod, s.started) }
+	status := "firing"
+	if resolved != "" {
+		status = "resolved"
+	}
+	check := func(ctx context.Context) error { return s.w.mon.sent(labels, status, s.started) }
 	if verb == "mutes" {
 		check = func(ctx context.Context) error {
-			state, err := s.w.mon.amState(ctx, name, pod)
+			state, err := s.w.mon.amState(ctx, labels)
 			if err == nil && state != "suppressed" {
-				err = fmt.Errorf("the state of %s for %s in Alertmanager: %q", name, pod, state)
+				err = fmt.Errorf("the state of %s in Alertmanager: %q", selector(labels), state)
 			}
 			return err
 		}

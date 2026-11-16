@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -210,9 +212,9 @@ type monitoring struct {
 
 // One alert of a notification Alertmanager sent the receiver.
 type notification struct {
-	at             time.Time
-	alertname, pod string
-	status         string // firing or resolved
+	at     time.Time
+	labels map[string]string
+	status string // firing or resolved
 }
 
 // receive serves the receiver of alertmanager.yaml, https://alerts.example.com/hook,
@@ -256,22 +258,41 @@ func (m *monitoring) notified(w http.ResponseWriter, r *http.Request) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, a := range body.Alerts {
-		m.notifications = append(m.notifications, notification{
-			at: time.Now(), alertname: a.Labels["alertname"], pod: a.Labels["pod"], status: a.Status,
-		})
+		m.notifications = append(m.notifications, notification{at: time.Now(), labels: a.Labels, status: a.Status})
 	}
 }
 
-// sent: the receiver got alert name for pod as firing since from.
-func (m *monitoring) sent(name, pod string, from time.Time) error {
+// sent: since from, the receiver got an alert with the labels, with that
+// status: firing or resolved.
+func (m *monitoring) sent(labels map[string]string, status string, from time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, n := range m.notifications {
-		if n.alertname == name && n.pod == pod && n.status == "firing" && !n.at.Before(from) {
+		if n.status == status && !n.at.Before(from) && hasLabels(n.labels, labels) {
 			return nil
 		}
 	}
-	return fmt.Errorf("the receiver got no notification of %s firing for %s", name, pod)
+	return fmt.Errorf("the receiver got no notification of %s %s", selector(labels), status)
+}
+
+// hasLabels: got has each of the labels, where "" means that it lacks the
+// label, as in a PromQL matcher.
+func hasLabels(got, labels map[string]string) bool {
+	for k, v := range labels {
+		if got[k] != v {
+			return false
+		}
+	}
+	return true
+}
+
+// selector is a PromQL selector of the labels, in a fixed order.
+func selector(labels map[string]string) string {
+	var matchers []string
+	for _, k := range slices.Sorted(maps.Keys(labels)) {
+		matchers = append(matchers, fmt.Sprintf("%s=%q", k, labels[k]))
+	}
+	return "{" + strings.Join(matchers, ", ") + "}"
 }
 
 // get fetches url and decodes its JSON into out, when out is not nil.
@@ -356,6 +377,19 @@ func (m *monitoring) fired(ctx context.Context, from time.Time) (map[string]bool
 	return m.alerts(ctx, fmt.Sprintf(`max by (alertname, pod) (max_over_time(ALERTS{alertstate="firing"}[%ds]))`, window))
 }
 
+// alertFires: an alert with the labels fires now, or, when from is not zero,
+// fired since from.
+func (m *monitoring) alertFires(ctx context.Context, labels map[string]string, from time.Time) (bool, error) {
+	firing := maps.Clone(labels)
+	firing["alertstate"] = "firing"
+	promql := "ALERTS" + selector(firing)
+	if !from.IsZero() {
+		promql = fmt.Sprintf("max_over_time(%s[%ds])", promql, int(time.Since(from).Seconds())+1)
+	}
+	result, err := m.query(ctx, promql, false)
+	return len(result) > 0, err
+}
+
 func (m *monitoring) alerts(ctx context.Context, promql string) (map[string]bool, error) {
 	result, err := m.query(ctx, promql, false)
 	if err != nil {
@@ -375,9 +409,9 @@ func alertKey(name, pod string) string {
 	return name + " " + pod
 }
 
-// amState is the state Alertmanager holds alert name for pod in: active,
-// suppressed, or "" when it has none.
-func (m *monitoring) amState(ctx context.Context, name, pod string) (string, error) {
+// amState is the state Alertmanager holds the alert with the labels in:
+// active, suppressed, or "" when it has none.
+func (m *monitoring) amState(ctx context.Context, labels map[string]string) (string, error) {
 	var alerts []struct {
 		Labels map[string]string `json:"labels"`
 		Status struct {
@@ -388,7 +422,7 @@ func (m *monitoring) amState(ctx context.Context, name, pod string) (string, err
 		return "", err
 	}
 	for _, a := range alerts {
-		if a.Labels["alertname"] == name && a.Labels["pod"] == pod {
+		if hasLabels(a.Labels, labels) {
 			return a.Status.State, nil
 		}
 	}

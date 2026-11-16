@@ -218,6 +218,40 @@ tests:
               summary: Instance pg-1 of databases/pg does not stream from the primary or reports no metrics.
       - {eval_time: 12m, alertname: CNPGDatabaseDown}
 
+  # Every exporter stops answering at 2m, as while the Kubernetes API does
+  # not answer. Their last samples stay for the lookback, 5 min, but no
+  # instance reports from 3m30s, 90 s after them: the alert fires 3 min
+  # later, not 3 min after the lookback.
+  - name: every exporter stops
+    interval: 1m
+    input_series:
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-1"}', values: '1 1 1 _x12'}
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-2"}', values: '1 1 1 _x12'}
+      - {series: 'cnpg_collector_up{namespace="databases",cluster="pg",pod="pg-3"}', values: '1 1 1 _x12'}
+      - {series: 'cnpg_collector_fencing_on{namespace="databases",cluster="pg",pod="pg-1"}', values: '0 0 0 _x12'}
+      - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-1"}', values: '0 0 0 _x12'}
+      - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-2"}', values: '1 1 1 _x12'}
+      - {series: 'cnpg_pg_replication_in_recovery{namespace="databases",cluster="pg",pod="pg-3"}', values: '1 1 1 _x12'}
+    promql_expr_test:
+      - expr: cnpg_sample:instance_reports
+        eval_time: 3m25s
+        exp_samples:
+          - {labels: 'cnpg_sample:instance_reports{namespace="databases",cluster="pg",pod="pg-1"}', value: 120}
+          - {labels: 'cnpg_sample:instance_reports{namespace="databases",cluster="pg",pod="pg-2"}', value: 120}
+          - {labels: 'cnpg_sample:instance_reports{namespace="databases",cluster="pg",pod="pg-3"}', value: 120}
+      - expr: cnpg_sample:instance_reports
+        eval_time: 3m35s
+        exp_samples: []
+    alert_rule_test:
+      - {eval_time: 6m, alertname: CNPGDatabaseDown}
+      - eval_time: 7m
+        alertname: CNPGDatabaseDown
+        exp_alerts:
+          - exp_labels: {severity: critical, namespace: databases, cluster: pg}
+            exp_annotations:
+              summary: No instance of databases/pg reports a running primary.
+              description: PostgreSQL is down or fenced on every instance, no replica was promoted, or the metrics of the primary do not arrive.
+
   # A replica streams but its exporter stops answering.
   - name: replica metrics stop
     interval: 1m

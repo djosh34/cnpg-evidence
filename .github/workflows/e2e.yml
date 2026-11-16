@@ -40,8 +40,14 @@ jobs:
           WANTED: ${{ inputs.scenarios }}
           VARIANT: ${{ inputs.variant }}
           SCENARIOS: |
+            backup-failing
             backup-restore
+            certificate-expiring
             compliance
+            compliance-violation
+            connections-high
+            data-disk-full
+            database-down
             evidence-client-ca
             evidence-kubernetes
             evidence-logins
@@ -54,6 +60,7 @@ jobs:
             host-check-docker
             lag-after-primary-change
             lag-and-stall
+            metrics-missing
             one-node-left
             pgfallback-drain
             pgfallback-primary-node-loss
@@ -63,7 +70,9 @@ jobs:
             quiet-failover
             quiet-rewind
             rejoin-from-archive
+            replica-down
             replica-down-long
+            replica-lag
             replica-node-loss
             replica-not-streaming
             replica-restart-during-primary-loss
@@ -71,6 +80,7 @@ jobs:
             store-hang
             store-refuse
             switchover
+            writes-blocked
           # The scenarios a variant run leaves out; docs/e2e.md says why.
           NOT_IN_VARIANTS: |
             pgfallback-drain

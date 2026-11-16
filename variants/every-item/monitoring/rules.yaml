@@ -18,15 +18,23 @@ groups:
           cluster: pg
 
       # The instances whose metrics arrive: the newest cnpg_collector_up of
-      # each is at most 30 s older than the newest of its cluster. A collector
-      # lost with its node sends no stale marker, so without this its last
-      # samples would count for the evaluator's whole lookback, 5 min in
-      # Prometheus. The value is the time of the newest sample.
+      # each is at most 30 s older than the newest of its cluster, and at
+      # most 90 s old. A collector lost with its node sends no stale marker,
+      # so without this its last samples would count for the evaluator's
+      # whole lookback, 5 min in Prometheus. The 90 s covers every exporter
+      # stopping at once: while the Kubernetes API does not answer, as with
+      # two of three nodes lost, each scrape waits on the plugin's metrics,
+      # which read the API. The up to about 40 s of failed scrapes seen right
+      # after one node is lost stay under it. The value is the time of the
+      # newest sample.
       - record: cnpg_sample:instance_reports
         expr: |
-          max by (namespace, cluster, pod) (timestamp(cnpg_collector_up))
-            > on (namespace, cluster) group_left ()
-          max by (namespace, cluster) (timestamp(cnpg_collector_up)) - 30
+          (
+            max by (namespace, cluster, pod) (timestamp(cnpg_collector_up))
+              > on (namespace, cluster) group_left ()
+            max by (namespace, cluster) (timestamp(cnpg_collector_up)) - 30
+          )
+          > time() - 90
 
       # The instance that reports itself as the primary, out of recovery.
       - record: cnpg_sample:primary
