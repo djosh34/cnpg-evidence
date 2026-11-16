@@ -64,6 +64,7 @@ These cannot change on a running cluster.
 
 - **One Issuer per Certificate.** Each Certificate has its own namespaced Issuer and ACME account; no shared ClusterIssuer. [certificates.md](certificates.md#one-issuer-per-certificate)
 - **No port 443 on Traefik.** k3s's Traefik serves a self-signed certificate on 443 of every node; http-01 needs only port 80. [certificates.md](certificates.md#no-port-443-on-traefik)
+- **A new serving certificate on every server after a CA rotation.** After `k3s certificate rotate-ca`, a restarted server can put its serving certificate of the old CA back on every server's 6443. [certificates.md](certificates.md#a-new-serving-certificate-on-every-server-after-a-ca-rotation)
 - **The self-signed certificates that stay.** Listed with the reason. Only the k3s ones are on the nodes' ports, and a firewall keeps those out of a scan. [certificates.md](certificates.md#the-self-signed-certificates-that-stay)
 
 ## Hardening that is a toggle or a check
