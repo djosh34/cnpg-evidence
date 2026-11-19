@@ -125,6 +125,9 @@ func TestCheck(t *testing.T) {
 	}
 	// CNPG's digest in a digest field, which its chart does not read.
 	cnpgAt := strings.Index(string(data), "\ncloudnative-pg:\n")
+	if cnpgAt < 0 {
+		t.Fatal("v1.33.yaml has no top-level cloudnative-pg key")
+	}
 	cnpg := string(data[:cnpgAt]) + strings.Replace(string(data[cnpgAt:]), `@sha256:`, `"
     digest: "sha256:`, 1)
 	if _, err := Parse([]byte(cnpg)); err == nil || !strings.Contains(err.Error(), "no image cloudnative-pg.image with a repository and its digest in tag") {
