@@ -32,6 +32,8 @@ The samples assume k3s with flannel, servicelb, local-path and the network polic
 
 The commands below install the versions and images of `versions/latest.yaml`. A values chart names its upstream chart without a version, so `wrapper` copies it to `build/`, writes the manifest's version and repository into the copy, and downloads the upstream chart there. When the manifest gives the chart a `name` and `alias`, as `v1.37-hi.yaml` does for the mirror's charts, it writes those too; a dependency with an alias of its own keeps it. It needs [yq](https://github.com/mikefarah/yq) v4.
 
+`latest.yaml` is `v1.37-hi.yaml`, whose `postgres` image has the ids 70. A cluster created with the ids 999 of the older manifests keeps them, as CNPG refuses a change of either id: install it with `manifest=versions/v1.37.yaml` instead, unless you move it to a new cluster.
+
 ```bash
 manifest=versions/latest.yaml
 wrapper() {
@@ -52,7 +54,7 @@ wrapper() {
    ```bash
    kubectl create secret generic client-ca -n databases --from-file=ca.crt=client-ca.pem
    ```
-4. Set `charts/cnpg-cluster/values.yaml`: the issuer, the object store with its credentials Secret (keys `ACCESS_KEY_ID` and `ACCESS_SECRET_KEY`), and `cluster.postgresUID` and `postgresGID`, the ids the image names `postgres`: those of the manifest's `postgresql.postgresUID` and `postgresGID` when it has them. Set `walSegmentSize` and the ids before the cluster is created.
+4. Set `samples/charts/cnpg-cluster/values.yaml`: the issuer, the object store with its credentials Secret (keys `ACCESS_KEY_ID` and `ACCESS_SECRET_KEY`), and `cluster.postgresUID` and `postgresGID`, the ids the image names `postgres`: those of the manifest's `postgresql.postgresUID` and `postgresGID` when it has them. Set `walSegmentSize` and the ids before the cluster is created.
 5. Install the operator and the plugin. The release names must stay `cnpg` and `barman-cloud`: the RBAC templates and `evidence.sh` use their ServiceAccount names.
    ```bash
    wrapper cnpg-cloudnative-pg
@@ -238,13 +240,14 @@ kubectl exec -n databases <primary pod> -c postgres -- psql -U postgres \
 
 ```bash
 image=$(kubectl get cluster pg -n databases -o jsonpath='{.spec.imageName}')
+ids=$(kubectl get cluster pg -n databases -o jsonpath='cluster.postgresUID={.spec.postgresUID},cluster.postgresGID={.spec.postgresGID}')
 helm install pg-restore samples/charts/cnpg-cluster -n databases -f samples/desired.yaml \
-  --set-string postgresql.imageName="$image" \
+  --set-string postgresql.imageName="$image" --set "$ids" \
   --set cluster.name=pg-restore --set recovery.enabled=true --set recovery.sourceCluster=pg \
   --set rwLoadBalancer.name=pg-restore-rw-lb --set readLoadBalancer=null
 ```
 
-It runs the image of the cluster `pg`. The new name gives its WAL archive its own folder. CNPG refuses a Service another cluster owns, so the restore gets its own rw LoadBalancer and none for reads; while the old cluster holds 5432, use its `pg-restore-rw` Service inside the cluster. A backup taken before `app` was removed brings `app` back: [remove it](#remove-app-from-a-cluster-bootstrapped-with-the-defaults) again. A backup taken before the chart's grants needs the [compliance grants](#compliance-metric) given again.
+It runs the image of the cluster `pg`, with its ids of `postgres`. The new name gives its WAL archive its own folder. CNPG refuses a Service another cluster owns, so the restore gets its own rw LoadBalancer and none for reads; while the old cluster holds 5432, use its `pg-restore-rw` Service inside the cluster. A backup taken before `app` was removed brings `app` back: [remove it](#remove-app-from-a-cluster-bootstrapped-with-the-defaults) again. A backup taken before the chart's grants needs the [compliance grants](#compliance-metric) given again.
 
 ## Remove app from a cluster bootstrapped with the defaults
 
