@@ -16,6 +16,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/sha256"
 	_ "embed"
@@ -174,18 +175,23 @@ func generate(ctx context.Context, in inputs) ([]byte, error) {
 		if repo == "" {
 			return nil, fmt.Errorf("the cert-manager chart has no repository or name in %s", strings.Join(path, "."))
 		}
-		img := image{Repository: repo, Tag: appVersions["cert-manager"]}
+		img := image{Repository: repo, Tag: cmp.Or(str(cm, append(path, "tag")...), appVersions["cert-manager"])}
 		if img.Digest, err = digest(ctx, repo+":"+img.Tag); err != nil {
 			return nil, err
 		}
 		m.CertManager = append(m.CertManager, certManagerImage{key, img})
 	}
 
-	m.CNPG = image{Repository: str(values["cloudnative-pg"], "image", "repository"), Tag: appVersions["cloudnative-pg"]}
+	// Each chart's own default tag, or its appVersion when it has none.
+	cnpg := values["cloudnative-pg"]
+	m.CNPG = image{Repository: str(cnpg, "image", "repository"), Tag: cmp.Or(str(cnpg, "image", "tag"), appVersions["cloudnative-pg"])}
 	barman := values["plugin-barman-cloud"]
-	m.Barman = image{Registry: str(barman, "image", "registry"), Repository: str(barman, "image", "repository"), Tag: appVersions["plugin-barman-cloud"]}
-	m.Sidecar = image{Registry: str(barman, "sidecarImage", "registry"), Repository: str(barman, "sidecarImage", "repository"), Tag: appVersions["plugin-barman-cloud"]}
-	m.Collector = image{Repository: otelRepository, Tag: appVersions["opentelemetry-collector"]}
+	m.Barman = image{Registry: str(barman, "image", "registry"), Repository: str(barman, "image", "repository"),
+		Tag: cmp.Or(str(barman, "image", "tag"), appVersions["plugin-barman-cloud"])}
+	m.Sidecar = image{Registry: str(barman, "sidecarImage", "registry"), Repository: str(barman, "sidecarImage", "repository"),
+		Tag: cmp.Or(str(barman, "sidecarImage", "tag"), appVersions["plugin-barman-cloud"])}
+	otel := values["opentelemetry-collector"]
+	m.Collector = image{Repository: otelRepository, Tag: cmp.Or(str(otel, "image", "tag"), appVersions["opentelemetry-collector"])}
 	for _, img := range []*image{&m.CNPG, &m.Barman, &m.Sidecar, &m.Collector} {
 		ref := img.Repository + ":" + img.Tag
 		if img.Registry != "" {

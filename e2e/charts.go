@@ -63,7 +63,11 @@ func installCharts(ctx context.Context, firstImage string) (chartValues, error) 
 		if err := setDependencies(filepath.Join(chart, "Chart.yaml"), manifest.Charts); err != nil {
 			return chartValues{}, err
 		}
-		if _, err := helm(ctx, 5*time.Minute, "dependency", "build", chart); err != nil {
+		// It downloads the upstream charts, so it gets retry's tries.
+		build, cancel := context.WithTimeout(ctx, 10*time.Minute)
+		_, err := command(build, "retry", "helm", "dependency", "build", chart)
+		cancel()
+		if err != nil {
 			return chartValues{}, err
 		}
 		values := []string{"--values", manifestFile}

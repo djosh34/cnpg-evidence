@@ -14,9 +14,11 @@ import (
 // nodeImagesPinned checks that every image on every node is one the
 // manifest names: an image it pins by digest (versions.Manifest.Pinned),
 // matched by repository and digest, or one of k3s's airgap images
-// (k3s.images), matched by repository and tag. An error names each other
-// image. It runs once the cluster is up, before the scenario, and as the
-// last line of always.feature.
+// (k3s.images), matched by repository and tag and pinned in containerd. k3s
+// pins each image it imports from the airgap tarball and never one the
+// kubelet pulls, so an airgap image that k3s did not import fails too. An
+// error names each other image. It runs once the cluster is up, before the
+// scenario, and as the last line of always.feature.
 func nodeImagesPinned(ctx context.Context) error {
 	var errs []error
 	for i := range nodeCount {
@@ -43,6 +45,7 @@ type nodeImage struct {
 	ID          string   `json:"id"`
 	RepoTags    []string `json:"repoTags"`
 	RepoDigests []string `json:"repoDigests"`
+	Pinned      bool     `json:"pinned"`
 }
 
 func parseImages(out string) ([]nodeImage, error) {
@@ -64,7 +67,7 @@ func notInManifest(images []nodeImage, m *versions.Manifest) []string {
 	}
 	var other []string
 	for _, image := range images {
-		known := slices.ContainsFunc(image.RepoTags, func(tag string) bool { return airgap[versions.Reference(tag)] }) ||
+		known := image.Pinned && slices.ContainsFunc(image.RepoTags, func(tag string) bool { return airgap[versions.Reference(tag)] }) ||
 			slices.ContainsFunc(image.RepoDigests, func(d string) bool {
 				name, digest, _ := strings.Cut(d, "@")
 				return slices.Contains(m.Pinned(), versions.Repository(name)+"@"+digest)

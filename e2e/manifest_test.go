@@ -18,7 +18,8 @@ func TestNotInManifest(t *testing.T) {
 	}
 	pg, pgDigest, _ := strings.Cut(m.PostgreSQL.ImageName, "@")
 	images, err := parseImages(`{"images": [
-		{"id": "sha256:1", "repoTags": ["` + m.K3s.Images[0] + `"], "repoDigests": ["docker.io/rancher/x@sha256:9"]},
+		{"id": "sha256:1", "repoTags": ["` + m.K3s.Images[0] + `"], "repoDigests": ["docker.io/rancher/x@sha256:9"], "pinned": true},
+		{"id": "sha256:5", "repoTags": ["` + m.K3s.Images[1] + `"], "repoDigests": ["docker.io/rancher/y@sha256:6"], "pinned": false},
 		{"id": "sha256:2", "repoTags": [], "repoDigests": ["` + versions.Repository(pg) + "@" + pgDigest + `"]},
 		{"id": "sha256:3", "repoTags": ["docker.io/library/busybox:1.37"], "repoDigests": ["docker.io/library/busybox@sha256:8"]},
 		{"id": "sha256:4", "repoTags": [], "repoDigests": ["` + versions.Repository(pg) + `@sha256:7"]}
@@ -28,6 +29,7 @@ func TestNotInManifest(t *testing.T) {
 	}
 	got := notInManifest(images, m)
 	want := []string{
+		m.K3s.Images[1] + " docker.io/rancher/y@sha256:6 (sha256:5)",
 		"docker.io/library/busybox:1.37 docker.io/library/busybox@sha256:8 (sha256:3)",
 		versions.Repository(pg) + "@sha256:7 (sha256:4)",
 	}

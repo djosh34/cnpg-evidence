@@ -106,7 +106,7 @@ Every version of the system under test that a run uses is in one file of [`versi
 
 Every release gets the manifest with `--values`, before its own values files, so each chart finds its keys and ignores the others. No upstream chart is copied into `samples/` or `variants/`, and none is changed: their images come only through these values.
 
-Once the cluster is up, and again at the end of `always.feature`, the run lists the images on every node with `crictl images`. An image the manifest pins anywhere, as `<name>@sha256:…` or as a chart's `repository` with a `digest` or a digest in its `tag`, passes by repository and digest; an image of `k3s.images` passes by repository and tag. Any other image fails the run, by name. The check sees what is on the nodes at those two times, not how each image was asked for.
+Once the cluster is up, and again at the end of `always.feature`, the run lists the images on every node with `crictl images`. An image the manifest pins anywhere, as `<name>@sha256:…` or as a chart's `repository` with a `digest` or a digest in its `tag`, passes by repository and digest. An image of `k3s.images` passes by repository and tag, and only when it is pinned in containerd: k3s pins each image it imports from the airgap tarball, and never one the kubelet pulls. Any other image fails the run, by name. The check sees what is on the nodes at those two times, not how each image was asked for.
 
 `latest.yaml` may be a symlink to another file of `versions/`: the run copies only the one file it uses.
 
@@ -324,7 +324,7 @@ States, checked now, within the line's limit, or for its time:
 | `<role> is idle after a WAL switch` | No WAL since a switch, for 30 s. |
 | `the chart's pg_ident lines are on <role>`, `on every instance` | The pg_ident lines every instance had at the first such line are there. |
 | `every instance is on the new image` | Every postgres container runs the manifest's `postgresql.imageName` and is ready. |
-| `every image on the nodes is from the manifest` | Every image `crictl images` lists on each node is pinned by the manifest, by repository and digest, or is one of its `k3s.images`, by repository and tag. It names every other image. |
+| `every image on the nodes is from the manifest` | Every image `crictl images` lists on each node is pinned by the manifest, by repository and digest, or is one of its `k3s.images`, by repository and tag, imported by k3s. It names every other image. |
 | `wal_keep_size is <n>MB on every instance` | `show wal_keep_size` gives it. |
 | `<role>'s WAL is archived` | The file it switched away from is archived. |
 | `<role>'s WAL is waiting for the store` | It has WAL files marked `.ready`. |
