@@ -111,6 +111,13 @@ func TestCheck(t *testing.T) {
 	if _, err := Parse([]byte(dotted)); err == nil || !strings.Contains(err.Error(), "no image cert-manager.acmesolver.image") {
 		t.Errorf("a chart image under a dotted key: %v", err)
 	}
+	// A second digest next to the sidecar's tag, which its chart ignores.
+	twoDigests := strings.Replace(string(data), "    repository: cloudnative-pg/plugin-barman-cloud-sidecar\n",
+		"    repository: cloudnative-pg/plugin-barman-cloud-sidecar\n    digest: sha256:"+strings.Repeat("1", 64)+"\n", 1)
+	if _, err := Parse([]byte(twoDigests)); err == nil ||
+		!strings.Contains(err.Error(), "the image plugin-barman-cloud.sidecarImage has a digest in digest and in tag") {
+		t.Errorf("an image with two digests: %v", err)
+	}
 	// The solver's block without its repository.
 	noRepo := strings.Replace(string(data), "      repository: quay.io/jetstack/cert-manager-acmesolver\n", "", 1)
 	if _, err := Parse([]byte(noRepo)); err == nil || !strings.Contains(err.Error(), "no image cert-manager.acmesolver.image with a repository") {

@@ -119,6 +119,9 @@ func Parse(data []byte) (*Manifest, error) {
 	for _, path := range w.unpinned {
 		errs = append(errs, fmt.Errorf("the image %s has no digest", path))
 	}
+	for _, path := range w.twoDigests {
+		errs = append(errs, fmt.Errorf("the image %s has a digest in digest and in tag", path))
+	}
 	for _, c := range chartImages {
 		if !c.pinnedIn(all) {
 			errs = append(errs, fmt.Errorf("no image %s with a repository and its digest in %s", strings.Join(c.keys, "."), c.field))
@@ -216,11 +219,12 @@ func (c chartImage) pinnedIn(manifest any) bool {
 	return strings.HasPrefix(value, "sha256:")
 }
 
-// images walks the manifest for its images: those it pins, and the paths
-// of the image blocks without a digest. charts holds chart repositories,
-// not images.
+// images walks the manifest for its images: those it pins, the paths of
+// the image blocks without a digest, and of those with a digest both in
+// digest and in tag, of which a chart reads only one. charts holds chart
+// repositories, not images.
 type images struct {
-	pinned, unpinned []string
+	pinned, unpinned, twoDigests []string
 }
 
 func (w *images) visit(node any, path string) {
@@ -238,12 +242,18 @@ func (w *images) visit(node any, path string) {
 			if registry, ok := n["registry"].(string); ok && registry != "" {
 				repo = registry + "/" + repo
 			}
-			var digest string
+			var digest, inTag string
 			if d, ok := n["digest"].(string); ok {
 				digest = d
 			}
-			if tag, ok := n["tag"].(string); ok && digest == "" {
-				_, digest, _ = strings.Cut(tag, "@")
+			if tag, ok := n["tag"].(string); ok {
+				_, inTag, _ = strings.Cut(tag, "@")
+			}
+			switch {
+			case digest != "" && inTag != "":
+				w.twoDigests = append(w.twoDigests, path)
+			case digest == "":
+				digest = inTag
 			}
 			if strings.HasPrefix(digest, "sha256:") {
 				w.pinned = append(w.pinned, Repository(repo)+"@"+digest)
