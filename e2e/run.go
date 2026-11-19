@@ -19,14 +19,17 @@ import (
 var scenarioTag = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
 // runScenario runs the one scenario tagged @<name> of the feature files, on
-// its own new cluster, then always.feature. It returns the exit code.
+// its own new cluster, then always.feature. It returns the exit code: 2
+// also when the scenario ran but the run could not keep its files, so such
+// a fault never looks like a failed line.
 func runScenario(name string, res *results) int {
 	format := "progress,cucumber:" + res.path("cucumber.json") + ",junit:" + res.path("junit.xml")
 	ran := 0
+	var s *scenario
 	suite := godog.TestSuite{
 		Name: "e2e",
 		ScenarioInitializer: func(sc *godog.ScenarioContext) {
-			s := &scenario{
+			s = &scenario{
 				results: res, writes: true,
 				marks: map[string]time.Time{}, limits: map[string]int{}, alerts: map[string]bool{},
 				needs: map[string]walNeed{}, switched: map[string]string{}, restarts: map[string]int{},
@@ -55,6 +58,9 @@ func runScenario(name string, res *results) int {
 		return 2
 	case ran > 1:
 		say(os.Stderr, "e2e: %d scenarios have the tag @%s; a run runs one\n", ran, name)
+		return 2
+	case s.fault != nil:
+		say(os.Stderr, "e2e: the run could not keep its files: %v\n", s.fault)
 		return 2
 	case status != 0:
 		logf("FAILED: %s", name)
@@ -95,7 +101,8 @@ func (s *scenario) setUp(sn *godog.Scenario, name string) error {
 // tearDown runs always.feature after the scenario, passed or failed, once
 // its cluster was built; after a failed line, it first ends the outages
 // still in place. It keeps the client's log, the cluster's state and the
-// nodes' logs, prints the timing table and, on a failure, the state.
+// nodes' logs, prints the timing table and, on a failure, the state. An
+// error in keeping them is also in s.fault.
 func (s *scenario) tearDown(sn *godog.Scenario, err error) error {
 	if s.w != nil {
 		if err != nil {
@@ -104,10 +111,11 @@ func (s *scenario) tearDown(sn *godog.Scenario, err error) error {
 		logf("always.feature")
 		err = errors.Join(err, s.runAlways())
 	}
+	var fault error
 	if s.clientRan {
-		err = errors.Join(err, s.stopClient(s.ctx))
+		fault = s.stopClient(s.ctx)
 		log, logErr := rawClientLog(s.ctx)
-		err = errors.Join(err, logErr, s.results.write("client.log", log))
+		fault = errors.Join(fault, logErr, s.results.write("client.log", log))
 	}
 	table := s.table(sn.Name)
 	say(os.Stdout, "\n%s\n", table)
@@ -115,10 +123,11 @@ func (s *scenario) tearDown(sn *godog.Scenario, err error) error {
 	if s.w != nil {
 		state += "\n" + s.w.mon.history(s.ctx, s.w.built)
 	}
-	if err != nil {
+	if err != nil || fault != nil {
 		say(os.Stdout, "\n%s", state)
 	}
-	return errors.Join(err, s.results.write("timing.md", table), s.results.write("state.txt", state), nodeLogs(s.ctx, s.results))
+	s.fault = errors.Join(fault, s.results.write("timing.md", table), s.results.write("state.txt", state), nodeLogs(s.ctx, s.results))
+	return errors.Join(err, s.fault)
 }
 
 // nodeLogs writes each node's whole log, k3s's and the kubelet's, to

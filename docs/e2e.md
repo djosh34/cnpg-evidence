@@ -41,7 +41,7 @@ Without `-scenario` the test skips, so `go test ./...` in `e2e/` starts no conta
 
 The test builds [`e2e/Dockerfile`](../e2e/Dockerfile) for the host's own architecture, with kubectl, kubectl-cnpg and k3s's CA rotation script of the manifest, and keeps it as `cnpg-evidence-e2e:local`, so the next run reuses its layers. It copies `samples/` into the container, or `samples/features/` and the variant's directory, and the manifest file to `/manifest.yaml`. It runs the container privileged and copies `/results` out to `results/` at the end. testcontainers removes the container and its volumes when the test ends. If the test process is killed, its Ryuk container removes them. A run never writes into `samples/` or `variants/`.
 
-`./e2e.sh` exits 0 when the scenario passed, 2 without a scenario, and 1 otherwise. The log gives the container's own code: 1 when the scenario failed, 2 when it could not run. One run takes 15 to 40 minutes.
+`./e2e.sh` exits 0 when the scenario passed, 2 without a scenario, and 1 otherwise. The log gives the container's own code: 1 when the scenario failed, 2 when it could not run or could not keep its files. One run takes 15 to 40 minutes.
 
 ## Run a variant
 

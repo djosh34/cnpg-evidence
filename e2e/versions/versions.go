@@ -110,8 +110,16 @@ func Parse(data []byte) (*Manifest, error) {
 	if err := yaml.Unmarshal(data, &all); err != nil {
 		return nil, err
 	}
-	m.pinned = pinned(all)
-	return &m, m.check()
+	var w images
+	w.visit(all, "")
+	slices.Sort(w.pinned)
+	m.pinned = slices.Compact(w.pinned)
+	slices.Sort(w.unpinned)
+	errs := []error{m.check()}
+	for _, path := range w.unpinned {
+		errs = append(errs, fmt.Errorf("the image %s has no digest", path))
+	}
+	return &m, errors.Join(errs...)
 }
 
 func (m *Manifest) check() error {
@@ -151,16 +159,22 @@ func (m *Manifest) check() error {
 // either digest or a tag that ends in @sha256:….
 func (m *Manifest) Pinned() []string { return m.pinned }
 
-func pinned(node any) []string {
-	var found []string
+// images walks the manifest for its images: those it pins, and the paths
+// of the image blocks that have no digest. charts holds chart repositories,
+// not images.
+type images struct {
+	pinned, unpinned []string
+}
+
+func (w *images) visit(node any, path string) {
 	switch n := node.(type) {
 	case string:
 		if name, digest, ok := strings.Cut(n, "@"); ok && strings.HasPrefix(digest, "sha256:") {
-			found = append(found, Repository(name)+"@"+digest)
+			w.pinned = append(w.pinned, Repository(name)+"@"+digest)
 		}
 	case []any:
-		for _, v := range n {
-			found = append(found, pinned(v)...)
+		for i, v := range n {
+			w.visit(v, fmt.Sprintf("%s[%d]", path, i))
 		}
 	case map[string]any:
 		if repo, ok := n["repository"].(string); ok && repo != "" {
@@ -175,17 +189,19 @@ func pinned(node any) []string {
 				_, digest, _ = strings.Cut(tag, "@")
 			}
 			if strings.HasPrefix(digest, "sha256:") {
-				found = append(found, Repository(repo)+"@"+digest)
+				w.pinned = append(w.pinned, Repository(repo)+"@"+digest)
+			} else {
+				w.unpinned = append(w.unpinned, path)
 			}
 		}
 		for k, v := range n {
-			if k != "tag" { // a tag with a digest belongs to the block above
-				found = append(found, pinned(v)...)
+			// A tag with a digest belongs to the block above.
+			if k == "tag" || (path == "" && k == "charts") {
+				continue
 			}
+			w.visit(v, strings.TrimPrefix(path+"."+k, "."))
 		}
 	}
-	slices.Sort(found)
-	return slices.Compact(found)
 }
 
 // Repository is the full form of an image name, with its tag cut off:

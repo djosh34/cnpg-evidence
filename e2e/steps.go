@@ -72,6 +72,7 @@ type scenario struct {
 	ctx     context.Context
 	w       *world
 	results *results
+	fault   error // tearDown could not keep the run's files
 
 	kind  messages.PickleStepType // Given, When or Then of the line running
 	roles map[string]string       // the instances by role: the primary, replica 1, ...

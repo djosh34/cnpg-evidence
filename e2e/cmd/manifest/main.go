@@ -161,14 +161,19 @@ func generate(ctx context.Context, in inputs) ([]byte, error) {
 
 	cm := values["cert-manager"]
 	for _, key := range []string{"", "webhook", "cainjector", "acmesolver", "startupapicheck"} {
-		name := str(cm, key, "image", "name")
-		if key == "" {
-			name = str(cm, "image", "name")
+		path := []string{"image"}
+		if key != "" {
+			path = []string{key, "image"}
 		}
-		if name == "" {
-			return nil, fmt.Errorf("the cert-manager chart has no %s.image.name", key)
+		// Older charts give the whole repository, newer ones a name under
+		// imageRegistry and imageNamespace.
+		repo := str(cm, append(path, "repository")...)
+		if name := str(cm, append(path, "name")...); repo == "" && name != "" {
+			repo = str(cm, "imageRegistry") + "/" + str(cm, "imageNamespace") + "/" + name
 		}
-		repo := str(cm, "imageRegistry") + "/" + str(cm, "imageNamespace") + "/" + name
+		if repo == "" {
+			return nil, fmt.Errorf("the cert-manager chart has no repository or name in %s", strings.Join(path, "."))
+		}
 		img := image{Repository: repo, Tag: appVersions["cert-manager"]}
 		if img.Digest, err = digest(ctx, repo+":"+img.Tag); err != nil {
 			return nil, err

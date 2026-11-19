@@ -1,6 +1,7 @@
 package versions
 
 import (
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -29,8 +30,9 @@ func TestRepository(t *testing.T) {
 
 const digest = "sha256:0000000000000000000000000000000000000000000000000000000000000001"
 
-func TestPinned(t *testing.T) {
-	got := pinned(map[string]any{
+func TestImages(t *testing.T) {
+	var w images
+	w.visit(map[string]any{
 		"postgresql": map[string]any{"imageName": "registry.example/pg:18@" + digest},
 		"chart": map[string]any{
 			"image":   map[string]any{"repository": "quay.io/a/b", "tag": "v1", "digest": digest},
@@ -39,7 +41,13 @@ func TestPinned(t *testing.T) {
 			"list":    []any{"busybox@" + digest, "busybox:1"},
 			"comment": "not an image",
 		},
-	})
+		"charts": map[string]any{"c": map[string]any{"repository": "https://charts.example", "version": "1.0.0"}},
+	}, "")
+	slices.Sort(w.pinned)
+	if want := []string{"chart.byTag"}; !slices.Equal(w.unpinned, want) {
+		t.Errorf("unpinned: got %q, want %q", w.unpinned, want)
+	}
+	got := w.pinned
 	want := []string{
 		"docker.io/library/busybox@" + digest,
 		"ghcr.io/c/d@" + digest,
@@ -79,6 +87,16 @@ func TestManifests(t *testing.T) {
 func TestCheck(t *testing.T) {
 	if _, err := Parse([]byte("k3s: {version: v1}\n")); err == nil || !strings.Contains(err.Error(), "no k3s.image") {
 		t.Errorf("a manifest with only k3s.version: %v", err)
+	}
+	data, err := os.ReadFile("../../versions/v1.33.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The agent's image without its digest, as a tag only.
+	agent := strings.Index(string(data), "\nagent:")
+	noDigest := string(data[:agent]) + strings.Replace(string(data[agent:]), "    digest: sha256:", "    # digest: sha256:", 1)
+	if _, err := Parse([]byte(noDigest)); err == nil || !strings.Contains(err.Error(), "the image agent.image has no digest") {
+		t.Errorf("a chart image without a digest: %v", err)
 	}
 	for version, exact := range map[string]bool{"0.29.1": true, "v1.21.3": true, "1.0.0-rc.1": true, "0.29.x": false, "~0.29.1": false, ">=1.0.0": false, "0.29": false} {
 		if exactVersion.MatchString(version) != exact {
