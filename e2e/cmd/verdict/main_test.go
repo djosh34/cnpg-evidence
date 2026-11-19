@@ -67,6 +67,8 @@ func TestResults(t *testing.T) {
 			cucumber([2]string{"a new line", "undefined"}, [2]string{"every image on the nodes is from the manifest", "skipped"})), gap, false,
 			"failure, exit code 1, on `" + gap + "`, always.feature did not pass `a new line`, `every image on the nodes is from the manifest`",
 			"not the failure gaps.md names"},
+		{"the gap line undefined", failed("1", cucumber([2]string{"the cluster is healthy", "passed"}, [2]string{gap, "undefined"}), always), gap, false,
+			"failure, exit code 1, on `" + gap + " (undefined)`", "not the failure gaps.md names"},
 		{"the gap, and the run could not clean up", failed("2", theGap, always), gap, false,
 			"failure, exit code 2, on `" + gap + "`", "not the failure gaps.md names"},
 		{"the gap line, before always.feature ran", failed("1", theGap, ""), gap, false,

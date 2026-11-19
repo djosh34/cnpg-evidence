@@ -102,7 +102,8 @@ func readGaps(file string) (map[string]string, error) {
 type result struct {
 	outcome  string // of the Scenario step: success or failure
 	exitCode string // of the runner: 0 passed, 1 failed, 2 could not run
-	// The lines of the scenario that failed, and those of always.feature
+	// The lines of the scenario that did not pass and were not skipped,
+	// each with its status unless it failed, and those of always.feature
 	// that did not pass.
 	failed, alwaysNotPassed []string
 	alwaysRan               bool
@@ -153,9 +154,15 @@ func readResult(dir, scenario string) result {
 		r.problem = r.outcome + ": " + err.Error()
 		return r
 	}
+	// A line that is neither passed, failed nor skipped, such as undefined,
+	// keeps its status, so it never reads as the gap's failed line.
 	for _, s := range main {
-		if s.status != "passed" && s.status != "skipped" {
+		switch s.status {
+		case "passed", "skipped":
+		case "failed":
 			r.failed = append(r.failed, s.name)
+		default:
+			r.failed = append(r.failed, s.name+" ("+s.status+")")
 		}
 	}
 	always, err := readSteps(filepath.Join(runs[0], "always.cucumber.json"))
