@@ -119,9 +119,9 @@ func Parse(data []byte) (*Manifest, error) {
 	for _, path := range w.unpinned {
 		errs = append(errs, fmt.Errorf("the image %s has no digest", path))
 	}
-	for _, path := range chartImages {
-		if !slices.Contains(w.pinnedPaths, path) && !slices.Contains(w.unpinned, path) {
-			errs = append(errs, fmt.Errorf("no image %s with a digest", path))
+	for _, c := range chartImages {
+		if !c.pinnedIn(all) {
+			errs = append(errs, fmt.Errorf("no image %s with its digest in %s", strings.Join(c.keys, "."), c.field))
 		}
 	}
 	return &m, errors.Join(errs...)
@@ -164,22 +164,60 @@ func (m *Manifest) check() error {
 // either digest or a tag that ends in @sha256:….
 func (m *Manifest) Pinned() []string { return m.pinned }
 
-// chartImages are the image blocks of the upstream charts, by their path
-// in the manifest. Each must be there with a digest: a chart without one
-// runs its own default image, by tag only.
-var chartImages = []string{
-	"cert-manager.image", "cert-manager.webhook.image", "cert-manager.cainjector.image",
-	"cert-manager.acmesolver.image", "cert-manager.startupapicheck.image",
-	"cloudnative-pg.image",
-	"plugin-barman-cloud.image", "plugin-barman-cloud.sidecarImage",
-	"agent.image", "cluster.image",
+// chartImage is an image block of an upstream chart: its keys in the
+// manifest, and the field the chart reads its digest from: digest, or tag
+// for a chart without a digest field.
+type chartImage struct {
+	keys  []string
+	field string
+}
+
+// chartImages are the image blocks the upstream charts read. Each must be
+// there with its digest where its chart reads it: a chart without one runs
+// its own default image, by tag only.
+var chartImages = []chartImage{
+	{[]string{"cert-manager", "image"}, "digest"},
+	{[]string{"cert-manager", "webhook", "image"}, "digest"},
+	{[]string{"cert-manager", "cainjector", "image"}, "digest"},
+	{[]string{"cert-manager", "acmesolver", "image"}, "digest"},
+	{[]string{"cert-manager", "startupapicheck", "image"}, "digest"},
+	{[]string{"cloudnative-pg", "image"}, "tag"},
+	{[]string{"plugin-barman-cloud", "image"}, "tag"},
+	{[]string{"plugin-barman-cloud", "sidecarImage"}, "tag"},
+	{[]string{"agent", "image"}, "digest"},
+	{[]string{"cluster", "image"}, "digest"},
+}
+
+// pinnedIn says whether the manifest has the block, by its nested keys,
+// with a digest in its field.
+func (c chartImage) pinnedIn(manifest any) bool {
+	node := manifest
+	for _, k := range c.keys {
+		m, ok := node.(map[string]any)
+		if !ok {
+			return false
+		}
+		node = m[k]
+	}
+	block, ok := node.(map[string]any)
+	if !ok {
+		return false
+	}
+	value, ok := block[c.field].(string)
+	if !ok {
+		return false
+	}
+	if c.field == "tag" {
+		_, value, _ = strings.Cut(value, "@")
+	}
+	return strings.HasPrefix(value, "sha256:")
 }
 
 // images walks the manifest for its images: those it pins, and the paths
-// of the image blocks with a digest and of those without one. charts holds
-// chart repositories, not images.
+// of the image blocks without a digest. charts holds chart repositories,
+// not images.
 type images struct {
-	pinned, pinnedPaths, unpinned []string
+	pinned, unpinned []string
 }
 
 func (w *images) visit(node any, path string) {
@@ -206,7 +244,6 @@ func (w *images) visit(node any, path string) {
 			}
 			if strings.HasPrefix(digest, "sha256:") {
 				w.pinned = append(w.pinned, Repository(repo)+"@"+digest)
-				w.pinnedPaths = append(w.pinnedPaths, path)
 			} else {
 				w.unpinned = append(w.unpinned, path)
 			}

@@ -102,8 +102,20 @@ func TestCheck(t *testing.T) {
 	solver := strings.Index(string(data), "  acmesolver:\n")
 	end := strings.Index(string(data)[solver:], "  startupapicheck:")
 	if _, err := Parse([]byte(string(data[:solver]) + string(data[solver+end:]))); err == nil ||
-		!strings.Contains(err.Error(), "no image cert-manager.acmesolver.image with a digest") {
+		!strings.Contains(err.Error(), "no image cert-manager.acmesolver.image with its digest in digest") {
 		t.Errorf("a chart image left out: %v", err)
+	}
+	// The solver's block under a literal dotted key, which Helm does not read.
+	dotted := string(data[:solver]) + string(data[solver+end:]) +
+		"\"cert-manager.acmesolver.image\":\n  repository: quay.io/jetstack/cert-manager-acmesolver\n  digest: sha256:" + strings.Repeat("0", 64) + "\n"
+	if _, err := Parse([]byte(dotted)); err == nil || !strings.Contains(err.Error(), "no image cert-manager.acmesolver.image") {
+		t.Errorf("a chart image under a dotted key: %v", err)
+	}
+	// CNPG's digest in a digest field, which its chart does not read.
+	cnpg := strings.Replace(string(data), `tag: "1.30.1@sha256:`, `tag: "1.30.1"
+    digest: "sha256:`, 1)
+	if _, err := Parse([]byte(cnpg)); err == nil || !strings.Contains(err.Error(), "no image cloudnative-pg.image with its digest in tag") {
+		t.Errorf("CNPG's digest outside its tag: %v", err)
 	}
 	for version, exact := range map[string]bool{"0.29.1": true, "v1.21.3": true, "1.0.0-rc.1": true, "0.29.x": false, "~0.29.1": false, ">=1.0.0": false, "0.29": false} {
 		if exactVersion.MatchString(version) != exact {

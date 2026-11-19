@@ -46,9 +46,7 @@ func nodeImagesPinned(ctx context.Context) error {
 		for _, image := range notInManifest(images, strings.Fields(refs), manifest) {
 			errs = append(errs, fmt.Errorf("%s has an image the manifest does not name: %s", node, image))
 		}
-		// grep exits 1 when no line matches: no image was pulled.
-		pulls, err := command(ctx, "docker", "exec", node, "sh", "-c",
-			"grep -h 'stop pulling image ' "+containerdLog+" || [ $? = 1 ]")
+		pulls, err := command(ctx, "docker", "exec", node, "sh", "-c", containerdPulls)
 		if err != nil {
 			errs = append(errs, err)
 			continue
@@ -60,9 +58,16 @@ func nodeImagesPinned(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-// containerd's log on a node. containerd writes "stop pulling image <ref>:"
-// for every pull it makes, also of the sandbox image.
-const containerdLog = "/var/lib/rancher/k3s/agent/containerd/containerd.log"
+// containerdPulls prints the lines of containerd's log on a node about
+// pulls: containerd writes "stop pulling image <ref>:" for every pull it
+// makes, also of the sandbox image. k3s rotates the log at 50 MiB into
+// gzipped files; the script fails then, as the log no longer holds every
+// pull. grep exits 1 when no line matches: no image was pulled.
+const containerdPulls = `cd /var/lib/rancher/k3s/agent/containerd || exit
+for f in containerd-*; do
+  if [ -e "$f" ]; then echo "containerd's log was rotated ($f), so it no longer shows every pull" >&2; exit 3; fi
+done
+grep -h 'stop pulling image ' containerd.log || [ $? = 1 ]`
 
 var pullLine = regexp.MustCompile(`stop pulling image (\S+): `)
 
