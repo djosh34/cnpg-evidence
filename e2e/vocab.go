@@ -110,6 +110,7 @@ var vocabulary = map[string]word{
 	"the chart's pg_ident lines | on <role>":                 {state: identOn},
 	"the chart's pg_ident lines | on every instance":         {state: identEverywhere},
 	"every instance | on the new image":                      {state: onNewImage},
+	"every image on the nodes | from the manifest":           {state: imagesPinned},
 	"wal_keep_size | <n>MB on every instance":                {state: walKeepSizeIs},
 	"<role>'s WAL | waiting for the store":                   {state: walWaiting},
 	"<role>'s WAL | archived":                                {state: walArchived},

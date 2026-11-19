@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/djosh34/cnpg-evidence/e2e/versions"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -40,12 +41,14 @@ func readReleases(file string) ([]release, error) {
 }
 
 // installCharts installs the releases of charts/releases.yaml of the run's
-// settings in their order. helm dependency build writes the values charts'
-// dependencies next to them, so the charts are copied out of the settings
-// first and the settings stay as they are. Each release gets its values
-// files from the settings, then values/<release>.yaml when it exists. It
-// returns the chart and values of the cluster's release.
-func installCharts(ctx context.Context) (chartValues, error) {
+// settings in their order. The charts are copied out of the settings first,
+// so the settings stay as they are: setDependencies writes the manifest's
+// chart versions into the copies, and helm dependency build pulls those
+// charts next to them. Each release gets the manifest as its first values
+// file, then its values files from the settings, then values/<release>.yaml
+// when it exists. The cluster's release gets the instance image firstImage.
+// It returns the chart and values of the cluster's release.
+func installCharts(ctx context.Context, firstImage string) (chartValues, error) {
 	charts := filepath.Join(workDir, "charts")
 	if err := os.CopyFS(charts, os.DirFS(filepath.Join(settingsDir(), "charts"))); err != nil {
 		return chartValues{}, fmt.Errorf("copying the charts: %w", err)
@@ -57,10 +60,13 @@ func installCharts(ctx context.Context) (chartValues, error) {
 	var cluster chartValues
 	for _, r := range releases {
 		chart := filepath.Join(charts, r.Chart)
-		if _, err := helm(ctx, 5*time.Minute, "dependency", "build", "--skip-refresh", chart); err != nil {
+		if err := setDependencies(filepath.Join(chart, "Chart.yaml"), manifest.Charts); err != nil {
 			return chartValues{}, err
 		}
-		var values []string
+		if _, err := helm(ctx, 5*time.Minute, "dependency", "build", chart); err != nil {
+			return chartValues{}, err
+		}
+		values := []string{"--values", manifestFile}
 		for _, v := range r.Values {
 			values = append(values, "--values", filepath.Join(settingsDir(), v))
 		}
@@ -71,20 +77,59 @@ func installCharts(ctx context.Context) (chartValues, error) {
 		case !errors.Is(err, fs.ErrNotExist):
 			return chartValues{}, err
 		}
-		logf("installing %s from charts/%s", r.Name, r.Chart)
 		args := append([]string{"upgrade", "--install", r.Name, chart, "--namespace", r.Namespace,
 			"--create-namespace", "--wait", "--timeout", "15m"}, values...)
-		if _, err := helm(ctx, 16*time.Minute, args...); err != nil {
-			return chartValues{}, err
-		}
 		if r.Name == clusterRelease {
 			cluster = chartValues{chart: chart, values: values}
+			args = append(args, "--set-string", "postgresql.imageName="+firstImage)
+		}
+		logf("installing %s from charts/%s", r.Name, r.Chart)
+		if _, err := helm(ctx, 16*time.Minute, args...); err != nil {
+			return chartValues{}, err
 		}
 	}
 	if cluster.chart == "" {
 		return chartValues{}, fmt.Errorf("charts/releases.yaml has no release %s", clusterRelease)
 	}
 	return cluster, nil
+}
+
+// setDependencies writes the repository and version of each dependency of
+// a chart's Chart.yaml from the manifest's charts. A dependency the
+// manifest has no chart for is an error.
+func setDependencies(file string, charts map[string]versions.Chart) error {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return err
+	}
+	var chart map[string]any
+	if err := yaml.Unmarshal(data, &chart); err != nil {
+		return fmt.Errorf("%s: %w", file, err)
+	}
+	deps, ok := chart["dependencies"].([]any)
+	if !ok {
+		return nil // no dependencies
+	}
+	for _, d := range deps {
+		dep, ok := d.(map[string]any)
+		if !ok {
+			return fmt.Errorf("%s: a dependency is not a map", file)
+		}
+		name, ok := dep["name"].(string)
+		if !ok {
+			return fmt.Errorf("%s: a dependency has no name", file)
+		}
+		c, ok := charts[name]
+		if !ok {
+			return fmt.Errorf("%s: the manifest has no chart %q", file, name)
+		}
+		dep["repository"], dep["version"] = c.Repository, c.Version
+	}
+	data, err = yaml.Marshal(chart)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(file, data, 0o644)
 }
 
 // chartValues are the directory of a release's chart in the e2e test's copy,

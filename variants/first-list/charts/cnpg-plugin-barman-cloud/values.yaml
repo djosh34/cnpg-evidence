@@ -1,5 +1,5 @@
 plugin-barman-cloud:
-  # Values for the plugin-barman-cloud chart 0.8.1, release "barman-cloud" in
+  # Values for the plugin-barman-cloud chart, release "barman-cloud" in
   # cnpg-system. Everything else is the chart's default, its RBAC included.
   # One plugin pod per node of a three-node cluster. CNPG reconciles a cluster,
   # failover included, only while the plugin answers, so no single lost node may

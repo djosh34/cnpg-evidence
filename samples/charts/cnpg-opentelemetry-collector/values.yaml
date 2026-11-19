@@ -1,4 +1,4 @@
-# Values for the opentelemetry-collector chart 0.177.0, release "otel" in
+# Values for the opentelemetry-collector chart, release "otel" in
 # otel, the namespace the cluster chart admits to the metrics port 9187.
 #
 # Two collectors, both sending OTLP over gRPC with mTLS to one upstream URL
@@ -27,11 +27,10 @@ client:
 agent:
   fullnameOverride: otel  # the DaemonSet is otel-agent
   mode: daemonset
-  image: &image
-    repository: otel/opentelemetry-collector-contrib
-    digest: sha256:7f22d2a6748110ffb6a59bc0df448bccbf501cdb667d610ede4c61d3863d5849  # 0.163.2
+  # The image is the manifest's agent.image: the collector's Kubernetes
+  # distribution, whose program is otelcol-k8s.
   command: &command
-    name: otelcol-contrib
+    name: otelcol-k8s
   service: &service
     enabled: false
   # The collector sends; it opens no port but its health check.
@@ -127,8 +126,7 @@ cluster:
   fullnameOverride: otel-cluster
   mode: deployment
   replicaCount: 1
-  image: *image
-  command: *command
+  command: *command  # the image is the manifest's cluster.image
   service: *service
   ports: *ports
   clusterRole:

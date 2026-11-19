@@ -3,25 +3,30 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	_ "embed"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
 )
 
-// Three k3s servers with embedded etcd, each a privileged container, as the
-// three VMs of production.
+// Three k3s servers with embedded etcd, each a privileged container of the
+// manifest's k3s image, as the three VMs of production.
 const (
 	nodeCount = 3
-	k3sImage  = "rancher/k3s@sha256:ada5ff2e138120efe877f76d514dedda65b304122112b982eab532732c028c89" // v1.33.13+k3s2
 	k3sToken  = "example-token"
 	domain    = "example.test"
+	// Where k3s finds image tarballs to import when it starts.
+	airgapDir = "/var/lib/rancher/k3s/agent/images"
 )
 
 func nodeName(i int) string { return fmt.Sprintf("k3s-%d", i+1) }
@@ -38,8 +43,12 @@ var nodeInit string
 // first, and waits until each is Ready. It writes the kubeconfig of the
 // first node's API server to workDir/kubeconfig.
 func startNodes(ctx context.Context) error {
+	airgap, err := downloadAirgap(ctx)
+	if err != nil {
+		return err
+	}
 	for i := range nodeCount {
-		if err := startNode(ctx, i); err != nil {
+		if err := startNode(ctx, i, airgap); err != nil {
 			return err
 		}
 		if i == 0 {
@@ -89,14 +98,45 @@ func traceNode(ctx context.Context, node string) {
 	}
 }
 
+// downloadAirgap downloads the manifest's airgap image tarball of this
+// machine's architecture into workDir, checks its sha256 and returns its
+// path.
+func downloadAirgap(ctx context.Context) (string, error) {
+	a, ok := manifest.K3s.Airgap[runtime.GOARCH]
+	if !ok {
+		return "", fmt.Errorf("the manifest has no k3s airgap tarball for %s", runtime.GOARCH)
+	}
+	file := filepath.Join(workDir, path.Base(a.URL))
+	logf("downloading the k3s images, %s", a.URL)
+	download, cancel := context.WithTimeout(ctx, 15*time.Minute)
+	defer cancel()
+	if _, err := command(download, "retry", "wget", "-q", "-O", file, a.URL); err != nil {
+		return "", err
+	}
+	f, err := os.Open(file)
+	if err != nil {
+		return "", err
+	}
+	h := sha256.New()
+	_, err = io.Copy(h, f)
+	if err := errors.Join(err, f.Close()); err != nil {
+		return "", err
+	}
+	if sum := fmt.Sprintf("%x", h.Sum(nil)); sum != a.SHA256 {
+		return "", fmt.Errorf("%s has the sha256 %s, the manifest says %s", a.URL, sum, a.SHA256)
+	}
+	return file, nil
+}
+
 // startNode starts node i, with k3s/ of the settings at /e2e/k3s: k3s reads
 // config.yaml there, and node-init.sh copies the files of manifests/ into
-// the server's manifests directory, which k3s applies. The node's k3s data
-// is a volume, and its local-path volumes are on its own data filesystem
-// (disks.go). The /tmp tmpfs is there because containerd tests idmapped
-// mounts under /tmp at start, which fail on overlayfs; pods with
-// hostUsers: false need them.
-func startNode(ctx context.Context, i int) error {
+// the server's manifests directory, which k3s applies. The airgap tarball
+// is in airgapDir before k3s starts, so k3s imports its own images from it
+// instead of pulling them. The node's k3s data is a volume, and its
+// local-path volumes are on its own data filesystem (disks.go). The /tmp
+// tmpfs is there because containerd tests idmapped mounts under /tmp at
+// start, which fail on overlayfs; pods with hostUsers: false need them.
+func startNode(ctx context.Context, i int, airgap string) error {
 	name := nodeName(i)
 	join := []string{"--cluster-init"}
 	if i > 0 {
@@ -111,7 +151,8 @@ func startNode(ctx context.Context, i int) error {
 	// sees docker's loopback resolver and gives the pods public ones.
 	files["/etc/e2e-resolv.conf"] = "nameserver " + dnsIP + "\n"
 	err = container{
-		name: name, ip: nodeIP(i), image: k3sImage, files: files,
+		name: name, ip: nodeIP(i), image: manifest.K3s.Image, files: files,
+		dirs: []string{airgapDir}, hostFiles: map[string]string{filepath.Join(airgapDir, filepath.Base(airgap)): airgap},
 		opts: []string{
 			"--privileged", "--tmpfs", "/run", "--tmpfs", "/var/run", "--tmpfs", "/tmp",
 			"--ulimit", "nproc=65535:65535", "--ulimit", "nofile=65535:65535",

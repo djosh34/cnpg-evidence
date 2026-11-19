@@ -1,5 +1,5 @@
 cert-manager:
-  # Values for the cert-manager chart v1.21.3, release "cert-manager" in
+  # Values for the cert-manager chart, release "cert-manager" in
   # cert-manager. One pod of the controller, the webhook and the CA injector per
   # node of a three-node cluster. The controller and the CA injector elect a
   # leader; every webhook pod serves. With a pod on every node, an extra pod

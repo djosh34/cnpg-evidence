@@ -5,7 +5,9 @@
 # copies onto a node for host-check.sh, and k3s's script for new CAs.
 # Each package, module and tool download of its RUN steps goes through
 # retry.sh; the base images are not.
-# TestScenario of scenario_test.go builds and runs it.
+# TestScenario of scenario_test.go builds and runs it, with the build
+# arguments below from the run's manifest (versions/): the versions and
+# sha256 of kubectl and kubectl cnpg, and k3s's script for new CAs.
 
 FROM golang:1.27-alpine@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18 AS build
 WORKDIR /src
@@ -21,25 +23,31 @@ COPY e2e/retry.sh /usr/local/bin/retry
 # ar, to unpack the Debian package of the static bash.
 RUN retry apk add --no-cache binutils
 WORKDIR /tools
+ARG KUBECTL_VERSION
+ARG KUBECTL_SHA256_AMD64
+ARG KUBECTL_SHA256_ARM64
+ARG CNPG_VERSION
+ARG CNPG_SHA256_AMD64
+ARG CNPG_SHA256_ARM64
 RUN set -eu; \
   case $(uname -m) in \
     x86_64) arch=amd64 cnpgarch=x86_64 \
       helm=86584a54def73570558f66f5111cc53dfed56689637ae32c1201205d494f54fb \
-      kubectl=316d712726d857c20744c57cb36aa47cfc79bc0af7e82cebf3780244b654c073 \
-      cnpg=784bc46f176b24a150d5de84d0691f10ff613b59456af86b1a4868e1bacb9953 \
+      kubectl=$KUBECTL_SHA256_AMD64 \
+      cnpg=$CNPG_SHA256_AMD64 \
       bash=a8dfc61a50e70cdf2b790dcd9e1c45e2e42f396988e7fed1c45b1444df932953 \
       jq=5942c9b0934e510ee61eb3e30273f1b3fe2590df93933a93d7c58b81d19c8ff5 ;; \
     aarch64) arch=arm64 cnpgarch=arm64 \
       helm=31c5794dd55c66a51e6b7d2e2ac7a114ae8b1de41ff1d9ba51748ac973b06a08 \
-      kubectl=9fe8aadd5aab9421978c7ac95de6fad304a3c4c0ce9dbf4127579779e0699080 \
-      cnpg=6ffad753bbbf5d353576967233063f2ba0adb843a4e7ef5ff4cb7384b2716d5e \
+      kubectl=$KUBECTL_SHA256_ARM64 \
+      cnpg=$CNPG_SHA256_ARM64 \
       bash=7353d15a7160940496204ca38b6c00495995c389b4c3946d9b1f83b1b0b7a06e \
       jq=4dd2d8a0661df0b22f1bb9a1f9830f06b6f3b8f7d91211a1ef5d7c4f06a8b4a5 ;; \
     *) echo "no tools for $(uname -m)" >&2; exit 1 ;; \
   esac; \
   retry wget -q -O helm.tar.gz "https://get.helm.sh/helm-v4.3.0-linux-$arch.tar.gz"; \
-  retry wget -q -O kubectl "https://dl.k8s.io/release/v1.33.13/bin/linux/$arch/kubectl"; \
-  retry wget -q -O cnpg.tar.gz "https://github.com/cloudnative-pg/cloudnative-pg/releases/download/v1.30.1/kubectl-cnpg_1.30.1_linux_$cnpgarch.tar.gz"; \
+  retry wget -q -O kubectl "https://dl.k8s.io/release/$KUBECTL_VERSION/bin/linux/$arch/kubectl"; \
+  retry wget -q -O cnpg.tar.gz "https://github.com/cloudnative-pg/cloudnative-pg/releases/download/v$CNPG_VERSION/kubectl-cnpg_${CNPG_VERSION}_linux_$cnpgarch.tar.gz"; \
   retry wget -q -O bash.deb "https://deb.debian.org/debian/pool/main/b/bash/bash-static_5.2.37-2+b10_$arch.deb"; \
   retry wget -q -O jq "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$arch"; \
   printf '%s  %s\n' "$helm" helm.tar.gz "$kubectl" kubectl "$cnpg" cnpg.tar.gz "$bash" bash.deb "$jq" jq | sha256sum -c -; \
@@ -52,11 +60,12 @@ RUN set -eu; \
   install -m 755 usr/bin/bash-static node/bash; \
   install -m 755 jq node/jq
 # k3s's own script that makes new CAs, cross-signed by the old ones, for k3s
-# certificate rotate-ca, of the k3s version the nodes run (e2e/nodes.go).
+# certificate rotate-ca, of the k3s version the nodes run.
+ARG ROTATE_CA_URL
+ARG ROTATE_CA_SHA256
 RUN set -eu; \
-  retry wget -q -O rotate-default-ca-certs.sh \
-    "https://raw.githubusercontent.com/k3s-io/k3s/v1.33.13%2Bk3s2/contrib/util/rotate-default-ca-certs.sh"; \
-  echo "62ef79f530cd285b3cfce884746abe6c3712ad70d0ef66e81f76aaa93c30551b  rotate-default-ca-certs.sh" | sha256sum -c -; \
+  retry wget -q -O rotate-default-ca-certs.sh "$ROTATE_CA_URL"; \
+  echo "$ROTATE_CA_SHA256  rotate-default-ca-certs.sh" | sha256sum -c -; \
   mkdir k3s; \
   install -m 755 rotate-default-ca-certs.sh k3s/
 

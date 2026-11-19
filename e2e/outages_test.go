@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/djosh34/cnpg-evidence/e2e/versions"
 )
 
 // fakeTools puts a docker and a kubectl first on PATH that only record how
@@ -24,9 +26,10 @@ func fakeTools(t *testing.T, more ...string) func() []string {
 		}
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	old := kubeconfig
+	old, oldManifest := kubeconfig, manifest
 	kubeconfig = filepath.Join(dir, "kubeconfig")
-	t.Cleanup(func() { kubeconfig = old })
+	manifest = &versions.Manifest{K3s: versions.K3s{Image: "rancher/k3s:example"}}
+	t.Cleanup(func() { kubeconfig, manifest = old, oldManifest })
 	if err := os.WriteFile(kubeconfig, []byte("server: https://"+nodeIP(0)+":6443\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}

@@ -35,7 +35,7 @@ func runScenario(name string, res *results) int {
 			sc.Before(func(ctx context.Context, sn *godog.Scenario) (context.Context, error) {
 				ran++
 				s.ctx = ctx
-				return ctx, s.setUp(sn)
+				return ctx, s.setUp(sn, name)
 			})
 			sc.After(func(ctx context.Context, sn *godog.Scenario, err error) (context.Context, error) {
 				return ctx, s.tearDown(sn, err)
@@ -64,11 +64,24 @@ func runScenario(name string, res *results) int {
 	return 0
 }
 
-// setUp builds the scenario's cluster and names the instances.
-func (s *scenario) setUp(sn *godog.Scenario) error {
+// The scenario whose cluster starts on the manifest's postgresql.rolloutFrom
+// and rolls out to its postgresql.imageName. Every other cluster starts on
+// postgresql.imageName.
+const rolloutScenario = "rollout"
+
+// setUp builds the scenario's cluster, checks the images on the nodes and
+// names the instances.
+func (s *scenario) setUp(sn *godog.Scenario, name string) error {
 	logf("scenario %q: a new cluster from %s", sn.Name, settingsDir())
+	firstImage := manifest.PostgreSQL.ImageName
+	if name == rolloutScenario {
+		firstImage = manifest.PostgreSQL.RolloutFrom
+	}
 	var err error
-	if s.w, err = newWorld(s.ctx); err != nil {
+	if s.w, err = newWorld(s.ctx, firstImage); err != nil {
+		return err
+	}
+	if err := nodeImagesPinned(s.ctx); err != nil {
 		return err
 	}
 	if s.roles, err = roles(s.ctx); err != nil {

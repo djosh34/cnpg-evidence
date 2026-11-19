@@ -21,7 +21,9 @@ type world struct {
 	built time.Time // when the e2e test started to build it
 }
 
-func newWorld(ctx context.Context) (*world, error) {
+// newWorld builds the world, with the cluster on the instance image
+// firstImage.
+func newWorld(ctx context.Context, firstImage string) (*world, error) {
 	root, err := newCA()
 	if err != nil {
 		return nil, err
@@ -64,7 +66,7 @@ func newWorld(ctx context.Context) (*world, error) {
 	if err := createSecrets(ctx, runSecrets(root, keys)); err != nil {
 		return nil, err
 	}
-	if w.cluster, err = installCharts(ctx); err != nil {
+	if w.cluster, err = installCharts(ctx, firstImage); err != nil {
 		return nil, err
 	}
 	logf("waiting up to 15 min for the cluster to be healthy")

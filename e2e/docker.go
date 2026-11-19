@@ -80,9 +80,12 @@ type container struct {
 	ip    string
 	files map[string]string // the content of each file the container gets, by its path
 	dirs  []string          // the empty directories it gets
-	opts  []string          // more docker run options
-	image string
-	args  []string
+	// Files of the e2e container it gets, by their path in it; their
+	// directories must be in dirs.
+	hostFiles map[string]string
+	opts      []string // more docker run options
+	image     string
+	args      []string
 }
 
 // run creates the container with the DNS container as its resolver, copies
@@ -100,6 +103,11 @@ func (c container) run(ctx context.Context) error {
 	if len(c.files)+len(c.dirs) > 0 {
 		if err := copyIn(ctx, c.name, c.files, c.dirs); err != nil {
 			return fmt.Errorf("copying the files of %s: %w", c.name, err)
+		}
+	}
+	for to, from := range c.hostFiles {
+		if _, err := command(ctx, "docker", "cp", from, c.name+":"+to); err != nil {
+			return fmt.Errorf("copying %s into %s: %w", from, c.name, err)
 		}
 	}
 	if _, err := command(ctx, "docker", "start", c.name); err != nil {

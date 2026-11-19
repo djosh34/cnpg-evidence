@@ -1,5 +1,5 @@
 cloudnative-pg:
-  # Values for the cloudnative-pg chart 0.29.1, release "cnpg" in cnpg-system.
+  # Values for the cloudnative-pg chart, release "cnpg" in cnpg-system.
   # Everything else is the chart's default, its RBAC included.
   # One operator pod per node of a three-node cluster. The pods elect a leader;
   # when its node is lost, another pod takes over within about 20 s.

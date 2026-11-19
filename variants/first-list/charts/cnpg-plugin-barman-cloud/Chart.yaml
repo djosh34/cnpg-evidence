@@ -3,7 +3,7 @@ name: cnpg-plugin-barman-cloud
 description: barman-cloud with one pod per node.
 type: application
 version: 0.1.0
+# The run writes repository and version of each dependency from charts.<name>
+# of its manifest (versions/), then helm dependency build pulls the chart.
 dependencies:
   - name: plugin-barman-cloud
-    version: 0.8.1
-    repository: file://../plugin-barman-cloud
