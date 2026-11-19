@@ -14,11 +14,12 @@ import (
 // nodeImagesPinned checks that every image on every node is one the
 // manifest names: an image it pins by digest (versions.Manifest.Pinned),
 // matched by repository and digest, or one of k3s's airgap images
-// (k3s.images), matched by repository and tag and pinned in containerd. k3s
-// pins each image it imports from the airgap tarball and never one the
-// kubelet pulls, so an airgap image that k3s did not import fails too. An
-// error names each other image. It runs once the cluster is up, before the
-// scenario, and as the last line of always.feature.
+// (k3s.images), matched by repository and tag and imported by k3s. k3s
+// labels each image it imports from the airgap tarball with
+// io.cattle.k3s.pinned, and never one containerd pulls, so an airgap image
+// that k3s did not import fails too. An error names each other image. It
+// runs once the cluster is up, before the scenario, and as the last line of
+// always.feature.
 func nodeImagesPinned(ctx context.Context) error {
 	var errs []error
 	for i := range nodeCount {
@@ -33,7 +34,13 @@ func nodeImagesPinned(ctx context.Context) error {
 			errs = append(errs, fmt.Errorf("the images of %s: %w", node, err))
 			continue
 		}
-		for _, image := range notInManifest(images, manifest) {
+		refs, err := command(ctx, "docker", "exec", node,
+			"ctr", "-n", "k8s.io", "images", "ls", "-q", `labels."io.cattle.k3s.pinned"==pinned`)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		for _, image := range notInManifest(images, strings.Fields(refs), manifest) {
 			errs = append(errs, fmt.Errorf("%s has an image the manifest does not name: %s", node, image))
 		}
 	}
@@ -45,7 +52,6 @@ type nodeImage struct {
 	ID          string   `json:"id"`
 	RepoTags    []string `json:"repoTags"`
 	RepoDigests []string `json:"repoDigests"`
-	Pinned      bool     `json:"pinned"`
 }
 
 func parseImages(out string) ([]nodeImage, error) {
@@ -59,15 +65,18 @@ func parseImages(out string) ([]nodeImage, error) {
 }
 
 // notInManifest names each image that is neither pinned by the manifest
-// nor one of its airgap images, by its tags and digests.
-func notInManifest(images []nodeImage, m *versions.Manifest) []string {
+// nor one of its airgap images that k3s imported, by its tags and digests.
+// imported are the references of the images k3s imported.
+func notInManifest(images []nodeImage, imported []string, m *versions.Manifest) []string {
 	airgap := map[string]bool{}
 	for _, ref := range m.K3s.Images {
-		airgap[versions.Reference(ref)] = true
+		if slices.ContainsFunc(imported, func(i string) bool { return versions.Reference(i) == versions.Reference(ref) }) {
+			airgap[versions.Reference(ref)] = true
+		}
 	}
 	var other []string
 	for _, image := range images {
-		known := image.Pinned && slices.ContainsFunc(image.RepoTags, func(tag string) bool { return airgap[versions.Reference(tag)] }) ||
+		known := slices.ContainsFunc(image.RepoTags, func(tag string) bool { return airgap[versions.Reference(tag)] }) ||
 			slices.ContainsFunc(image.RepoDigests, func(d string) bool {
 				name, digest, _ := strings.Cut(d, "@")
 				return slices.Contains(m.Pinned(), versions.Repository(name)+"@"+digest)

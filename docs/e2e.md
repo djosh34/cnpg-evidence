@@ -106,7 +106,7 @@ Every version of the system under test that a run uses is in one file of [`versi
 
 Every release gets the manifest with `--values`, before its own values files, so each chart finds its keys and ignores the others. No upstream chart is copied into `samples/` or `variants/`, and none is changed: their images come only through these values.
 
-Once the cluster is up, and again at the end of `always.feature`, the run lists the images on every node with `crictl images`. An image the manifest pins anywhere, as `<name>@sha256:…` or as a chart's `repository` with a `digest` or a digest in its `tag`, passes by repository and digest. An image of `k3s.images` passes by repository and tag, and only when it is pinned in containerd: k3s pins each image it imports from the airgap tarball, and never one the kubelet pulls. Any other image fails the run, by name. The check sees what is on the nodes at those two times, not how each image was asked for.
+Once the cluster is up, and again at the end of `always.feature`, the run lists the images on every node with `crictl images`. An image the manifest pins anywhere, as `<name>@sha256:…` or as a chart's `repository` with a `digest` or a digest in its `tag`, passes by repository and digest. An image of `k3s.images` passes by repository and tag, and only when k3s imported it: k3s labels each image it imports from the airgap tarball with `io.cattle.k3s.pinned`, which `ctr images ls` shows, and never one containerd pulls. Any other image fails the run, by name. The check sees what is on the nodes at those two times, not how each image was asked for.
 
 `latest.yaml` may be a symlink to another file of `versions/`: the run copies only the one file it uses.
 
