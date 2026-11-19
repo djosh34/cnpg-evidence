@@ -3,7 +3,7 @@
 # one privileged container that go test builds from this checkout and
 # removes at the end. The cluster has the settings of samples/, or of
 # variants/<variant> when a variant is given, and every version of the
-# manifest versions/<manifest>, versions/v1.33.yaml when none is given. The
+# manifest versions/<manifest>, versions/latest.yaml when none is given. The
 # run's files land in results/. Exit code 0 means the scenario passed.
 # Needs docker, bash and Go.
 #

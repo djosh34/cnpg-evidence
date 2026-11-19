@@ -32,10 +32,10 @@ Two scenarios run [`host-check.sh`](host-check.md#in-the-scenarios) on every nod
 The host needs what the [README](../README.md#run-a-scenario) lists. `./e2e.sh` runs `TestScenario` in [`e2e/scenario_test.go`](../e2e/scenario_test.go) with `go test`, so you can run it directly too:
 
 ```bash
-go -C e2e test -run '^TestScenario$' -count=1 -timeout 90m -v . -scenario switchover -variant my-variant -manifest v1.33.yaml
+go -C e2e test -run '^TestScenario$' -count=1 -timeout 90m -v . -scenario switchover -variant my-variant -manifest v1.34.yaml
 ```
 
-Without `-variant`, or with it empty, the run uses the samples. Without `-manifest`, or with it empty, it uses `versions/v1.33.yaml`.
+Without `-variant`, or with it empty, the run uses the samples. Without `-manifest`, or with it empty, it uses `versions/latest.yaml`.
 
 Without `-scenario` the test skips, so `go test ./...` in `e2e/` starts no container.
 
@@ -94,7 +94,7 @@ The run's name says which settings it used, and its matrix leaves out the four s
 
 ## The version manifest
 
-Every version of the system under test that a run uses is in one file of [`versions/`](../versions): k3s, its airgap images, the upstream charts, every image they run, the PostgreSQL images, kubectl, kubectl-cnpg and k3s's CA rotation script. The samples and every variant run with `versions/v1.33.yaml` unless a run names another. The containers outside k3s, such as the store and the monitoring, and the images and tools that build the e2e image, keep their own pins in `e2e/`.
+Every version of the system under test that a run uses is in one file of [`versions/`](../versions): k3s, its airgap images, the upstream charts, every image they run, the PostgreSQL images, kubectl, kubectl-cnpg and k3s's CA rotation script. There is one manifest for the latest k3s patch of each minor version, `v1.33.yaml` to `v1.37.yaml`, and `latest.yaml`, a symlink to the newest of them. The samples and every variant run with `versions/latest.yaml` unless a run names another. The containers outside k3s, such as the store and the monitoring, and the images and tools that build the e2e image, keep their own pins in `e2e/`.
 
 | Key | What a run does with it |
 |---|---|
@@ -108,7 +108,7 @@ Every release gets the manifest with `--values`, before its own values files, so
 
 Once the cluster is up, and again at the end of `always.feature`, the run lists the images on every node with `crictl images`. An image the manifest pins anywhere, as `<name>@sha256:…` or as a chart's `repository` with a `digest` or a digest in its `tag`, passes by repository and digest. An image of `k3s.images` passes by repository and tag, and only when k3s imported it: k3s labels each image it imports from the airgap tarball with `io.cattle.k3s.pinned`, which `ctr images ls` shows, and never one containerd pulls. As an import after a pull of the same tag would carry that label too, the check also fails when a node's `containerd.log` shows a pull of an image of `k3s.images`, and when k3s rotated that log, which then no longer shows every pull. Any other image fails the run, by name. The check sees what is on the nodes at those two times, not how each image was asked for.
 
-`latest.yaml` may be a symlink to another file of `versions/`: the run copies only the one file it uses.
+The run copies only the one manifest file it uses, so it follows the symlink `latest.yaml`.
 
 ### Make a manifest
 
@@ -157,7 +157,7 @@ On GitHub, [`e2e.yml`](../.github/workflows/e2e.yml) runs every scenario on an a
 
 - `variant`: a directory of `variants/`; empty for the samples.
 - `scenarios`: scenario tags, comma-separated; empty for every scenario. A tag that no scenario has, or that a variant run leaves out, stops the run before any job.
-- `manifest`: a file of `versions/`, such as `v1.34.yaml`; `v1.33.yaml` by default.
+- `manifest`: a file of `versions/`, such as `v1.34.yaml`; `latest.yaml` by default.
 - `arm64`: `true` runs every job on an arm64 runner too. Off by default.
 
 ```bash

@@ -30,10 +30,10 @@ Then run the scenarios that touch the change, with `./e2e.sh <scenario>` or all 
 
 The samples assume k3s with flannel, servicelb, local-path and the network policy controller, hosts with SELinux, and CNPG with the barman-cloud plugin. Pods with `hostUsers: false` need a kernel with idmapped mounts on tmpfs.
 
-The commands below install the versions and images of `versions/v1.33.yaml`. A values chart names its upstream chart without a version, so `wrapper` copies it to `build/`, writes the manifest's version and repository into the copy, and downloads the upstream chart there. It needs [yq](https://github.com/mikefarah/yq) v4.
+The commands below install the versions and images of `versions/latest.yaml`. A values chart names its upstream chart without a version, so `wrapper` copies it to `build/`, writes the manifest's version and repository into the copy, and downloads the upstream chart there. It needs [yq](https://github.com/mikefarah/yq) v4.
 
 ```bash
-manifest=versions/v1.33.yaml
+manifest=versions/latest.yaml
 wrapper() {
   rm -rf "build/$1" && mkdir -p build && cp -r "samples/charts/$1" build/
   m=$manifest yq -i '.dependencies[] |= (.name as $n | .repository = (load(strenv(m)).charts[$n].repository) | .version = (load(strenv(m)).charts[$n].version))' "build/$1/Chart.yaml"
@@ -267,9 +267,9 @@ barman_rbac() {  # <chart version>
   helm template barman-cloud plugin-barman-cloud --repo "$repo" --version "$1" -n cnpg-system \
     --show-only templates/rbac.yaml --show-only templates/additional-rbac/leader_election.yaml
 }
-cnpg_rbac "$(yq '.charts.cloudnative-pg.version' versions/v1.33.yaml)" > cnpg-rbac.yaml
+cnpg_rbac "$(yq '.charts.cloudnative-pg.version' versions/latest.yaml)" > cnpg-rbac.yaml
 cnpg_rbac <new version> > cnpg-rbac-new.yaml
-barman_rbac "$(yq '.charts.plugin-barman-cloud.version' versions/v1.33.yaml)" > barman-rbac.yaml
+barman_rbac "$(yq '.charts.plugin-barman-cloud.version' versions/latest.yaml)" > barman-rbac.yaml
 barman_rbac <new version> > barman-rbac-new.yaml
 diff -I helm.sh/chart: -I app.kubernetes.io/version: cnpg-rbac.yaml cnpg-rbac-new.yaml
 diff -I helm.sh/chart: -I app.kubernetes.io/version: barman-rbac.yaml barman-rbac-new.yaml

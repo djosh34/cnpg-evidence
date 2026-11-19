@@ -24,7 +24,7 @@ on:
       manifest:
         description: A file of versions/ with every version the run uses
         type: string
-        default: v1.33.yaml
+        default: latest.yaml
       arm64:
         description: Also run on arm64
         type: boolean
