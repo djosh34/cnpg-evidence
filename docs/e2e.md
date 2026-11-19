@@ -140,7 +140,7 @@ The k3s nodes need the kernel module `br_netfilter`, and k3s cannot load it from
 sudo modprobe br_netfilter
 ```
 
-Without it, the kernel loads the module itself for the first iptables rule with a `physdev` match, while that rule holds the node's nf_tables lock. In one run that load never ended: the `iptables-restore` waited in the kernel, kube-proxy and the kubelet waited behind it, and the node never turned Ready. A likely explanation, which that run's kernel log does not prove: loading the module takes the kernel's network lock, while another task held that lock and waited for the nf_tables lock. The module stays loaded until the next reboot; to keep it, put `br_netfilter` into a file in `/etc/modules-load.d/`. [`e2e.yml`](../.github/workflows/e2e.yml) loads it in each job.
+Without it, the kernel loads the module itself for the first iptables rule with a `physdev` match, while that rule holds the node's nf_tables lock. In one run that load never ended: the `iptables-restore` waited in the kernel and kube-proxy behind it, the kubelet waited for the kernel's network lock, and the node never turned Ready. A likely explanation, which that run's kernel log does not prove: loading the module takes the kernel's network lock, while another task held that lock and waited for the nf_tables lock. The module stays loaded until the next reboot; to keep it, put `br_netfilter` into a file in `/etc/modules-load.d/`. [`e2e.yml`](../.github/workflows/e2e.yml) loads it in each job.
 
 ## Read the results
 
