@@ -124,7 +124,8 @@ func TestCheck(t *testing.T) {
 		t.Errorf("a chart image without its repository: %v", err)
 	}
 	// CNPG's digest in a digest field, which its chart does not read.
-	cnpg := strings.Replace(string(data), `tag: "1.30.1@sha256:`, `tag: "1.30.1"
+	cnpgAt := strings.Index(string(data), "\ncloudnative-pg:\n")
+	cnpg := string(data[:cnpgAt]) + strings.Replace(string(data[cnpgAt:]), `@sha256:`, `"
     digest: "sha256:`, 1)
 	if _, err := Parse([]byte(cnpg)); err == nil || !strings.Contains(err.Error(), "no image cloudnative-pg.image with a repository and its digest in tag") {
 		t.Errorf("CNPG's digest outside its tag: %v", err)

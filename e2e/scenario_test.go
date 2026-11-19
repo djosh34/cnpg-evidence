@@ -22,7 +22,7 @@ import (
 
 // The manifest of versions/ a run uses when it names none. e2e.yml has the
 // same default.
-const defaultManifest = "v1.33.yaml"
+const defaultManifest = "latest.yaml"
 
 var (
 	scenarioFlag = flag.String("scenario", "", "the scenario to run: its tag, without the @")

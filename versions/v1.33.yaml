@@ -1,6 +1,6 @@
 # Every version of the system under test that an e2e run uses, and a values
 # file of every release (docs/e2e.md). Written by:
-#   go -C e2e run ./cmd/manifest -k3s v1.33.13+k3s2 -cert-manager v1.21.3 -cloudnative-pg 0.29.1 -plugin-barman-cloud 0.9.0 -opentelemetry-collector 0.177.0 -postgresql registry.access.redhat.com/hi/postgresql:18.7-1794620596 -rollout-from registry.access.redhat.com/hi/postgresql:18.6-1793756462
+#   go -C e2e run ./cmd/manifest -k3s v1.33.13+k3s2 -cert-manager v1.21.3 -cloudnative-pg 0.29.2 -plugin-barman-cloud 0.9.0 -opentelemetry-collector 0.180.0 -postgresql registry.access.redhat.com/hi/postgresql:18.7-1794620596 -rollout-from registry.access.redhat.com/hi/postgresql:18.6-1793756462
 
 # The k3s release of the nodes. Before k3s starts, each node gets the airgap
 # tarball of its architecture, and k3s imports its images: those of the
@@ -35,10 +35,10 @@ tools:
       amd64: 316d712726d857c20744c57cb36aa47cfc79bc0af7e82cebf3780244b654c073
       arm64: 9fe8aadd5aab9421978c7ac95de6fad304a3c4c0ce9dbf4127579779e0699080
   kubectl-cnpg:
-    version: "1.30.1"
+    version: "1.30.2"
     sha256:
-      amd64: 784bc46f176b24a150d5de84d0691f10ff613b59456af86b1a4868e1bacb9953
-      arm64: 6ffad753bbbf5d353576967233063f2ba0adb843a4e7ef5ff4cb7384b2716d5e
+      amd64: a926584a2506f2beff624af03d22eb742d6227e259e364e603ea2f88a791a507
+      arm64: 2882241ec1e2ba8ed32a7a3735de278adb34349b570729b8bb867eedc1f57e64
   rotate-default-ca-certs.sh:
     url: https://raw.githubusercontent.com/k3s-io/k3s/v1.33.13%2Bk3s2/contrib/util/rotate-default-ca-certs.sh
     sha256: 62ef79f530cd285b3cfce884746abe6c3712ad70d0ef66e81f76aaa93c30551b
@@ -51,10 +51,10 @@ charts:
     version: "v1.21.3"
   cloudnative-pg:
     repository: https://cloudnative-pg.github.io/charts
-    version: "0.29.1"
+    version: "0.29.2"
   opentelemetry-collector:
     repository: https://open-telemetry.github.io/opentelemetry-helm-charts
-    version: "0.177.0"
+    version: "0.180.0"
   plugin-barman-cloud:
     repository: https://cloudnative-pg.github.io/charts
     version: "0.9.0"
@@ -98,7 +98,7 @@ cert-manager:
 cloudnative-pg:
   image:
     repository: ghcr.io/cloudnative-pg/cloudnative-pg
-    tag: "1.30.1@sha256:923c267ec29636db3bee20f993d0ec4973fa22998e1adad37da79e4d32b5bc07"
+    tag: "1.30.2@sha256:f96f6be3d81ec93819b443c665c575c609342fca840df90d4d87dae314a5b913"
 
 plugin-barman-cloud:
   image:

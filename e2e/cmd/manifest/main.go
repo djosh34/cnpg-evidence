@@ -2,7 +2,7 @@
 // k3s release, the upstream chart versions and the PostgreSQL images:
 //
 //	go -C e2e run ./cmd/manifest -k3s v1.33.13+k3s2 -cert-manager v1.21.3 \
-//	  -cloudnative-pg 0.29.1 -plugin-barman-cloud 0.9.0 -opentelemetry-collector 0.177.0 \
+//	  -cloudnative-pg 0.29.2 -plugin-barman-cloud 0.9.0 -opentelemetry-collector 0.180.0 \
 //	  -postgresql registry.access.redhat.com/hi/postgresql:18.7-1794620596 \
 //	  -rollout-from registry.access.redhat.com/hi/postgresql:18.6-1793756462 >versions/v1.33.yaml
 //
