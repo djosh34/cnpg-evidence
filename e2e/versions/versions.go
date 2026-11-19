@@ -81,7 +81,11 @@ type PostgreSQL struct {
 // name them.
 var Architectures = []string{"amd64", "arm64"}
 
-var sha256Hex = regexp.MustCompile(`^[0-9a-f]{64}$`)
+var (
+	sha256Hex = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	// An exact chart version, not a range: Helm would pick a newer chart.
+	exactVersion = regexp.MustCompile(`^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$`)
+)
 
 // Load reads a manifest and checks that every part the run reads is there.
 func Load(file string) (*Manifest, error) {
@@ -132,7 +136,7 @@ func (m *Manifest) check() error {
 		"tools.rotate-default-ca-certs.sh with url and sha256")
 	need(len(m.Charts) > 0, "charts")
 	for name, c := range m.Charts {
-		need(c.Repository != "" && c.Version != "", "charts."+name+" with repository and version")
+		need(c.Repository != "" && exactVersion.MatchString(c.Version), "charts."+name+" with repository and an exact version")
 	}
 	need(strings.Contains(m.PostgreSQL.ImageName, "@sha256:"), "postgresql.imageName with a digest")
 	need(strings.Contains(m.PostgreSQL.RolloutFrom, "@sha256:"), "postgresql.rolloutFrom with a digest")

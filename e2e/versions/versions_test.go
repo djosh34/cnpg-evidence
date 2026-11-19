@@ -80,4 +80,9 @@ func TestCheck(t *testing.T) {
 	if _, err := Parse([]byte("k3s: {version: v1}\n")); err == nil || !strings.Contains(err.Error(), "no k3s.image") {
 		t.Errorf("a manifest with only k3s.version: %v", err)
 	}
+	for version, exact := range map[string]bool{"0.29.1": true, "v1.21.3": true, "1.0.0-rc.1": true, "0.29.x": false, "~0.29.1": false, ">=1.0.0": false, "0.29": false} {
+		if exactVersion.MatchString(version) != exact {
+			t.Errorf("%s: exact %v", version, !exact)
+		}
+	}
 }

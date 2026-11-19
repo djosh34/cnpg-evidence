@@ -142,7 +142,7 @@ Each run writes a new directory `results/<scenario>-<time>/`, time in UTC:
 | `timing.md` | One row per line of the scenario and of `always.feature`: its result, how long it took, the time since the event it refers to, and what it measured. It is printed at the end of the log too. |
 | `cucumber.json`, `junit.xml` | The scenario's steps and results. |
 | `always.cucumber.json`, `always.junit.xml` | The same for `always.feature`. |
-| `state.txt` | `docker ps`, the kernel's last messages, the last log lines of every container, the nodes, pods, events and CNPG objects, and the alert history. After a failure it is also printed at the end of the log. |
+| `state.txt` | `docker ps`, the kernel's last messages, the last log lines of every container, the images on each node, the nodes, pods, events and CNPG objects, and the alert history. After a failure it is also printed at the end of the log. |
 | `k3s-1.log` to `k3s-3.log` | Each node's whole log, k3s's and the kubelet's, with docker's timestamps. When a node never turns Ready while the run builds the cluster, its log then has the kernel's stack of each k3s thread that waits in the kernel and the stack of every goroutine of k3s, before k3s starts again. |
 | `disks.md` | Each node's [data filesystem](#each-nodes-data-filesystem): its size, the most it held and when, what it held at the end, and what each volume holds then. Also the runner's free space before the run. |
 | `client.log` | The client's log: one line per read, write, connect and attempt, with the address it used ([format](../e2e/client/main.go)). |
@@ -171,7 +171,7 @@ gh run download <run id> --name switchover-X64                       # one job's
 
 `gh workflow run` prints the run's URL, which ends in its id. Keep it: several runs on the same branch and commit look alike in `gh run list`. The run's name gives the variant, the manifest and the scenarios.
 
-Each job uploads its `results/` as `<scenario>-<arch>`, where the arch is `X64` or `ARM64`, also when the scenario failed, with the outcome of its scenario, `success` or `failure`, in `outcome`. A job stays green when its scenario fails. The last job, the verdict, decides the run: for each scenario the run picked, it compares the result with the variant's [`gaps.md`](#a-variants-gaps), none for the samples, and prints a table of them in the run's summary. A scenario `gaps.md` lists must fail on the line its row names, with `always.feature` passed; every other must pass; a scenario without a result does not match. The run is green only when every one matches.
+Each job uploads its `results/` as `<scenario>-<arch>`, where the arch is `X64` or `ARM64`, also when the scenario failed. Besides the run's directory it holds `outcome`, the outcome of the job's Scenario step, `success` or `failure`, and `exit-code`, the e2e container's exit code. A job stays green when its scenario fails. The last job, the verdict, decides the run: for each scenario the run picked, it compares the result with the variant's [`gaps.md`](#a-variants-gaps), none for the samples, and prints a table of them in the run's summary. A scenario `gaps.md` lists must fail on the line its row names and on no other, with exit code 1 and every line of `always.feature` passed; every other must pass; a scenario without a result does not match. The run is green only when every one matches.
 
 In any other CI, run one job per scenario with a matrix variable and this one line, with `$VARIANT` empty for the samples and `$MANIFEST` empty for the default:
 

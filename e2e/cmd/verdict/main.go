@@ -4,11 +4,14 @@
 //
 //	go -C e2e run ./cmd/verdict -variant first-list -scenarios '["rollout"]' -arches X64 -results ../artifacts
 //
-// A scenario gaps.md lists must fail on the line gaps.md names, with
-// always.feature passed. Every other scenario must pass. The samples have
-// no gaps.md: every scenario must pass. A scenario without a result does
-// not match. Each result is the artifact <scenario>-<arch> of the run: the
-// outcome of its Scenario step in outcome, and the run's files.
+// A scenario gaps.md lists must fail on the line gaps.md names and on no
+// other, with every line of always.feature passed and the runner's exit
+// code 1, which means the scenario failed, not that the run could not run
+// or clean up. Every other scenario must pass. The samples have no gaps.md:
+// every scenario must pass. A scenario without a result does not match.
+// Each result is the artifact <scenario>-<arch> of the run: the outcome of
+// its Scenario step in outcome, the runner's exit code in exit-code, and
+// the run's files.
 package main
 
 import (
@@ -97,11 +100,13 @@ func readGaps(file string) (map[string]string, error) {
 
 // result is what a scenario's artifact says.
 type result struct {
-	outcome      string   // of the Scenario step: success, failure, or "" without a result
-	failed       []string // its failed lines
-	alwaysFailed []string // the failed lines of always.feature
-	alwaysRan    bool
-	problem      string // why the result could not be read
+	outcome  string // of the Scenario step: success or failure
+	exitCode string // of the runner: 0 passed, 1 failed, 2 could not run
+	// The lines of the scenario that failed, and those of always.feature
+	// that did not pass.
+	failed, alwaysNotPassed []string
+	alwaysRan               bool
+	problem                 string // why the result could not be read
 }
 
 func (r result) String() string {
@@ -111,12 +116,15 @@ func (r result) String() string {
 	case r.outcome == "success":
 		return "passed"
 	}
-	s := r.outcome
+	s := r.outcome + ", exit code " + r.exitCode
 	if len(r.failed) > 0 {
-		s += " on `" + strings.Join(r.failed, "`, `") + "`"
+		s += ", on `" + strings.Join(r.failed, "`, `") + "`"
 	}
-	if len(r.alwaysFailed) > 0 {
-		s += ", always.feature on `" + strings.Join(r.alwaysFailed, "`, `") + "`"
+	if !r.alwaysRan {
+		s += ", always.feature did not run"
+	}
+	if len(r.alwaysNotPassed) > 0 {
+		s += ", always.feature did not pass `" + strings.Join(r.alwaysNotPassed, "`, `") + "`"
 	}
 	return s
 }
@@ -130,25 +138,47 @@ func readResult(dir, scenario string) result {
 	if r.outcome == "success" {
 		return r
 	}
+	if data, err = os.ReadFile(filepath.Join(dir, "exit-code")); err != nil {
+		r.problem = r.outcome + ", with no exit code of the runner"
+		return r
+	}
+	r.exitCode = strings.TrimSpace(string(data))
 	runs, err := filepath.Glob(filepath.Join(dir, scenario+"-*"))
 	if err != nil || len(runs) != 1 {
 		r.problem = r.outcome + ", with no run directory"
 		return r
 	}
-	if r.failed, err = failedLines(filepath.Join(runs[0], "cucumber.json")); err != nil {
+	main, err := readSteps(filepath.Join(runs[0], "cucumber.json"))
+	if err != nil {
 		r.problem = r.outcome + ": " + err.Error()
 		return r
 	}
-	r.alwaysFailed, err = failedLines(filepath.Join(runs[0], "always.cucumber.json"))
-	r.alwaysRan = err == nil
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+	for _, s := range main {
+		if s.status != "passed" && s.status != "skipped" {
+			r.failed = append(r.failed, s.name)
+		}
+	}
+	always, err := readSteps(filepath.Join(runs[0], "always.cucumber.json"))
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+	case err != nil:
 		r.problem = r.outcome + ": " + err.Error()
+	default:
+		r.alwaysRan = len(always) > 0
+		for _, s := range always {
+			if s.status != "passed" {
+				r.alwaysNotPassed = append(r.alwaysNotPassed, s.name)
+			}
+		}
 	}
 	return r
 }
 
-// failedLines are the failed lines of a cucumber.json of godog.
-func failedLines(file string) ([]string, error) {
+// step is a line of a cucumber.json of godog, with its status: passed,
+// failed, skipped, undefined, pending or ambiguous.
+type step struct{ name, status string }
+
+func readSteps(file string) ([]step, error) {
 	data, err := os.ReadFile(file)
 	if err != nil {
 		return nil, err
@@ -166,17 +196,15 @@ func failedLines(file string) ([]string, error) {
 	if err := json.Unmarshal(data, &features); err != nil {
 		return nil, fmt.Errorf("%s: %w", filepath.Base(file), err)
 	}
-	var failed []string
+	var steps []step
 	for _, f := range features {
 		for _, e := range f.Elements {
 			for _, s := range e.Steps {
-				if s.Result.Status == "failed" {
-					failed = append(failed, s.Name)
-				}
+				steps = append(steps, step{s.Name, s.Result.Status})
 			}
 		}
 	}
-	return failed, nil
+	return steps, nil
 }
 
 // judge says whether a result matches gaps.md, which lists gap as the
@@ -191,7 +219,8 @@ func judge(r result, gap string) (bool, string) {
 		return false, "failed, and gaps.md does not list it"
 	case r.outcome == "success":
 		return false, "passed, and gaps.md lists it"
-	case r.outcome == "failure" && len(r.failed) == 1 && r.failed[0] == gap && r.alwaysRan && len(r.alwaysFailed) == 0:
+	case r.outcome == "failure" && r.exitCode == "1" && len(r.failed) == 1 && r.failed[0] == gap &&
+		r.alwaysRan && len(r.alwaysNotPassed) == 0:
 		return true, "the gap, as expected"
 	}
 	return false, "not the failure gaps.md names"

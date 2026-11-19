@@ -228,6 +228,7 @@ func str(values map[string]any, keys ...string) string {
 // showChart is the appVersion and the default values of a chart version.
 func showChart(ctx context.Context, repo, name, version string) (string, map[string]any, error) {
 	var chart struct {
+		Version    string `yaml:"version"`
 		AppVersion string `yaml:"appVersion"`
 	}
 	var values map[string]any
@@ -239,6 +240,9 @@ func showChart(ctx context.Context, repo, name, version string) (string, map[str
 		if err := yaml.Unmarshal(out, into); err != nil {
 			return "", nil, fmt.Errorf("helm show %s %s %s: %w", what, name, version, err)
 		}
+	}
+	if chart.Version != version {
+		return "", nil, fmt.Errorf("the chart %s %s is version %s: give its exact version", name, version, chart.Version)
 	}
 	if chart.AppVersion == "" {
 		return "", nil, fmt.Errorf("the chart %s %s has no appVersion", name, version)

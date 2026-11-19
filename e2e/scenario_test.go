@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"testing"
 	"time"
 
@@ -111,6 +112,14 @@ func TestScenario(t *testing.T) {
 	}
 	state, err := c.State(ctx)
 	if err != nil {
+		t.Fatal(err)
+	}
+	// For e2e.yml's verdict: a gap is a failed scenario, not a run that
+	// could not run or clean up.
+	if err := os.MkdirAll("../results", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("../results/exit-code", []byte(strconv.Itoa(state.ExitCode)+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if state.ExitCode != 0 {

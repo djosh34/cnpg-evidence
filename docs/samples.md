@@ -236,13 +236,14 @@ kubectl exec -n databases <primary pod> -c postgres -- psql -U postgres \
 ## Restore into a new cluster
 
 ```bash
+image=$(kubectl get cluster pg -n databases -o jsonpath='{.spec.imageName}')
 helm install pg-restore samples/charts/cnpg-cluster -n databases -f samples/desired.yaml \
-  --set-string postgresql.imageName=<the cluster's image> \
+  --set-string postgresql.imageName="$image" \
   --set cluster.name=pg-restore --set recovery.enabled=true --set recovery.sourceCluster=pg \
   --set rwLoadBalancer.name=pg-restore-rw-lb --set readLoadBalancer=null
 ```
 
-The new name gives its WAL archive its own folder. CNPG refuses a Service another cluster owns, so the restore gets its own rw LoadBalancer and none for reads; while the old cluster holds 5432, use its `pg-restore-rw` Service inside the cluster. A backup taken before `app` was removed brings `app` back: [remove it](#remove-app-from-a-cluster-bootstrapped-with-the-defaults) again. A backup taken before the chart's grants needs the [compliance grants](#compliance-metric) given again.
+It runs the image of the cluster `pg`. The new name gives its WAL archive its own folder. CNPG refuses a Service another cluster owns, so the restore gets its own rw LoadBalancer and none for reads; while the old cluster holds 5432, use its `pg-restore-rw` Service inside the cluster. A backup taken before `app` was removed brings `app` back: [remove it](#remove-app-from-a-cluster-bootstrapped-with-the-defaults) again. A backup taken before the chart's grants needs the [compliance grants](#compliance-metric) given again.
 
 ## Remove app from a cluster bootstrapped with the defaults
 
