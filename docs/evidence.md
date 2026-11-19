@@ -86,8 +86,9 @@ The allowed subjects, in `expected.jq`. Each holds one of these rights on a k3s 
 | cert-manager's cainjector | all but `create_certificates` | It writes CA bundles into webhook configurations |
 | `system:kube-controller-manager`, `k3s-cloud-controller-manager` | all | The controller manager; k3s's ServiceLB runs the LoadBalancer pods |
 | The controllers in `kube-system`: `clusterrole-aggregation-controller`, the workload controllers (`cronjob`, `daemon-set`, `deployment`, `job`, `replicaset`, `replication`, `statefulset`), `generic-garbage-collector`, `namespace-controller`, `persistent-volume-binder`, `resourcequota-controller`, `legacy-service-account-token-cleaner`, `root-ca-cert-publisher` | all | Each creates, counts, changes or deletes objects of every namespace |
+| `storage-version-migrator-controller` in `kube-system`, from Kubernetes 1.37 | all | It rewrites stored objects of every resource to the current storage version |
 | `local-path-provisioner-service-account` | all | It runs the pods that make volumes |
-| k3s's Helm jobs `helm-traefik` and `helm-traefik-crd` | all | k3s binds them to cluster-admin |
+| k3s's Helm jobs `helm-traefik` and `helm-traefik-crd`, and from k3s v1.37 `helm-gateway-api-crd` | all | k3s binds them to cluster-admin |
 | Traefik's ServiceAccount `traefik` | read Secrets only | It reads the certificates of the routes it serves |
 
 ## Limits
