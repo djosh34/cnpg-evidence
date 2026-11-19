@@ -156,7 +156,8 @@ func checkInotify() error {
 }
 
 // checkBrNetfilter checks that the host's kernel has br_netfilter, built in
-// or loaded; docs/e2e.md says why a run needs it.
+// or loaded, so that no iptables rule of a node makes the kernel load it
+// while the cluster starts (docs/e2e.md).
 func checkBrNetfilter() error {
 	_, err := os.Stat("/proc/sys/net/bridge/bridge-nf-call-iptables")
 	if errors.Is(err, fs.ErrNotExist) {
