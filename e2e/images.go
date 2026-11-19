@@ -63,12 +63,13 @@ func nodeImagesPinned(ctx context.Context) error {
 // makes, also of the sandbox image. k3s rotates the log at 50 MiB into
 // gzipped files; the script fails then, as the log no longer holds every
 // pull. It looks for rotated files after grep has read the log, so a
-// rotation while grep opens it fails too. grep exits 1 when no line
+// rotation while grep opens it fails too, and a match of the pattern is
+// enough, as gzip may rename the file right after. grep exits 1 when no line
 // matches: no image was pulled.
 const containerdPulls = `cd /var/lib/rancher/k3s/agent/containerd || exit
 grep -h 'stop pulling image ' containerd.log || [ $? = 1 ] || exit
 for f in containerd-*; do
-  if [ -e "$f" ]; then echo "containerd's log was rotated ($f), so it no longer shows every pull" >&2; exit 3; fi
+  if [ "$f" != 'containerd-*' ]; then echo "containerd's log was rotated ($f), so it no longer shows every pull" >&2; exit 3; fi
 done`
 
 var pullLine = regexp.MustCompile(`stop pulling image (\S+): `)
