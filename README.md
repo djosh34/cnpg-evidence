@@ -22,6 +22,7 @@ Sample charts for a CloudNativePG (CNPG) cluster that accepts only certificate l
 | Run scenarios in CI | [e2e.md](docs/e2e.md#run-scenarios-in-ci) |
 | Read a run's results | [e2e.md](docs/e2e.md#read-the-results) |
 | Change a chart, its values or the k3s settings | [samples.md](docs/samples.md#change-a-chart-its-values-or-the-k3s-settings) |
+| Change a version, or make a manifest of other versions | [e2e.md](docs/e2e.md#the-version-manifest) |
 | Add or change a scenario | [e2e.md](docs/e2e.md#add-or-change-a-scenario) |
 | Install the samples on a real cluster | [samples.md](docs/samples.md#install-on-a-cluster) |
 | Bring an existing setup to production, most important first | [go-live/](docs/go-live/README.md) |
@@ -59,8 +60,9 @@ Each script prints one JSON document on stdout and logs on stderr. Exit 0 means 
 
 | Path | What it is |
 |---|---|
-| `e2e.sh`, `e2e/` | Runs a scenario: the Go test, the code inside the container, the client, which uses [pgfallback](https://github.com/djosh34/pgfallback), and `inotify.sh` ([e2e.md](docs/e2e.md)) |
+| `e2e.sh`, `e2e/` | Runs a scenario: the Go test, the code inside the container, the client, which uses [pgfallback](https://github.com/djosh34/pgfallback), `inotify.sh`, and the commands that make a manifest and give a CI run's verdict ([e2e.md](docs/e2e.md)) |
 | `samples/` | The charts, values, k3s settings, monitoring and scenarios ([samples.md](docs/samples.md), [monitoring.md](docs/monitoring.md)) |
+| `versions/` | The manifests: every version of the system under test that a run uses ([e2e.md](docs/e2e.md#the-version-manifest)) |
 | `scripts/` | The evidence scripts and their tests |
 | `report/` | `cnpg-report`: the page that draws the images, its build and tests ([report/README.md](report/README.md)) |
 | `.github/workflows/` | `ci.yml` on every pull request and push to `main`; `e2e.yml`, every scenario on demand; `release.yml` on a pushed tag |

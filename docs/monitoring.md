@@ -15,10 +15,10 @@ Alert rules, an Alertmanager route and a Grafana dashboard for the sample's clus
 1. In `rules.yaml`, set the namespace and cluster name in the `cnpg_sample:database` rule, one rule per CNPG cluster. Every alert covers only those clusters.
 2. Load `rules.yaml` into Prometheus (`rule_files:`) or the Mimir ruler (`mimirtool rules load samples/monitoring/rules.yaml --address=<Mimir URL> --id=<tenant>`).
 3. Copy the route and the `inhibit_rules` of `alertmanager.yaml` into your Alertmanager configuration and set the receiver.
-4. Install the collectors once the Secret `company-ca` with `ca.crt` is in `otel`, after replacing the scenario's names in its values:
+4. Install the collectors once the Secret `company-ca` with `ca.crt` is in `otel`, after replacing the scenario's names in its values. Their chart version and image come from the manifest, with `wrapper` and `$manifest` of [samples.md](samples.md#install-on-a-cluster):
    ```bash
-   helm dependency build --skip-refresh samples/charts/cnpg-opentelemetry-collector
-   helm upgrade --install otel samples/charts/cnpg-opentelemetry-collector -n otel
+   wrapper cnpg-opentelemetry-collector
+   helm upgrade --install otel build/cnpg-opentelemetry-collector -n otel -f "$manifest"
    ```
 5. Import `dashboard.json` in Grafana 12 or later, under *Dashboards*, *New*, *Import*, and pick a Prometheus-type data source that also holds what the rules record and `ALERTS`.
 

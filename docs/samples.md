@@ -1,34 +1,28 @@
 # Samples
 
-`samples/` holds what a scenario installs, and what you install on a real cluster: k3s settings, the upstream Helm charts with a values chart each, the CNPG cluster chart, the monitoring and the scenarios. The upstream charts are cert-manager v1.21.3, `cloudnative-pg` 0.29.1 (CloudNativePG 1.30.1), `plugin-barman-cloud` 0.8.1 and `opentelemetry-collector` 0.177.0.
+`samples/` holds what a scenario installs, and what you install on a real cluster: k3s settings, a values chart for each upstream Helm chart, the CNPG cluster chart, the monitoring and the scenarios. The upstream charts are cert-manager, `cloudnative-pg`, `plugin-barman-cloud` and `opentelemetry-collector`. Their versions and images, k3s's and the PostgreSQL image are in a [manifest](e2e.md#the-version-manifest) of `versions/`.
 
 | Path | What |
 |---|---|
 | [`desired.yaml`](../samples/desired.yaml) | The cluster's desired state: name, namespace, client CA Secret, LoadBalancers, namespaces, replication certificate names, databases with their role and client CNs. The cluster chart and `evidence.sh` both read it. |
-| `charts/<upstream>/` | An upstream chart as `helm pull --untar` gives it. Never edited. |
-| `charts/cnpg-<upstream>/` | Its values chart: a dependency on `file://../<upstream>`, the values, and what the upstream chart does not make, such as RBAC or the collectors' client certificate. |
+| `charts/cnpg-<upstream>/` | The values chart of an upstream chart: a dependency on it, with the version and repository left to the manifest, the values, and what the upstream chart does not make, such as RBAC or the collectors' client certificate. |
 | [`charts/cnpg-cluster/`](../samples/charts/cnpg-cluster) | The CNPG cluster: `Cluster`, `Database`s, certificates, `ObjectStore`, `NetworkPolicy` and the queries Secret. Chart-only settings are in its `values.yaml`. |
 | [`charts/company-acme/`](../samples/charts/company-acme) | A ClusterIssuer of a company CA that serves ACME. Used only by the scenarios. |
 | [`charts/releases.yaml`](../samples/charts/releases.yaml) | The releases a scenario installs, in order. |
-| [`values/`](../samples/values) | The scenarios' own values per release, on top of the others. `new-image.yaml` is the image the `rollout` scenario changes to. |
+| [`values/`](../samples/values) | The scenarios' own values per release, on top of the others. |
 | [`k3s/`](../samples/k3s) | `config.yaml`, the k3s server settings of every node, `manifests/`, which k3s applies on every server, and `patches.yaml`, changes to objects of k3s's own manifests that the run applies with `kubectl patch`. |
 | [`monitoring/`](../samples/monitoring) | Alert rules, the Alertmanager route and the Grafana dashboard ([monitoring.md](monitoring.md)). |
 | [`features/`](../samples/features) | The scenarios ([e2e.md](e2e.md)). |
 
 ## Change a chart, its values or the k3s settings
 
-A scenario installs each release of `releases.yaml` with `helm upgrade --install --wait`: the release's `values` files, then `values/<release>.yaml` when it exists.
+A scenario installs each release of `releases.yaml` with `helm upgrade --install --wait`: the manifest, the release's `values` files, then `values/<release>.yaml` when it exists.
 
 - **A setting that production uses too:** change the values chart's `values.yaml`, or `desired.yaml` for the cluster's shape.
 - **A setting only the scenarios need:** change `values/<release>.yaml`.
 - **The k3s settings:** change `k3s/config.yaml`, add a manifest to `k3s/manifests/`, or a patch to `k3s/patches.yaml`. The run adds each node's address, the join and the DNS server itself.
 - **A new release:** add it to `releases.yaml` with `name`, `namespace` and `chart`, at the point in the order where its dependencies are installed.
-- **A new upstream chart version:** compare the RBAC as [below](#rbac-on-chart-upgrades), replace the directory, and set the same version in the values chart's `Chart.yaml`; `helm dependency build` fails while the two differ.
-
-```bash
-rm -r samples/charts/<chart>
-helm pull <chart> --repo <repo> --version <version> --untar --untardir samples/charts
-```
+- **A new upstream chart version, image or k3s version:** compare the RBAC as [below](#rbac-on-chart-upgrades), then make the manifest again with the new version, as [e2e.md](e2e.md#make-a-manifest) says.
 
 Then run the scenarios that touch the change, with `./e2e.sh <scenario>` or all of them with [`e2e.yml`](e2e.md#run-scenarios-in-ci). After a change to `monitoring/`, run `bash samples/monitoring/check.sh`.
 
@@ -36,11 +30,22 @@ Then run the scenarios that touch the change, with `./e2e.sh <scenario>` or all 
 
 The samples assume k3s with flannel, servicelb, local-path and the network policy controller, hosts with SELinux, and CNPG with the barman-cloud plugin. Pods with `hostUsers: false` need a kernel with idmapped mounts on tmpfs.
 
+The commands below install the versions and images of `versions/v1.33.yaml`. A values chart names its upstream chart without a version, so `wrapper` copies it to `build/`, writes the manifest's version and repository into the copy, and downloads the upstream chart there. It needs [yq](https://github.com/mikefarah/yq) v4.
+
+```bash
+manifest=versions/v1.33.yaml
+wrapper() {
+  rm -rf "build/$1" && mkdir -p build && cp -r "samples/charts/$1" build/
+  m=$manifest yq -i '.dependencies[] |= (.name as $n | .repository = (load(strenv(m)).charts[$n].repository) | .version = (load(strenv(m)).charts[$n].version))' "build/$1/Chart.yaml"
+  helm dependency build "build/$1"
+}
+```
+
 1. Create the namespaces `cnpg-system` and `databases`.
 2. Install cert-manager as the release `cert-manager` in `cert-manager`, then create the issuer named in `charts/cnpg-cluster/values.yaml`. It must allow `client auth`, which CNPG needs on the replication certificate.
    ```bash
-   helm dependency build --skip-refresh samples/charts/cnpg-cert-manager
-   helm upgrade --install cert-manager samples/charts/cnpg-cert-manager -n cert-manager --create-namespace --wait
+   wrapper cnpg-cert-manager
+   helm upgrade --install cert-manager build/cnpg-cert-manager -n cert-manager --create-namespace --wait -f "$manifest"
    ```
 3. Set `desired.yaml`. `caSecret` is a Secret you create by hand with `ca.crt` only: the CAs that may sign client certificates, including the issuer's CA, which the chart also uses as the server CA. Pass the same file to `evidence.sh --ca`.
    ```bash
@@ -49,14 +54,15 @@ The samples assume k3s with flannel, servicelb, local-path and the network polic
 4. Set `charts/cnpg-cluster/values.yaml`: the issuer, the object store with its credentials Secret (keys `ACCESS_KEY_ID` and `ACCESS_SECRET_KEY`), and `cluster.postgresUID` and `postgresGID`, the ids the image names `postgres`. Set `walSegmentSize` and the ids before the cluster is created.
 5. Install the operator and the plugin. The release names must stay `cnpg` and `barman-cloud`: the RBAC templates and `evidence.sh` use their ServiceAccount names.
    ```bash
-   helm dependency build --skip-refresh samples/charts/cnpg-cloudnative-pg
-   helm upgrade --install cnpg samples/charts/cnpg-cloudnative-pg -n cnpg-system --wait
-   helm dependency build --skip-refresh samples/charts/cnpg-plugin-barman-cloud
-   helm upgrade --install barman-cloud samples/charts/cnpg-plugin-barman-cloud -n cnpg-system --wait
+   wrapper cnpg-cloudnative-pg
+   helm upgrade --install cnpg build/cnpg-cloudnative-pg -n cnpg-system --wait -f "$manifest"
+   wrapper cnpg-plugin-barman-cloud
+   helm upgrade --install barman-cloud build/cnpg-plugin-barman-cloud -n cnpg-system --wait -f "$manifest"
    ```
-6. Install the cluster:
+6. Install the cluster with the instance image, by tag and digest, in `postgresql.imageName`. This one is the manifest's, the image the scenarios ran:
    ```bash
-   helm upgrade --install pg samples/charts/cnpg-cluster -n databases -f samples/desired.yaml
+   helm upgrade --install pg samples/charts/cnpg-cluster -n databases -f samples/desired.yaml \
+     --set-string postgresql.imageName="$(yq .postgresql.imageName "$manifest")"
    ```
 7. Restart the instances of a cluster that existed before: `hostUsers: false` applies only to new pods.
    ```bash
@@ -91,7 +97,7 @@ Compared with each project's defaults and examples. The rule numbers are those o
 | `--read-timeout=5`, `AWS_MAX_ATTEMPTS=1` | 60 s, 5 attempts | Failover, switchover and a starting replica wait for the store. A store that never answers then costs about 5 s per call instead of about 5 minutes. 2 s failed against a working store 1 s away. |
 | Credentials for this one bucket, bucket encrypted at rest | not said | The bucket holds a full copy of every database. |
 | **Cluster** | | |
-| Hummingbird `postgresql:18.6`, pinned by digest | CNPG's image | Minimal, pulls without a login. The scripts run only `psql` in it. |
+| Hummingbird `postgresql`, pinned by digest | CNPG's image | Minimal, pulls without a login. The scripts run only `psql` in it. |
 | `postgresUID`, `postgresGID` 999 | 26 | The ids the image names `postgres`; with 26, CNPG's pg_ident line names `postgres_fedora`. |
 | `hostUsers: false` through `cnpg.io/podPatch` | host's uids | A host user with uid 999 is nobody in the pod. Rule 5. |
 | `storageSize: 50Gi`, `walSegmentSize: 1`, `walKeepSize: 30GB`, no replication slots | 1Gi, 16 MB, 512MB, slots | See [WAL and the object store](#wal-and-the-object-store). |
@@ -231,6 +237,7 @@ kubectl exec -n databases <primary pod> -c postgres -- psql -U postgres \
 
 ```bash
 helm install pg-restore samples/charts/cnpg-cluster -n databases -f samples/desired.yaml \
+  --set-string postgresql.imageName=<the cluster's image> \
   --set cluster.name=pg-restore --set recovery.enabled=true --set recovery.sourceCluster=pg \
   --set rwLoadBalancer.name=pg-restore-rw-lb --set readLoadBalancer=null
 ```
@@ -247,14 +254,22 @@ In this order:
 
 ## RBAC on chart upgrades
 
-The values charts replace the upstream RBAC. A rule they lack shows as `forbidden` in the operator or plugin log. Before an upgrade, render the upstream RBAC, then again after it, and compare:
+The values charts replace the upstream RBAC. A rule they lack shows as `forbidden` in the operator or plugin log. Before an upgrade, render the upstream RBAC of the version in the manifest and of the new one, and compare:
 
 ```bash
-helm template cnpg samples/charts/cloudnative-pg -n cnpg-system \
-  --set config.clusterWide=false --show-only templates/rbac.yaml > cnpg-rbac.yaml
-helm template barman-cloud samples/charts/plugin-barman-cloud -n cnpg-system \
-  --show-only templates/rbac.yaml --show-only templates/additional-rbac/leader_election.yaml > barman-rbac.yaml
-# After the upgrade, the same two commands into cnpg-rbac-new.yaml and barman-rbac-new.yaml, then:
+repo=https://cloudnative-pg.github.io/charts
+cnpg_rbac() {  # <chart version>
+  helm template cnpg cloudnative-pg --repo "$repo" --version "$1" -n cnpg-system \
+    --set config.clusterWide=false --show-only templates/rbac.yaml
+}
+barman_rbac() {  # <chart version>
+  helm template barman-cloud plugin-barman-cloud --repo "$repo" --version "$1" -n cnpg-system \
+    --show-only templates/rbac.yaml --show-only templates/additional-rbac/leader_election.yaml
+}
+cnpg_rbac "$(yq '.charts.cloudnative-pg.version' versions/v1.33.yaml)" > cnpg-rbac.yaml
+cnpg_rbac <new version> > cnpg-rbac-new.yaml
+barman_rbac "$(yq '.charts.plugin-barman-cloud.version' versions/v1.33.yaml)" > barman-rbac.yaml
+barman_rbac <new version> > barman-rbac-new.yaml
 diff -I helm.sh/chart: -I app.kubernetes.io/version: cnpg-rbac.yaml cnpg-rbac-new.yaml
 diff -I helm.sh/chart: -I app.kubernetes.io/version: barman-rbac.yaml barman-rbac-new.yaml
 ```

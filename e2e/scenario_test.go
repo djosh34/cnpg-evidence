@@ -52,9 +52,10 @@ func TestScenario(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("the manifest %s: k3s %s", manifestPath, m.K3s.Version)
+	// One file, so testcontainers follows a symlink such as latest.yaml.
+	manifestCopy := testcontainers.ContainerFile{HostFilePath: manifestPath, ContainerFilePath: manifestFile, FileMode: 0o644}
 	files := []testcontainers.ContainerFile{
-		{HostFilePath: "../samples", ContainerFilePath: samplesDir, FileMode: 0o755},
-		{HostFilePath: manifestPath, ContainerFilePath: manifestFile, FileMode: 0o644},
+		{HostFilePath: "../samples", ContainerFilePath: samplesDir, FileMode: 0o755}, manifestCopy,
 	}
 	cmd := []string{*scenarioFlag}
 	if *variantFlag != "" {
@@ -76,7 +77,7 @@ func TestScenario(t *testing.T) {
 		files = []testcontainers.ContainerFile{
 			{HostFilePath: "../samples/features", ContainerFilePath: filepath.Join(samplesDir, "features"), FileMode: 0o755},
 			{HostFilePath: dir, ContainerFilePath: filepath.Join(variantsDir, *variantFlag), FileMode: 0o755},
-			files[1],
+			manifestCopy,
 		}
 		cmd = append(cmd, *variantFlag)
 	}
