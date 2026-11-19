@@ -121,7 +121,7 @@ func Parse(data []byte) (*Manifest, error) {
 	}
 	for _, c := range chartImages {
 		if !c.pinnedIn(all) {
-			errs = append(errs, fmt.Errorf("no image %s with its digest in %s", strings.Join(c.keys, "."), c.field))
+			errs = append(errs, fmt.Errorf("no image %s with a repository and its digest in %s", strings.Join(c.keys, "."), c.field))
 		}
 	}
 	return &m, errors.Join(errs...)
@@ -189,7 +189,7 @@ var chartImages = []chartImage{
 }
 
 // pinnedIn says whether the manifest has the block, by its nested keys,
-// with a digest in its field.
+// with a repository and a digest in its field.
 func (c chartImage) pinnedIn(manifest any) bool {
 	node := manifest
 	for _, k := range c.keys {
@@ -201,6 +201,9 @@ func (c chartImage) pinnedIn(manifest any) bool {
 	}
 	block, ok := node.(map[string]any)
 	if !ok {
+		return false
+	}
+	if repo, ok := block["repository"].(string); !ok || repo == "" {
 		return false
 	}
 	value, ok := block[c.field].(string)
