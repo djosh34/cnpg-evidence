@@ -92,6 +92,13 @@ func TestCheck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A chart's name without its alias, and a uid without a gid.
+	half := strings.Replace(string(data), "  cert-manager:\n    repository:", "  cert-manager:\n    name: cert-manager-chart\n    repository:", 1)
+	half = strings.Replace(half, "postgresql:\n", "postgresql:\n  postgresUID: 70\n", 1)
+	if _, err := Parse([]byte(half)); err == nil || !strings.Contains(err.Error(), "no charts.cert-manager with both name and alias, or neither") ||
+		!strings.Contains(err.Error(), "no postgresql.postgresUID and postgresGID") {
+		t.Errorf("a name without an alias and a uid without a gid: %v", err)
+	}
 	// The agent's image without its digest, as a tag only.
 	agent := strings.Index(string(data), "\nagent:")
 	noDigest := string(data[:agent]) + strings.Replace(string(data[agent:]), "    digest: sha256:", "    # digest: sha256:", 1)

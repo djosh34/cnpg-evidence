@@ -30,13 +30,14 @@ Then run the scenarios that touch the change, with `./e2e.sh <scenario>` or all 
 
 The samples assume k3s with flannel, servicelb, local-path and the network policy controller, hosts with SELinux, and CNPG with the barman-cloud plugin. Pods with `hostUsers: false` need a kernel with idmapped mounts on tmpfs.
 
-The commands below install the versions and images of `versions/latest.yaml`. A values chart names its upstream chart without a version, so `wrapper` copies it to `build/`, writes the manifest's version and repository into the copy, and downloads the upstream chart there. It needs [yq](https://github.com/mikefarah/yq) v4.
+The commands below install the versions and images of `versions/latest.yaml`. A values chart names its upstream chart without a version, so `wrapper` copies it to `build/`, writes the manifest's version and repository into the copy, and downloads the upstream chart there. When the manifest gives the chart a `name` and `alias`, as `v1.37-hi.yaml` does for the mirror's charts, it writes those too; a dependency with an alias of its own keeps it. It needs [yq](https://github.com/mikefarah/yq) v4.
 
 ```bash
 manifest=versions/latest.yaml
 wrapper() {
   rm -rf "build/$1" && mkdir -p build && cp -r "samples/charts/$1" build/
-  m=$manifest yq -i '.dependencies[] |= (.name as $n | .repository = (load(strenv(m)).charts[$n].repository) | .version = (load(strenv(m)).charts[$n].version))' "build/$1/Chart.yaml"
+  m=$manifest yq -i '.dependencies[] |= (.name as $n | load(strenv(m)).charts[$n] as $c | .repository = $c.repository
+    | .version = $c.version | with(select($c.name != null); .name = $c.name | .alias = (.alias // $c.alias)))' "build/$1/Chart.yaml"
   helm dependency build "build/$1"
 }
 ```
@@ -51,7 +52,7 @@ wrapper() {
    ```bash
    kubectl create secret generic client-ca -n databases --from-file=ca.crt=client-ca.pem
    ```
-4. Set `charts/cnpg-cluster/values.yaml`: the issuer, the object store with its credentials Secret (keys `ACCESS_KEY_ID` and `ACCESS_SECRET_KEY`), and `cluster.postgresUID` and `postgresGID`, the ids the image names `postgres`. Set `walSegmentSize` and the ids before the cluster is created.
+4. Set `charts/cnpg-cluster/values.yaml`: the issuer, the object store with its credentials Secret (keys `ACCESS_KEY_ID` and `ACCESS_SECRET_KEY`), and `cluster.postgresUID` and `postgresGID`, the ids the image names `postgres`: those of the manifest's `postgresql.postgresUID` and `postgresGID` when it has them. Set `walSegmentSize` and the ids before the cluster is created.
 5. Install the operator and the plugin. The release names must stay `cnpg` and `barman-cloud`: the RBAC templates and `evidence.sh` use their ServiceAccount names.
    ```bash
    wrapper cnpg-cloudnative-pg

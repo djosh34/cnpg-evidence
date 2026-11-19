@@ -92,6 +92,40 @@ func TestSetDependencies(t *testing.T) {
 	}
 }
 
+// A chart of another name gets the manifest's name, and its alias unless
+// the dependency has one of its own.
+func TestSetDependenciesName(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "Chart.yaml")
+	content := "name: wrapper\ndependencies:\n  - name: otel\n  - name: otel\n    alias: agent\n"
+	if err := os.WriteFile(file, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	charts := map[string]versions.Chart{"otel": {Name: "otel-chart", Alias: "otel", Repository: "oci://registry.example/charts", Version: "1.2.3"}}
+	if err := setDependencies(file, charts); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var chart struct {
+		Dependencies []map[string]string `yaml:"dependencies"`
+	}
+	if err := yaml.Unmarshal(data, &chart); err != nil {
+		t.Fatal(err)
+	}
+	var aliases []string
+	for _, d := range chart.Dependencies {
+		if d["name"] != "otel-chart" || d["repository"] != "oci://registry.example/charts" || d["version"] != "1.2.3" {
+			t.Errorf("a dependency: %v", d)
+		}
+		aliases = append(aliases, d["alias"])
+	}
+	if !slices.Equal(aliases, []string{"otel", "agent"}) {
+		t.Errorf("the aliases: %q", aliases)
+	}
+}
+
 // Every wrapper chart of the samples and the variants depends only on
 // charts the default manifest has, and names no version itself.
 func TestWrapperDependencies(t *testing.T) {
