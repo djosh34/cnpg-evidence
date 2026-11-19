@@ -155,16 +155,15 @@ func checkInotify() error {
 	return nil
 }
 
-// checkBrNetfilter checks that the host has loaded br_netfilter. k3s
-// cannot load it from inside a node, so otherwise the kernel loads it for
-// the first iptables rule with a physdev match, while that rule holds the
-// node's nf_tables lock. Loading the module takes the kernel's network
-// lock, and a task that holds that lock and waits for the nf_tables lock
-// then stops both for good: the node never turns Ready (docs/e2e.md).
+// checkBrNetfilter checks that the host's kernel has br_netfilter, built in
+// or loaded. k3s cannot load the module from inside a node, so otherwise
+// the kernel loads it while a node installs its first iptables rule with a
+// physdev match. In one run, that load never ended and the node never
+// turned Ready (docs/e2e.md).
 func checkBrNetfilter() error {
-	_, err := os.Stat("/sys/module/br_netfilter")
+	_, err := os.Stat("/proc/sys/net/bridge/bridge-nf-call-iptables")
 	if errors.Is(err, fs.ErrNotExist) {
-		return errors.New("the host has not loaded the kernel module br_netfilter, which the k3s nodes need. " +
+		return errors.New("the host's kernel has not loaded br_netfilter, which the k3s nodes need. " +
 			"Load it on the host with: sudo modprobe br_netfilter")
 	}
 	return err
