@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -77,6 +78,10 @@ func main() {
 
 func run(scenario string) int {
 	if err := checkInotify(); err != nil {
+		say(os.Stderr, "e2e: %v\n", err)
+		return 2
+	}
+	if err := checkBrNetfilter(); err != nil {
 		say(os.Stderr, "e2e: %v\n", err)
 		return 2
 	}
@@ -148,6 +153,21 @@ func checkInotify() error {
 			limit, inotifyNeeded, inotifyNeeded)
 	}
 	return nil
+}
+
+// checkBrNetfilter checks that the host has loaded br_netfilter. k3s
+// cannot load it from inside a node, so otherwise the kernel loads it for
+// the first iptables rule with a physdev match, while that rule holds the
+// node's nf_tables lock. Loading the module takes the kernel's network
+// lock, and a task that holds that lock and waits for the nf_tables lock
+// then stops both for good: the node never turns Ready (docs/e2e.md).
+func checkBrNetfilter() error {
+	_, err := os.Stat("/sys/module/br_netfilter")
+	if errors.Is(err, fs.ErrNotExist) {
+		return errors.New("the host has not loaded the kernel module br_netfilter, which the k3s nodes need. " +
+			"Load it on the host with: sudo modprobe br_netfilter")
+	}
+	return err
 }
 
 var errNoScenario = errors.New("no scenario has that tag")
