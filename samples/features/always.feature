@@ -9,7 +9,8 @@ Feature: What always holds
   or stops: in a scenario that changes or stops the primary, reading takes
   the limit of writing. The alerts are healthy when none
   fires, every alert the scenario says fired or fires did, and no other
-  fired but those it says may fire.
+  fired but those it says may fire. Every image on the nodes is one the
+  manifest names, as it was before the scenario.
 
   Scenario: After every scenario
     Then the cluster is healthy < 600 s
@@ -18,3 +19,4 @@ Feature: What always holds
     And no acknowledged write is lost
     And the alerts are healthy < 180 s
     And the dashboard is healthy < 180 s
+    And every image on the nodes is from the manifest

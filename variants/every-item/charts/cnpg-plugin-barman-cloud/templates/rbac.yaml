@@ -1,6 +1,6 @@
 # RBAC for the barman-cloud plugin in the cnpg-plugin-barman-cloud values chart.
 # Subject: ServiceAccount barman-cloud-plugin-barman-cloud in cnpg-system (chart release "barman-cloud").
-# Rules copied from chart plugin-barman-cloud 0.8.1, the same in 0.9.0, secrets cut to read; compare with the chart's RBAC on upgrades.
+# Rules copied from the plugin-barman-cloud chart, secrets cut to read; compare with the chart's RBAC on upgrades.
 # The plugin watches only the namespaces of WATCH_NAMESPACE in values.yaml, so
 # it needs no right outside them. The chart still renders its leader-election
 # Role in cnpg-system, the plugin's own namespace.

@@ -179,7 +179,7 @@ func stopStore(ctx context.Context) error {
 		return err
 	}
 	return container{
-		name: storeGone, ip: s3IP, image: k3sImage, opts: []string{"--entrypoint", "/bin/sleep"}, args: []string{"86400"},
+		name: storeGone, ip: s3IP, image: manifest.K3s.Image, opts: []string{"--entrypoint", "/bin/sleep"}, args: []string{"86400"},
 	}.run(ctx)
 }
 

@@ -12,7 +12,7 @@ metadata:
     cnpg.io/podPatch: '[{"op":"add","path":"/spec/hostUsers","value":false}]'
 spec:
   instances: {{ $c.instances }}
-  imageName: {{ $c.imageName }}
+  imageName: {{ required "postgresql.imageName is required" .Values.postgresql.imageName }}
   postgresUID: {{ $c.postgresUID }}
   postgresGID: {{ $c.postgresGID }}
   storage:

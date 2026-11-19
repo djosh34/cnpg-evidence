@@ -1,12 +1,15 @@
 name: e2e
 
 # Runs on demand: the scenarios of samples/features, each in its own job
-# with ./e2e.sh, on the settings of samples/ or of the variant given. By
-# default every scenario on amd64; scenarios picks some by their tags, and
-# arm64 adds the same jobs on arm64. Each job uploads the run's files, also
-# when the scenario failed. A Go test of e2e/ checks that SCENARIOS below
-# has every scenario, and that NOT_IN_VARIANTS is notInVariants of
-# e2e/main.go.
+# with ./e2e.sh, on the settings of samples/ or of the variant given, with
+# the versions of the manifest given. By default every scenario on amd64;
+# scenarios picks some by their tags, and arm64 adds the same jobs on arm64.
+# Each job uploads the run's files and its outcome, also when the scenario
+# failed, and stays green: the verdict job at the end compares every
+# result with the variant's gaps.md and decides the run. A Go test of e2e/
+# checks that SCENARIOS below has every scenario, that NOT_IN_VARIANTS is
+# notInVariants of e2e/main.go, and that the default manifest is
+# defaultManifest of e2e/scenario_test.go.
 on:
   workflow_dispatch:
     inputs:
@@ -18,12 +21,16 @@ on:
         description: Scenario tags, comma-separated; empty for every scenario
         type: string
         default: ""
+      manifest:
+        description: A file of versions/ with every version the run uses
+        type: string
+        default: v1.33.yaml
       arm64:
         description: Also run on arm64
         type: boolean
         default: false
 
-run-name: e2e of ${{ inputs.variant || 'the samples' }}${{ inputs.scenarios && format(' ({0})', inputs.scenarios) || '' }}${{ inputs.arm64 && ', with arm64' || '' }}
+run-name: e2e of ${{ inputs.variant || 'the samples' }} with ${{ inputs.manifest }}${{ inputs.scenarios && format(' ({0})', inputs.scenarios) || '' }}${{ inputs.arm64 && ', with arm64' || '' }}
 
 permissions:
   contents: read
@@ -120,14 +127,53 @@ jobs:
         with:
           go-version-file: e2e/go.mod
           cache-dependency-path: e2e/go.sum
+      # A failed scenario leaves the job green; the verdict job decides.
       - name: Scenario
+        id: scenario
+        continue-on-error: true
         env:
           SCENARIO: ${{ matrix.scenario }}
           VARIANT: ${{ inputs.variant }}
-        run: ./e2e.sh "$SCENARIO" "$VARIANT"
+          MANIFEST: ${{ inputs.manifest }}
+        run: ./e2e.sh "$SCENARIO" "$VARIANT" "$MANIFEST"
+      - name: Outcome
+        if: ${{ !cancelled() }}
+        env:
+          OUTCOME: ${{ steps.scenario.outcome }}
+        run: |
+          mkdir -p results
+          echo "$OUTCOME" >results/outcome
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ !cancelled() }}
         with:
           name: ${{ matrix.scenario }}-${{ runner.arch }}
           path: results/
-          if-no-files-found: warn
+          if-no-files-found: error
+
+  # The run's result: whether each picked scenario's result matches the
+  # variant's gaps.md (e2e/cmd/verdict).
+  verdict:
+    name: Verdict
+    needs: [plan, scenario]
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: e2e/go.mod
+          cache-dependency-path: e2e/go.sum
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: artifacts
+      - name: Compare with gaps.md
+        env:
+          VARIANT: ${{ inputs.variant }}
+          SCENARIOS: ${{ needs.plan.outputs.scenarios }}
+          ARCHES: ${{ inputs.arm64 && 'X64,ARM64' || 'X64' }}
+        run: |
+          set -euo pipefail
+          go -C e2e run ./cmd/verdict -variant "$VARIANT" -scenarios "$SCENARIOS" -arches "$ARCHES" \
+            -results ../artifacts | tee -a "$GITHUB_STEP_SUMMARY"

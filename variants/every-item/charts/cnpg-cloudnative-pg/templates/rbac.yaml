@@ -1,6 +1,6 @@
 # RBAC for the CNPG operator in the cnpg-cloudnative-pg values chart.
 # Subject: ServiceAccount cnpg-cloudnative-pg in cnpg-system (chart release "cnpg").
-# Rules copied from chart cloudnative-pg 0.29.1; compare with the chart's RBAC on upgrades.
+# Rules copied from the cloudnative-pg chart; compare with the chart's RBAC on upgrades.
 # Secrets, pods/exec and the rest are granted only in cnpg-system and databases.
 
 # Cluster-scoped objects only: nodes, webhook configurations, cluster image catalogs.

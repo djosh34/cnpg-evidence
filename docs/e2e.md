@@ -1,6 +1,6 @@
 # Scenarios
 
-A scenario is a short Gherkin text in [`samples/features/`](../samples/features) about what happens to the cluster and what must hold after it, such as a lost node, a switchover or a broken store. Each run builds a new three-node k3s cluster from [`samples/`](../samples), or from a [variant](#run-a-variant), plays one scenario on it, then plays [`always.feature`](../samples/features/always.feature).
+A scenario is a short Gherkin text in [`samples/features/`](../samples/features) about what happens to the cluster and what must hold after it, such as a lost node, a switchover or a broken store. Each run builds a new three-node k3s cluster from [`samples/`](../samples), or from a [variant](#run-a-variant), with every version from one [manifest](#the-version-manifest), plays one scenario on it, then plays [`always.feature`](../samples/features/always.feature).
 
 ```gherkin
 @primary-node-loss
@@ -22,24 +22,26 @@ Two scenarios run [`host-check.sh`](host-check.md#in-the-scenarios) on every nod
 ## Run a scenario
 
 ```bash
-./e2e.sh                         # lists the scenarios, exits 2
-./e2e.sh switchover              # runs one on the samples
-./e2e.sh switchover my-variant   # runs one on variants/my-variant
+./e2e.sh                                    # lists the scenarios, exits 2
+./e2e.sh switchover                         # runs one on the samples
+./e2e.sh switchover my-variant              # runs one on variants/my-variant
+./e2e.sh switchover my-variant v1.34.yaml   # with the versions of versions/v1.34.yaml
+./e2e.sh switchover '' v1.34.yaml           # the samples with those versions
 ```
 
 The host needs what the [README](../README.md#run-a-scenario) lists. `./e2e.sh` runs `TestScenario` in [`e2e/scenario_test.go`](../e2e/scenario_test.go) with `go test`, so you can run it directly too:
 
 ```bash
-go -C e2e test -run '^TestScenario$' -count=1 -timeout 90m -v . -scenario switchover -variant my-variant
+go -C e2e test -run '^TestScenario$' -count=1 -timeout 90m -v . -scenario switchover -variant my-variant -manifest v1.33.yaml
 ```
 
-Without `-variant`, or with it empty, the run uses the samples.
+Without `-variant`, or with it empty, the run uses the samples. Without `-manifest`, or with it empty, it uses `versions/v1.33.yaml`.
 
 Without `-scenario` the test skips, so `go test ./...` in `e2e/` starts no container.
 
-The test builds [`e2e/Dockerfile`](../e2e/Dockerfile) for the host's own architecture and keeps it as `cnpg-evidence-e2e:local`, so the next run reuses its layers. It copies `samples/` into the container, or `samples/features/` and the variant's directory, runs it privileged and copies `/results` out to `results/` at the end. testcontainers removes the container and its volumes when the test ends. If the test process is killed, its Ryuk container removes them. A run never writes into `samples/` or `variants/`.
+The test builds [`e2e/Dockerfile`](../e2e/Dockerfile) for the host's own architecture, with kubectl, kubectl-cnpg and k3s's CA rotation script of the manifest, and keeps it as `cnpg-evidence-e2e:local`, so the next run reuses its layers. It copies `samples/` into the container, or `samples/features/` and the variant's directory, and the manifest file to `/manifest.yaml`. It runs the container privileged and copies `/results` out to `results/` at the end. testcontainers removes the container and its volumes when the test ends. If the test process is killed, its Ryuk container removes them. A run never writes into `samples/` or `variants/`.
 
-`./e2e.sh` exits 0 when the scenario passed, 2 without a scenario, and 1 otherwise. The log gives the container's own code: 1 when the scenario failed, 2 when it could not run. One run takes 15 to 40 minutes.
+`./e2e.sh` exits 0 when the scenario passed, 2 without a scenario, and 1 otherwise. The log gives the container's own code: 1 when the scenario failed, 2 when it could not run or could not keep its files. One run takes 15 to 40 minutes.
 
 ## Run a variant
 
@@ -48,9 +50,8 @@ A variant is another set of settings for the same scenarios: a directory `varian
 | Path | What |
 |---|---|
 | `charts/releases.yaml` | The releases the run installs, in order, as in [`samples/charts/releases.yaml`](../samples/charts/releases.yaml). |
-| `charts/<chart>/` | Every chart a release names, the variant's own copy, with its dependencies' charts. |
+| `charts/<chart>/` | Every chart a release names, the variant's own copy. A chart that wraps an upstream chart names it as a dependency without a version; the run takes the version from the manifest. |
 | `values/<release>.yaml` | The run's values of a release, put on top of the values `releases.yaml` names. |
-| `values/new-image.yaml` | The instance image of the rollout scenario. |
 | `desired.yaml` | The cluster's values, which the evidence scripts read. |
 | `k3s/config.yaml`, `k3s/manifests/` | Each node's k3s config, and the manifests k3s applies. |
 | `k3s/patches.yaml` | Changes to objects of k3s's own manifests, such as 3 CoreDNS replicas: each a `kubectl patch --type=merge` the run applies once k3s runs. |
@@ -75,13 +76,13 @@ What the run adds to a variant's settings is only what a run alone knows:
 
 [`variants/first-list`](../variants/first-list) applies the [base and the first list](go-live/README.md) of `docs/go-live/`, and leaves every other setting at the CNPG, chart or k3s default. It keeps four settings of the samples, also named in the [go-live README](go-live/README.md): the samples' image with its uid and gid 999, since the list's uid item needs an image whose `postgres` is not CNPG's uid 26; `storageSize: 50Gi`, since CNPG has no default size; a bootstrap with no `app` database, in place of the import the scenarios cannot do; and `conntrack-max-per-core=0` for kube-proxy, which cannot set `nf_conntrack_max` in a node in docker. As for the samples, the run's first backup stands in for a schedule.
 
-[`variants/every-item`](../variants/every-item) is `first-list` plus every item of [later.md](go-live/later.md): metrics over TLS, no NodePorts on the rw LoadBalancer, the queries in a Secret, the operator's and the plugin's RBAC cut to their namespaces, cert-manager, Traefik and metrics-server on every node, plugin-barman-cloud 0.16.0, and an API audit log. The audit log stays on the node; the state dump shows its newest lines.
+[`variants/every-item`](../variants/every-item) is `first-list` plus every item of [later.md](go-live/later.md): metrics over TLS, no NodePorts on the rw LoadBalancer, the queries in a Secret, the operator's and the plugin's RBAC cut to their namespaces, cert-manager, Traefik and metrics-server on every node, the plugin's `WATCH_NAMESPACE`, and an API audit log. The audit log stays on the node; the state dump shows its newest lines.
 
 ### A variant's gaps
 
 A variant that lacks a setting of the samples fails the scenarios that show what it lacks, and that is the point of running it. Its `gaps.md` lists them: one row per scenario expected to fail, with the line that fails, the gap, and the go-live item that closes it. See [first-list's](../variants/first-list/gaps.md) and [every-item's](../variants/every-item/gaps.md).
 
-A run of the variant is right when its red scenarios are exactly those rows. A red scenario not in the list, and a listed scenario that passes, are both defects. For the first, read its failed line: a gap the variant really has gets its row; any other cause, such as a test bug or a timing, is fixed in the test. A variant's settings never change just to make a run pass. For the second, the row goes only once evidence shows the gap is closed. The list is checked by reading the run.
+A run of the variant is right when its red scenarios are exactly those rows, each failed on the line its row names. A red scenario not in the list, and a listed scenario that passes, are both defects. For the first, read its failed line: a gap the variant really has gets its row; any other cause, such as a test bug or a timing, is fixed in the test. A variant's settings never change just to make a run pass. For the second, the row goes only once evidence shows the gap is closed. In CI the [verdict job](#run-scenarios-in-ci) checks this for the scenarios a run picked; `e2e/cmd/verdict` reads the first `` `quoted` `` text of each row's second column as its failed line.
 
 On GitHub, give the variant as the workflow's input:
 
@@ -90,6 +91,36 @@ gh workflow run e2e.yml --ref <branch> -f variant=my-variant
 ```
 
 The run's name says which settings it used, and its matrix leaves out the four scenarios above.
+
+## The version manifest
+
+Every version of the system under test that a run uses is in one file of [`versions/`](../versions): k3s, its airgap images, the upstream charts, every image they run, the PostgreSQL images, kubectl, kubectl-cnpg and k3s's CA rotation script. The samples and every variant run with `versions/v1.33.yaml` unless a run names another. The containers outside k3s, such as the store and the monitoring, and the images and tools that build the e2e image, keep their own pins in `e2e/`.
+
+| Key | What a run does with it |
+|---|---|
+| `k3s` | The node image by tag and digest; the airgap tarball and its sha256 for amd64 and arm64, which each node imports; `images`, the release's `k3s-images.txt`. |
+| `tools` | The versions and sha256 of kubectl, of the k3s release's Kubernetes version, and kubectl-cnpg, of the operator's version, for amd64 and arm64, and the URL and sha256 of k3s's `rotate-default-ca-certs.sh`. `TestScenario` gives them to `e2e/Dockerfile` as build arguments. |
+| `charts` | The repository and version of each upstream chart. The run writes them into the dependencies of its copy of each wrapper chart. |
+| `postgresql` | `imageName`, the instance image every cluster runs, which the `cnpg-cluster` charts read. `rolloutFrom`, the image the `rollout` scenario starts on before it changes to `imageName`. |
+| `cert-manager`, `cloudnative-pg`, `plugin-barman-cloud`, `agent`, `cluster` | The images of each upstream chart, under the name its wrapper chart gives it as a dependency, in the chart's own values: its default image and tag, pinned by digest. A chart without a digest field gets the digest in its tag. The two collectors run the collector's Kubernetes distribution, `otelcol-k8s`. |
+
+Every release gets the manifest with `--values`, before its own values files, so each chart finds its keys and ignores the others. A manifest loads only when each of these chart image blocks has a `repository` and its digest where its chart reads it: in `tag` for `cloudnative-pg` and `plugin-barman-cloud`, in `digest` for the others. A chart without its block would run its own default image by tag. Any other image block must have a digest too, and no block may have one in both `digest` and `tag`, since its chart reads only one. No upstream chart is copied into `samples/` or `variants/`, and none is changed: their images come only through these values.
+
+Once the cluster is up, and again at the end of `always.feature`, the run lists the images on every node with `crictl images`. An image the manifest pins anywhere, as `<name>@sha256:…` or as a chart's `repository` with a `digest` or a digest in its `tag`, passes by repository and digest. An image of `k3s.images` passes by repository and tag, and only when k3s imported it: k3s labels each image it imports from the airgap tarball with `io.cattle.k3s.pinned`, which `ctr images ls` shows, and never one containerd pulls. As an import after a pull of the same tag would carry that label too, the check also fails when a node's `containerd.log` shows a pull of an image of `k3s.images`, and when k3s rotated that log, which then no longer shows every pull. Any other image fails the run, by name. The check sees what is on the nodes at those two times, not how each image was asked for.
+
+`latest.yaml` may be a symlink to another file of `versions/`: the run copies only the one file it uses.
+
+### Make a manifest
+
+`e2e/cmd/manifest` writes a whole manifest from a k3s release, the version of each upstream chart and the two PostgreSQL images by tag. It needs helm and the network, and looks up everything else: each chart's images at the chart's default tag, the k3s image, its airgap tarballs and image list, the tools, and every digest and sha256.
+
+```bash
+go -C e2e run ./cmd/manifest -k3s <k3s release> -cert-manager <version> -cloudnative-pg <version> \
+  -plugin-barman-cloud <version> -opentelemetry-collector <version> \
+  -postgresql <image>:<tag> -rollout-from <image>:<tag> >versions/<name>.yaml
+```
+
+The first lines of each manifest give the command that made it, so running that command again writes the same file, unless a tag has moved since. To change a version, run the command with the new version rather than editing the file.
 
 ## Raise the inotify limit
 
@@ -107,10 +138,11 @@ Each run writes a new directory `results/<scenario>-<time>/`, time in UTC:
 
 | File | What |
 |---|---|
+| `manifest.yaml` | The manifest the run used. |
 | `timing.md` | One row per line of the scenario and of `always.feature`: its result, how long it took, the time since the event it refers to, and what it measured. It is printed at the end of the log too. |
 | `cucumber.json`, `junit.xml` | The scenario's steps and results. |
 | `always.cucumber.json`, `always.junit.xml` | The same for `always.feature`. |
-| `state.txt` | `docker ps`, the kernel's last messages, the last log lines of every container, the nodes, pods, events and CNPG objects, and the alert history. After a failure it is also printed at the end of the log. |
+| `state.txt` | `docker ps`, the kernel's last messages, the last log lines of every container, the images on each node, the nodes, pods, events and CNPG objects, and the alert history. After a failure it is also printed at the end of the log. |
 | `k3s-1.log` to `k3s-3.log` | Each node's whole log, k3s's and the kubelet's, with docker's timestamps. When a node never turns Ready while the run builds the cluster, its log then has the kernel's stack of each k3s thread that waits in the kernel and the stack of every goroutine of k3s, before k3s starts again. |
 | `disks.md` | Each node's [data filesystem](#each-nodes-data-filesystem): its size, the most it held and when, what it held at the end, and what each volume holds then. Also the runner's free space before the run. |
 | `client.log` | The client's log: one line per read, write, connect and attempt, with the address it used ([format](../e2e/client/main.go)). |
@@ -121,27 +153,30 @@ Start with `timing.md`: the first row with a failure names the line that failed,
 
 ## Run scenarios in CI
 
-On GitHub, [`e2e.yml`](../.github/workflows/e2e.yml) runs every scenario on an amd64 runner, one job each, in parallel. It runs on demand only. It takes three inputs:
+On GitHub, [`e2e.yml`](../.github/workflows/e2e.yml) runs every scenario on an amd64 runner, one job each, in parallel. It runs on demand only. It takes four inputs:
 
 - `variant`: a directory of `variants/`; empty for the samples.
 - `scenarios`: scenario tags, comma-separated; empty for every scenario. A tag that no scenario has, or that a variant run leaves out, stops the run before any job.
+- `manifest`: a file of `versions/`, such as `v1.34.yaml`; `v1.33.yaml` by default.
 - `arm64`: `true` runs every job on an arm64 runner too. Off by default.
 
 ```bash
 gh workflow run e2e.yml --ref <branch>                               # every scenario of the samples on amd64
 gh workflow run e2e.yml --ref <branch> -f variant=my-variant
 gh workflow run e2e.yml --ref <branch> -f scenarios=fence,switchover # two scenarios
+gh workflow run e2e.yml --ref <branch> -f manifest=v1.34.yaml        # other versions
 gh workflow run e2e.yml --ref <branch> -f arm64=true                 # also on arm64
-gh run list --workflow e2e.yml --limit 1                             # the run's id
 gh run download <run id> --name switchover-X64                       # one job's results
 ```
 
-Each job uploads its `results/` as `<scenario>-<arch>`, where the arch is `X64` or `ARM64`, also when the scenario failed.
+`gh workflow run` prints the run's URL, which ends in its id. Keep it: several runs on the same branch and commit look alike in `gh run list`. The run's name gives the variant, the manifest and the scenarios.
 
-In any other CI, run one job per scenario with a matrix variable and this one line, with `$VARIANT` empty for the samples:
+Each job uploads its `results/` as `<scenario>-<arch>`, where the arch is `X64` or `ARM64`, also when the scenario failed. Besides the run's directory it holds `outcome`, the outcome of the job's Scenario step, `success` or `failure`, and `exit-code`, the e2e container's exit code. A job stays green when its scenario fails. The last job, the verdict, decides the run: for each scenario the run picked, it compares the result with the variant's [`gaps.md`](#a-variants-gaps), none for the samples, and prints a table of them in the run's summary. A scenario `gaps.md` lists must fail on the line its row names and on no other, with exit code 1 and every line of `always.feature` passed; every other must pass; a scenario without a result does not match. The run is green only when every one matches.
+
+In any other CI, run one job per scenario with a matrix variable and this one line, with `$VARIANT` empty for the samples and `$MANIFEST` empty for the default:
 
 ```bash
-./e2e.sh "$SCENARIO" "$VARIANT"
+./e2e.sh "$SCENARIO" "$VARIANT" "$MANIFEST"
 ```
 
 The job needs docker that can run privileged containers, Go 1.27 and the inotify limit. Keep `results/` as the job's artifact. An unset or empty `$SCENARIO` exits 2, so the job fails rather than pass without running anything.
@@ -152,7 +187,7 @@ What runs outside k3s in production runs as a container next to the k3s nodes, n
 
 | Inside k3s | Outside k3s, as containers |
 |---|---|
-| k3s: CoreDNS, Traefik, local-path, metrics-server | `dns`: CoreDNS for every name below |
+| k3s: CoreDNS, Traefik, local-path, metrics-server, from k3s's airgap images | `dns`: CoreDNS for every name below |
 | cert-manager, with a ClusterIssuer of the company CA, or an Issuer per Certificate | `acme.example.test`: OpenBao as the company CA, serving ACME |
 | The CNPG operator and the barman-cloud plugin | `s3.example.test`: versitygw as the [S3 store](#the-store), with TLS |
 | The CNPG cluster `pg` | `otel`, `prometheus`, `alertmanager`, `grafana` `.example.test`: the [monitoring](monitoring.md) |
@@ -160,13 +195,13 @@ What runs outside k3s in production runs as a container next to the k3s nodes, n
 
 1. Checks the inotify limit and starts its own dockerd. Checks that the runner's disk has room, then makes each node's [data filesystem](#each-nodes-data-filesystem).
 2. Builds the `client` image, then creates the outside containers, copies their files in with `docker cp`, and starts them. The company CA gets a new root on every run.
-3. Starts three k3s servers with embedded etcd, `k3s-1.example.test` to `k3s-3.example.test`, with [`samples/k3s/`](../samples/k3s) or the variant's `k3s/`. Each node runs [`e2e/node-init.sh`](../e2e/node-init.sh), which restarts k3s when it exits, so the pods outlive k3s as they do under systemd. It keeps k3s's process ID in `/run/k3s.pid`, for a scenario that restarts k3s.
+3. Downloads the manifest's k3s airgap tarball of the runner's architecture and checks its sha256. Starts three k3s servers with embedded etcd, `k3s-1.example.test` to `k3s-3.example.test`, on the manifest's k3s image, with [`samples/k3s/`](../samples/k3s) or the variant's `k3s/`. Each node has the tarball in `/var/lib/rancher/k3s/agent/images/` before k3s starts, so k3s imports its own images from it. Each node runs [`e2e/node-init.sh`](../e2e/node-init.sh), which restarts k3s when it exits, so the pods outlive k3s as they do under systemd. It keeps k3s's process ID in `/run/k3s.pid`, for a scenario that restarts k3s.
 4. Applies the settings' `k3s/patches.yaml`, such as one CoreDNS pod per node, and waits for each patched object and for Traefik.
-5. Makes the Secrets only the run knows, then installs the releases of [`samples/charts/releases.yaml`](../samples/charts/releases.yaml), or of the variant's, in order.
-6. Waits until the cluster is healthy, takes a first backup, and waits until Prometheus has every source's metrics. It then names the instances: the primary, replica 1 and replica 2.
+5. Makes the Secrets only the run knows, then installs the releases of [`samples/charts/releases.yaml`](../samples/charts/releases.yaml), or of the variant's, in order, each with the manifest as its first values file. Before each, it writes the manifest's version and repository of each upstream chart into the dependencies of its copy of the chart, and `helm dependency build` downloads them.
+6. Waits until the cluster is healthy, takes a first backup, and waits until Prometheus has every source's metrics. It then checks that every image on the nodes is one the manifest names, as the [manifest](#the-version-manifest) says, and names the instances: the primary, replica 1 and replica 2.
 7. Runs the scenario. Its first When line starts the client.
 8. After a failed line, [ends the outages](#after-a-failed-line) still in place.
-9. Runs `always.feature`, also after a failed scenario, and writes the results.
+9. Runs `always.feature`, also after a failed scenario, and writes the results. Its last line checks the images on the nodes again.
 10. Removes the nodes, then unmounts their data filesystems and deletes the images.
 
 The client gets its own certificate from the company CA by ACME. For the whole scenario it reads and writes through `pgfallback`, or GORM in a variant run, every 0.25 s, each with a 10 s limit, and connects to each node's rw port alone every 0.25 s. `Given no writes` starts it without writes.
@@ -245,7 +280,7 @@ Events:
 | `the node starts`, `the nodes start` | `docker start` of the killed nodes. "start" |
 | `<role>'s postgres container is killed` | `crictl stop --timeout 0` of PostgreSQL's container, as a crash; the kubelet starts it again. |
 | `<role> is fenced`, `<role> is unfenced` | `kubectl cnpg fencing on` and `off`. "fence", "unfence" |
-| `the instance image is changed` | `helm upgrade` of `pg` with `values/new-image.yaml`. "change" |
+| `the instance image is changed` | `helm upgrade` of `pg` with the manifest's `postgresql.imageName`. "change" |
 | `wal_keep_size is set to <n>MB` | `helm upgrade` of `pg` with that `cluster.walKeepSize`. "change" |
 | `<n> MB of WAL is written on <role>` | Writes rows on the instance until it has written that much WAL. |
 | `<role>'s WAL is switched` | `pg_switch_wal()`. |
@@ -288,7 +323,8 @@ States, checked now, within the line's limit, or for its time:
 | `<role> is not streaming` | Not in the primary's `pg_stat_replication`. |
 | `<role> is idle after a WAL switch` | No WAL since a switch, for 30 s. |
 | `the chart's pg_ident lines are on <role>`, `on every instance` | The pg_ident lines every instance had at the first such line are there. |
-| `every instance is on the new image` | Every postgres container runs the image of `values/new-image.yaml` and is ready. |
+| `every instance is on the new image` | Every postgres container runs the manifest's `postgresql.imageName` and is ready. |
+| `every image on the nodes is from the manifest` | Every image `crictl images` lists on each node is pinned by the manifest, by repository and digest, or is one of its `k3s.images`, by repository and tag, imported by k3s. It names every other image. |
 | `wal_keep_size is <n>MB on every instance` | `show wal_keep_size` gives it. |
 | `<role>'s WAL is archived` | The file it switched away from is archived. |
 | `<role>'s WAL is waiting for the store` | It has WAL files marked `.ready`. |

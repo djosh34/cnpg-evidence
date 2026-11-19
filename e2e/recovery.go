@@ -4,13 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
-
-	"go.yaml.in/yaml/v3"
 )
 
 // The words of the vocabulary about WAL, the store, backups and restores,
@@ -20,9 +16,6 @@ const (
 	// The backup a scenario takes, and the cluster it restores it into.
 	scenarioBackup  = "scenario"
 	restoredCluster = "pg-restore"
-	// The values file, in the settings, of the second instance image
-	// that "the instance image is changed" changes the cluster to.
-	newImageValues = "values/new-image.yaml"
 )
 
 // walNeed is the WAL an instance that was down needs: the instance more WAL
@@ -239,32 +232,17 @@ func idleAfterSwitch(ctx context.Context, _ *scenario, a args) error {
 	}
 }
 
-// changeImage: the cluster's release gets the instance image of
-// values/new-image.yaml. CNPG restarts every instance on it, the primary
-// last, in place.
+// changeImage: the cluster's release gets the manifest's
+// postgresql.imageName, the rollout scenario's second image. CNPG restarts
+// every instance on it, the primary last, in place.
 func changeImage(ctx context.Context, s *scenario, _ args) error {
 	s.primaryOut = true
-	return s.upgradeCluster(ctx, "--values", filepath.Join(settingsDir(), newImageValues))
+	return s.upgradeCluster(ctx, "--set-string", "postgresql.imageName="+manifest.PostgreSQL.ImageName)
 }
 
-// onNewImage: every instance runs the image of values/new-image.yaml and is
-// ready.
+// onNewImage: every instance runs the manifest's postgresql.imageName and
+// is ready.
 func onNewImage(ctx context.Context, _ *scenario, _ args) error {
-	data, err := os.ReadFile(filepath.Join(settingsDir(), newImageValues))
-	if err != nil {
-		return err
-	}
-	var values struct {
-		Cluster struct {
-			ImageName string `yaml:"imageName"`
-		} `yaml:"cluster"`
-	}
-	if err := yaml.Unmarshal(data, &values); err != nil {
-		return fmt.Errorf("%s: %w", newImageValues, err)
-	}
-	if values.Cluster.ImageName == "" {
-		return fmt.Errorf("%s has no cluster.imageName", newImageValues)
-	}
 	pods, err := instances(ctx, clusterName)
 	if err != nil {
 		return err
@@ -278,7 +256,7 @@ func onNewImage(ctx context.Context, _ *scenario, _ args) error {
 		if err != nil {
 			return err
 		}
-		if out != values.Cluster.ImageName+" true" {
+		if out != manifest.PostgreSQL.ImageName+" true" {
 			return fmt.Errorf("the image of %s, and whether it is ready: %s", pod, out)
 		}
 	}

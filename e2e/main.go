@@ -6,8 +6,9 @@
 //
 // The scenario is the tag of one scenario, without the @. The cluster is
 // built from the settings in /samples, or from those in /variants/<variant>
-// when a variant is given. TestScenario of scenario_test.go copies them from
-// the checkout before the container starts; the run never writes into them.
+// when a variant is given, with every version from the manifest
+// /manifest.yaml. TestScenario of scenario_test.go copies them from the
+// checkout before the container starts; the run never writes into them.
 // The run writes its files into a new directory of /results, which
 // TestScenario copies out at the end. The exit code is 0 when the scenario
 // passed, 1 when it failed, and 2 when it could not run.
@@ -19,6 +20,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/djosh34/cnpg-evidence/e2e/versions"
 )
 
 const (
@@ -27,6 +30,8 @@ const (
 	samplesDir = "/samples"
 	// variants/ of the checkout, with the one variant a run applies.
 	variantsDir = "/variants"
+	// The manifest of versions/ the run uses.
+	manifestFile = "/manifest.yaml"
 	// Where a run keeps its own files: the copied charts, the kubeconfig and
 	// helm's caches.
 	workDir = "/work"
@@ -35,6 +40,10 @@ const (
 // variant is the variant the run applies, or "" for the samples. main sets
 // it once, before the run starts.
 var variant string
+
+// manifest holds the versions of the run. run reads it once, before the
+// cluster is built.
+var manifest *versions.Manifest
 
 // settingsDir is the directory of the settings the run applies: /samples, or
 // the variant's directory of /variants.
@@ -82,6 +91,15 @@ func run(scenario string) int {
 	results, err := newResults(scenario)
 	if err != nil {
 		say(os.Stderr, "e2e: results: %v\n", err)
+		return 2
+	}
+	if manifest, err = versions.Load(manifestFile); err != nil {
+		say(os.Stderr, "e2e: the manifest: %v\n", err)
+		return 2
+	}
+	// The results say which versions ran.
+	if err := copyFile(manifestFile, results.path("manifest.yaml")); err != nil {
+		say(os.Stderr, "e2e: %v\n", err)
 		return 2
 	}
 	if err := os.MkdirAll(workDir, 0o700); err != nil {
@@ -133,3 +151,11 @@ func checkInotify() error {
 }
 
 var errNoScenario = errors.New("no scenario has that tag")
+
+func copyFile(from, to string) error {
+	data, err := os.ReadFile(from)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(to, data, 0o644)
+}

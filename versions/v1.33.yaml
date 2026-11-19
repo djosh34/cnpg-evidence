@@ -1,0 +1,125 @@
+# Every version of the system under test that an e2e run uses, and a values
+# file of every release (docs/e2e.md). Written by:
+#   go -C e2e run ./cmd/manifest -k3s v1.33.13+k3s2 -cert-manager v1.21.3 -cloudnative-pg 0.29.1 -plugin-barman-cloud 0.9.0 -opentelemetry-collector 0.177.0 -postgresql registry.access.redhat.com/hi/postgresql:18.7-1794620596 -rollout-from registry.access.redhat.com/hi/postgresql:18.6-1793756462
+
+# The k3s release of the nodes. Before k3s starts, each node gets the airgap
+# tarball of its architecture, and k3s imports its images: those of the
+# release's k3s-images.txt.
+k3s:
+  version: "v1.33.13+k3s2"
+  image: rancher/k3s:v1.33.13-k3s2@sha256:ada5ff2e138120efe877f76d514dedda65b304122112b982eab532732c028c89
+  airgap:
+    amd64:
+      url: https://github.com/k3s-io/k3s/releases/download/v1.33.13%2Bk3s2/k3s-airgap-images-amd64.tar.zst
+      sha256: 7e59087b6a72e00db45a3bcb4f144114b13eb72dc8947c2b7908a0e1482b42b3
+    arm64:
+      url: https://github.com/k3s-io/k3s/releases/download/v1.33.13%2Bk3s2/k3s-airgap-images-arm64.tar.zst
+      sha256: 47bc05eb1b21f0f76530a927ec5e1c5c2dec457f0190bf423e7be1d49348b5e6
+  images:
+    - docker.io/rancher/klipper-helm:v0.13.3-build20260727
+    - docker.io/rancher/klipper-lb:v0.4.17
+    - docker.io/rancher/local-path-provisioner:v0.0.36
+    - docker.io/rancher/mirrored-coredns-coredns:1.14.6
+    - docker.io/rancher/mirrored-library-busybox:1.37.0
+    - docker.io/rancher/mirrored-library-traefik:3.7.8
+    - docker.io/rancher/mirrored-metrics-server:v0.9.0
+    - docker.io/rancher/mirrored-pause:3.10.2
+
+# The tools of the e2e image that have to match the cluster: kubectl of the
+# k3s release's Kubernetes version, kubectl-cnpg of the operator's version,
+# and k3s's script that makes new CAs, of the k3s release.
+tools:
+  kubectl:
+    version: "v1.33.13"
+    sha256:
+      amd64: 316d712726d857c20744c57cb36aa47cfc79bc0af7e82cebf3780244b654c073
+      arm64: 9fe8aadd5aab9421978c7ac95de6fad304a3c4c0ce9dbf4127579779e0699080
+  kubectl-cnpg:
+    version: "1.30.1"
+    sha256:
+      amd64: 784bc46f176b24a150d5de84d0691f10ff613b59456af86b1a4868e1bacb9953
+      arm64: 6ffad753bbbf5d353576967233063f2ba0adb843a4e7ef5ff4cb7384b2716d5e
+  rotate-default-ca-certs.sh:
+    url: https://raw.githubusercontent.com/k3s-io/k3s/v1.33.13%2Bk3s2/contrib/util/rotate-default-ca-certs.sh
+    sha256: 62ef79f530cd285b3cfce884746abe6c3712ad70d0ef66e81f76aaa93c30551b
+
+# The upstream charts. The run writes each into the dependency of its
+# wrapper chart, and helm dependency build pulls it.
+charts:
+  cert-manager:
+    repository: https://charts.jetstack.io
+    version: "v1.21.3"
+  cloudnative-pg:
+    repository: https://cloudnative-pg.github.io/charts
+    version: "0.29.1"
+  opentelemetry-collector:
+    repository: https://open-telemetry.github.io/opentelemetry-helm-charts
+    version: "0.177.0"
+  plugin-barman-cloud:
+    repository: https://cloudnative-pg.github.io/charts
+    version: "0.9.0"
+
+# The instance images, which the cnpg-cluster charts read. The rollout
+# scenario starts on rolloutFrom and rolls out to imageName.
+postgresql:
+  imageName: registry.access.redhat.com/hi/postgresql:18.7-1794620596@sha256:950367fbec54066d458a7d2eef5f84b6d6810505a26971fc19fd64f2ae11adca
+  rolloutFrom: registry.access.redhat.com/hi/postgresql:18.6-1793756462@sha256:a448becd1c47f4c525c7d7123fb8fc735c718d1e75f113ca7a933afadddd2e83
+
+# The images of the upstream charts, each under its wrapper chart's
+# dependency name and in the chart's own values: the chart's default image
+# and tag, pinned by digest.
+cert-manager:
+  image:
+    repository: quay.io/jetstack/cert-manager-controller
+    tag: "v1.21.3"
+    digest: sha256:9f4f96a33c7774cef24466fcd85031997531a03a8d117f151126baa8d1290dcc
+  webhook:
+    image:
+      repository: quay.io/jetstack/cert-manager-webhook
+      tag: "v1.21.3"
+      digest: sha256:055ac8e9de6a0ba6763794838fe38944acc650f68ebe1b01dd8be079e580f458
+  cainjector:
+    image:
+      repository: quay.io/jetstack/cert-manager-cainjector
+      tag: "v1.21.3"
+      digest: sha256:083d0e906f8eb44e255fe4ff817ae54e49f9ed82e22f1011bb4e9e4f4b8a641f
+  acmesolver:
+    image:
+      repository: quay.io/jetstack/cert-manager-acmesolver
+      tag: "v1.21.3"
+      digest: sha256:c8c1225bb2fe8ab37a330b77f0d8c2ee6a41210fcb54fc07ca606ab9a022b8b7
+  startupapicheck:
+    image:
+      repository: quay.io/jetstack/cert-manager-startupapicheck
+      tag: "v1.21.3"
+      digest: sha256:1c519d4afca1413d1e4ccd78bdc756184418ab55a34569a3b3de39d32f9974e1
+
+# The chart has no digest field, so the digest is in the tag.
+cloudnative-pg:
+  image:
+    repository: ghcr.io/cloudnative-pg/cloudnative-pg
+    tag: "1.30.1@sha256:923c267ec29636db3bee20f993d0ec4973fa22998e1adad37da79e4d32b5bc07"
+
+plugin-barman-cloud:
+  image:
+    registry: ghcr.io
+    repository: cloudnative-pg/plugin-barman-cloud
+    tag: "v0.16.0@sha256:6404a416718bd7aad943c67a25a7bb20d0558b43edfeab0bf167f013ca435882"
+  sidecarImage:
+    registry: ghcr.io
+    repository: cloudnative-pg/plugin-barman-cloud-sidecar
+    tag: "v0.16.0@sha256:c669259e20ed1e11fad821f735c396c19d929985aa05b9544b13ecc8b5a386d0"
+
+# The two collectors of the cnpg-opentelemetry-collector chart, both the
+# opentelemetry-collector chart. It has no default image; the collectors run
+# the collector's Kubernetes distribution at the chart's appVersion.
+agent:
+  image:
+    repository: otel/opentelemetry-collector-k8s
+    tag: "0.163.2"
+    digest: sha256:cce4142919331aa26dd9e2900b0583dac12c44d2f87c270d3a2110912d4785a9
+cluster:
+  image:
+    repository: otel/opentelemetry-collector-k8s
+    tag: "0.163.2"
+    digest: sha256:cce4142919331aa26dd9e2900b0583dac12c44d2f87c270d3a2110912d4785a9

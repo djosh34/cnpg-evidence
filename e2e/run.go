@@ -19,14 +19,17 @@ import (
 var scenarioTag = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
 // runScenario runs the one scenario tagged @<name> of the feature files, on
-// its own new cluster, then always.feature. It returns the exit code.
+// its own new cluster, then always.feature. It returns the exit code: 2
+// also when the scenario ran but the run could not keep its files, so such
+// a fault never looks like a failed line.
 func runScenario(name string, res *results) int {
 	format := "progress,cucumber:" + res.path("cucumber.json") + ",junit:" + res.path("junit.xml")
 	ran := 0
+	var s *scenario
 	suite := godog.TestSuite{
 		Name: "e2e",
 		ScenarioInitializer: func(sc *godog.ScenarioContext) {
-			s := &scenario{
+			s = &scenario{
 				results: res, writes: true,
 				marks: map[string]time.Time{}, limits: map[string]int{}, alerts: map[string]bool{},
 				needs: map[string]walNeed{}, switched: map[string]string{}, restarts: map[string]int{},
@@ -35,7 +38,7 @@ func runScenario(name string, res *results) int {
 			sc.Before(func(ctx context.Context, sn *godog.Scenario) (context.Context, error) {
 				ran++
 				s.ctx = ctx
-				return ctx, s.setUp(sn)
+				return ctx, s.setUp(sn, name)
 			})
 			sc.After(func(ctx context.Context, sn *godog.Scenario, err error) (context.Context, error) {
 				return ctx, s.tearDown(sn, err)
@@ -56,6 +59,9 @@ func runScenario(name string, res *results) int {
 	case ran > 1:
 		say(os.Stderr, "e2e: %d scenarios have the tag @%s; a run runs one\n", ran, name)
 		return 2
+	case s.fault != nil:
+		say(os.Stderr, "e2e: the run could not keep its files: %v\n", s.fault)
+		return 2
 	case status != 0:
 		logf("FAILED: %s", name)
 		return 1
@@ -64,11 +70,24 @@ func runScenario(name string, res *results) int {
 	return 0
 }
 
-// setUp builds the scenario's cluster and names the instances.
-func (s *scenario) setUp(sn *godog.Scenario) error {
+// The scenario whose cluster starts on the manifest's postgresql.rolloutFrom
+// and rolls out to its postgresql.imageName. Every other cluster starts on
+// postgresql.imageName.
+const rolloutScenario = "rollout"
+
+// setUp builds the scenario's cluster, checks the images on the nodes and
+// names the instances.
+func (s *scenario) setUp(sn *godog.Scenario, name string) error {
 	logf("scenario %q: a new cluster from %s", sn.Name, settingsDir())
+	firstImage := manifest.PostgreSQL.ImageName
+	if name == rolloutScenario {
+		firstImage = manifest.PostgreSQL.RolloutFrom
+	}
 	var err error
-	if s.w, err = newWorld(s.ctx); err != nil {
+	if s.w, err = newWorld(s.ctx, firstImage); err != nil {
+		return err
+	}
+	if err := nodeImagesPinned(s.ctx); err != nil {
 		return err
 	}
 	if s.roles, err = roles(s.ctx); err != nil {
@@ -82,7 +101,8 @@ func (s *scenario) setUp(sn *godog.Scenario) error {
 // tearDown runs always.feature after the scenario, passed or failed, once
 // its cluster was built; after a failed line, it first ends the outages
 // still in place. It keeps the client's log, the cluster's state and the
-// nodes' logs, prints the timing table and, on a failure, the state.
+// nodes' logs, prints the timing table and, on a failure, the state. An
+// error in keeping them is also in s.fault.
 func (s *scenario) tearDown(sn *godog.Scenario, err error) error {
 	if s.w != nil {
 		if err != nil {
@@ -91,10 +111,11 @@ func (s *scenario) tearDown(sn *godog.Scenario, err error) error {
 		logf("always.feature")
 		err = errors.Join(err, s.runAlways())
 	}
+	var fault error
 	if s.clientRan {
-		err = errors.Join(err, s.stopClient(s.ctx))
+		fault = s.stopClient(s.ctx)
 		log, logErr := rawClientLog(s.ctx)
-		err = errors.Join(err, logErr, s.results.write("client.log", log))
+		fault = errors.Join(fault, logErr, s.results.write("client.log", log))
 	}
 	table := s.table(sn.Name)
 	say(os.Stdout, "\n%s\n", table)
@@ -102,10 +123,11 @@ func (s *scenario) tearDown(sn *godog.Scenario, err error) error {
 	if s.w != nil {
 		state += "\n" + s.w.mon.history(s.ctx, s.w.built)
 	}
-	if err != nil {
+	if err != nil || fault != nil {
 		say(os.Stdout, "\n%s", state)
 	}
-	return errors.Join(err, s.results.write("timing.md", table), s.results.write("state.txt", state), nodeLogs(s.ctx, s.results))
+	s.fault = errors.Join(fault, s.results.write("timing.md", table), s.results.write("state.txt", state), nodeLogs(s.ctx, s.results))
+	return errors.Join(err, s.fault)
 }
 
 // nodeLogs writes each node's whole log, k3s's and the kubelet's, to
@@ -158,6 +180,11 @@ var stateCommands = [][]string{
 	{"docker", "logs", "--tail", "30", "k3s-3"},
 	// The newest API audit events, when the settings have an audit log.
 	{"docker", "exec", "k3s-1", "tail", "-n", "5", "/var/lib/rancher/k3s/server/logs/audit.log"},
+	// The images on each node, also when always.feature stopped before it
+	// checked them.
+	{"docker", "exec", "k3s-1", "crictl", "images", "--digests"},
+	{"docker", "exec", "k3s-2", "crictl", "images", "--digests"},
+	{"docker", "exec", "k3s-3", "crictl", "images", "--digests"},
 	{"kubectl", "get", "nodes", "-o", "wide"},
 	{"kubectl", "get", "pods", "-A", "-o", "wide"},
 	{"kubectl", "get", "clusters,backups,certificates,certificaterequests,orders,challenges", "-A"},

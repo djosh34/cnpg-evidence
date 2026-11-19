@@ -1,0 +1,104 @@
+# Every version of the system under test that an e2e run uses, and a values
+# file of every release (docs/e2e.md). Written by:
+#   {{ .Command }}
+
+# The k3s release of the nodes. Before k3s starts, each node gets the airgap
+# tarball of its architecture, and k3s imports its images: those of the
+# release's k3s-images.txt.
+k3s:
+  version: {{ q .K3s.Version }}
+  image: {{ .K3s.Image }}
+  airgap:
+{{- range $arch, $a := .K3s.Airgap }}
+    {{ $arch }}:
+      url: {{ $a.URL }}
+      sha256: {{ $a.SHA256 }}
+{{- end }}
+  images:
+{{- range .K3s.Images }}
+    - {{ . }}
+{{- end }}
+
+# The tools of the e2e image that have to match the cluster: kubectl of the
+# k3s release's Kubernetes version, kubectl-cnpg of the operator's version,
+# and k3s's script that makes new CAs, of the k3s release.
+tools:
+  kubectl:
+    version: {{ q .Tools.Kubectl.Version }}
+    sha256:
+{{- range $arch, $sum := .Tools.Kubectl.SHA256 }}
+      {{ $arch }}: {{ $sum }}
+{{- end }}
+  kubectl-cnpg:
+    version: {{ q .Tools.KubectlCNPG.Version }}
+    sha256:
+{{- range $arch, $sum := .Tools.KubectlCNPG.SHA256 }}
+      {{ $arch }}: {{ $sum }}
+{{- end }}
+  rotate-default-ca-certs.sh:
+    url: {{ .Tools.RotateCA.URL }}
+    sha256: {{ .Tools.RotateCA.SHA256 }}
+
+# The upstream charts. The run writes each into the dependency of its
+# wrapper chart, and helm dependency build pulls it.
+charts:
+{{- range $name, $c := .Charts }}
+  {{ $name }}:
+    repository: {{ $c.Repository }}
+    version: {{ q $c.Version }}
+{{- end }}
+
+# The instance images, which the cnpg-cluster charts read. The rollout
+# scenario starts on rolloutFrom and rolls out to imageName.
+postgresql:
+  imageName: {{ .PostgreSQL.ImageName }}
+  rolloutFrom: {{ .PostgreSQL.RolloutFrom }}
+
+# The images of the upstream charts, each under its wrapper chart's
+# dependency name and in the chart's own values: the chart's default image
+# and tag, pinned by digest.
+cert-manager:
+{{- range .CertManager }}
+{{- if .Key }}
+  {{ .Key }}:
+    image:
+      repository: {{ .Repository }}
+      tag: {{ q .Tag }}
+      digest: {{ .Digest }}
+{{- else }}
+  image:
+    repository: {{ .Repository }}
+    tag: {{ q .Tag }}
+    digest: {{ .Digest }}
+{{- end }}
+{{- end }}
+
+# The chart has no digest field, so the digest is in the tag.
+cloudnative-pg:
+  image:
+    repository: {{ .CNPG.Repository }}
+    tag: {{ q (print .CNPG.Tag "@" .CNPG.Digest) }}
+
+plugin-barman-cloud:
+  image:
+    registry: {{ .Barman.Registry }}
+    repository: {{ .Barman.Repository }}
+    tag: {{ q (print .Barman.Tag "@" .Barman.Digest) }}
+  sidecarImage:
+    registry: {{ .Sidecar.Registry }}
+    repository: {{ .Sidecar.Repository }}
+    tag: {{ q (print .Sidecar.Tag "@" .Sidecar.Digest) }}
+
+# The two collectors of the cnpg-opentelemetry-collector chart, both the
+# opentelemetry-collector chart. It has no default image; the collectors run
+# the collector's Kubernetes distribution at the chart's appVersion.
+agent:
+  image:
+    repository: {{ .Collector.Repository }}
+    tag: {{ q .Collector.Tag }}
+    digest: {{ .Collector.Digest }}
+cluster:
+  image:
+    repository: {{ .Collector.Repository }}
+    tag: {{ q .Collector.Tag }}
+    digest: {{ .Collector.Digest }}
