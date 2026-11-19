@@ -16,10 +16,11 @@ import (
 const dockerLog = "/var/log/dockerd.log"
 
 // dockerHubMirror is Google's public cache of Docker Hub. The inner dockerd
-// pulls the outside containers' images through it, and from Docker Hub when
-// it does not have one. Docker Hub limits pulls without an account by
-// address, and many runs at once on CI runners reach that limit. Each image
-// is pinned by digest, so the mirror cannot change what runs.
+// tries it first for every Docker Hub image it pulls, the outside
+// containers' and the k3s nodes', and Docker Hub when it does not have one.
+// Docker Hub limits pulls without an account by address, and many runs at
+// once on CI runners reach that limit. Each of these images is pinned by
+// digest, so the mirror cannot change what runs.
 const dockerHubMirror = "https://mirror.gcr.io"
 
 // startDocker starts the inner dockerd through the dind script of the
