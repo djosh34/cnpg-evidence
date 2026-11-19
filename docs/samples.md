@@ -45,7 +45,7 @@ wrapper() {
 ```
 
 1. Create the namespaces `cnpg-system` and `databases`.
-2. Install cert-manager as the release `cert-manager` in `cert-manager`, then create the issuer named in `charts/cnpg-cluster/values.yaml`. It must allow `client auth`, which CNPG needs on the replication certificate.
+2. Install cert-manager as the release `cert-manager` in `cert-manager`, then create the issuer named in `samples/charts/cnpg-cluster/values.yaml`. It must allow `client auth`, which CNPG needs on the replication certificate.
    ```bash
    wrapper cnpg-cert-manager
    helm upgrade --install cert-manager build/cnpg-cert-manager -n cert-manager --create-namespace --wait -f "$manifest"
@@ -259,9 +259,7 @@ In this order:
 
 ## RBAC on chart upgrades
 
-The values charts replace the upstream RBAC. A rule they lack shows as `forbidden` in the operator or plugin log. Before an upgrade, render the upstream RBAC of the version in the manifest and of the new one, and compare:
-
-The charts are those of `versions/latest.yaml`, OCI charts of the mirror. For a manifest with the upstream charts, use `cloudnative-pg --repo https://cloudnative-pg.github.io/charts` and `plugin-barman-cloud --repo https://cloudnative-pg.github.io/charts` instead.
+The values charts replace the RBAC of the charts they wrap. A rule they lack shows as `forbidden` in the operator or plugin log. Before an upgrade, render the charts' RBAC of the version in the manifest and of the new one. The commands below take the charts of `versions/latest.yaml`, OCI charts of the mirror; for a manifest with the upstream charts, use `cloudnative-pg --repo https://cloudnative-pg.github.io/charts` and `plugin-barman-cloud --repo https://cloudnative-pg.github.io/charts` instead. Then compare:
 
 ```bash
 cnpg=$(yq '.charts.cloudnative-pg | .repository + "/" + .name' versions/latest.yaml)
