@@ -108,7 +108,7 @@ Every release gets the manifest with `--values`, before its own values files, so
 
 Once the cluster is up, and again at the end of `always.feature`, the run lists the images on every node with `crictl images`. An image the manifest pins anywhere, as `<name>@sha256:…` or as a chart's `repository` with a `digest` or a digest in its `tag`, passes by repository and digest. An image of `k3s.images` passes by repository and tag, and only when k3s imported it: k3s labels each image it imports from the airgap tarball with `io.cattle.k3s.pinned`, which `ctr images ls` shows, and never one containerd pulls. As an import after a pull of the same tag would carry that label too, the check also fails when a node's `containerd.log` shows a pull of an image of `k3s.images`, and when k3s rotated that log, which then no longer shows every pull. Any other image fails the run, by name. The check sees what is on the nodes at those two times, not how each image was asked for.
 
-`latest.yaml` may be a symlink to another file of `versions/`: the run copies only the one file it uses.
+The run copies only the one manifest file it uses, so it follows the symlink `latest.yaml`.
 
 ### Make a manifest
 
