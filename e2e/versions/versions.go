@@ -119,6 +119,11 @@ func Parse(data []byte) (*Manifest, error) {
 	for _, path := range w.unpinned {
 		errs = append(errs, fmt.Errorf("the image %s has no digest", path))
 	}
+	for _, path := range chartImages {
+		if !slices.Contains(w.pinnedPaths, path) && !slices.Contains(w.unpinned, path) {
+			errs = append(errs, fmt.Errorf("no image %s with a digest", path))
+		}
+	}
 	return &m, errors.Join(errs...)
 }
 
@@ -159,11 +164,22 @@ func (m *Manifest) check() error {
 // either digest or a tag that ends in @sha256:….
 func (m *Manifest) Pinned() []string { return m.pinned }
 
+// chartImages are the image blocks of the upstream charts, by their path
+// in the manifest. Each must be there with a digest: a chart without one
+// runs its own default image, by tag only.
+var chartImages = []string{
+	"cert-manager.image", "cert-manager.webhook.image", "cert-manager.cainjector.image",
+	"cert-manager.acmesolver.image", "cert-manager.startupapicheck.image",
+	"cloudnative-pg.image",
+	"plugin-barman-cloud.image", "plugin-barman-cloud.sidecarImage",
+	"agent.image", "cluster.image",
+}
+
 // images walks the manifest for its images: those it pins, and the paths
-// of the image blocks that have no digest. charts holds chart repositories,
-// not images.
+// of the image blocks with a digest and of those without one. charts holds
+// chart repositories, not images.
 type images struct {
-	pinned, unpinned []string
+	pinned, pinnedPaths, unpinned []string
 }
 
 func (w *images) visit(node any, path string) {
@@ -190,6 +206,7 @@ func (w *images) visit(node any, path string) {
 			}
 			if strings.HasPrefix(digest, "sha256:") {
 				w.pinned = append(w.pinned, Repository(repo)+"@"+digest)
+				w.pinnedPaths = append(w.pinnedPaths, path)
 			} else {
 				w.unpinned = append(w.unpinned, path)
 			}

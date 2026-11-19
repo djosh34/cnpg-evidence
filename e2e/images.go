@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -17,8 +18,10 @@ import (
 // (k3s.images), matched by repository and tag and imported by k3s. k3s
 // labels each image it imports from the airgap tarball with
 // io.cattle.k3s.pinned, and never one containerd pulls, so an airgap image
-// that k3s did not import fails too. An error names each other image. It
-// runs once the cluster is up, before the scenario, and as the last line of
+// that k3s did not import fails too. An error names each other image. As an
+// import after a pull of the same tag would still carry that label, it also
+// fails when containerd's log shows a pull of an airgap image. It runs once
+// the cluster is up, before the scenario, and as the last line of
 // always.feature.
 func nodeImagesPinned(ctx context.Context) error {
 	var errs []error
@@ -43,8 +46,37 @@ func nodeImagesPinned(ctx context.Context) error {
 		for _, image := range notInManifest(images, strings.Fields(refs), manifest) {
 			errs = append(errs, fmt.Errorf("%s has an image the manifest does not name: %s", node, image))
 		}
+		// grep exits 1 when no line matches: no image was pulled.
+		pulls, err := command(ctx, "docker", "exec", node, "sh", "-c",
+			"grep -h 'stop pulling image ' "+containerdLog+" || [ $? = 1 ]")
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		for _, ref := range pulledAirgap(pulls, manifest) {
+			errs = append(errs, fmt.Errorf("%s pulled the airgap image %s from a registry", node, ref))
+		}
 	}
 	return errors.Join(errs...)
+}
+
+// containerd's log on a node. containerd writes "stop pulling image <ref>:"
+// for every pull it makes, also of the sandbox image.
+const containerdLog = "/var/lib/rancher/k3s/agent/containerd/containerd.log"
+
+var pullLine = regexp.MustCompile(`stop pulling image (\S+): `)
+
+// pulledAirgap are the airgap images of the manifest that a log of
+// containerd shows a pull of.
+func pulledAirgap(log string, m *versions.Manifest) []string {
+	var pulled []string
+	for _, line := range pullLine.FindAllStringSubmatch(log, -1) {
+		ref := versions.Reference(line[1])
+		if slices.ContainsFunc(m.K3s.Images, func(i string) bool { return versions.Reference(i) == ref }) && !slices.Contains(pulled, ref) {
+			pulled = append(pulled, ref)
+		}
+	}
+	return pulled
 }
 
 // nodeImage is an image of crictl images -o json.

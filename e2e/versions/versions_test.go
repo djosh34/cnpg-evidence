@@ -98,6 +98,13 @@ func TestCheck(t *testing.T) {
 	if _, err := Parse([]byte(noDigest)); err == nil || !strings.Contains(err.Error(), "the image agent.image has no digest") {
 		t.Errorf("a chart image without a digest: %v", err)
 	}
+	// The ACME solver's image left out: the chart would run its own.
+	solver := strings.Index(string(data), "  acmesolver:\n")
+	end := strings.Index(string(data)[solver:], "  startupapicheck:")
+	if _, err := Parse([]byte(string(data[:solver]) + string(data[solver+end:]))); err == nil ||
+		!strings.Contains(err.Error(), "no image cert-manager.acmesolver.image with a digest") {
+		t.Errorf("a chart image left out: %v", err)
+	}
 	for version, exact := range map[string]bool{"0.29.1": true, "v1.21.3": true, "1.0.0-rc.1": true, "0.29.x": false, "~0.29.1": false, ">=1.0.0": false, "0.29": false} {
 		if exactVersion.MatchString(version) != exact {
 			t.Errorf("%s: exact %v", version, !exact)

@@ -39,6 +39,23 @@ func TestNotInManifest(t *testing.T) {
 	}
 }
 
+func TestPulledAirgap(t *testing.T) {
+	m, err := versions.Load("../versions/" + defaultManifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := `time="2026-11-19T10:14:31Z" level=info msg="stop pulling image docker.io/library/busybox:1.37: active requests=0, bytes read=1922381"
+time="2026-11-19T10:14:54Z" level=info msg="stop pulling image ` + m.K3s.Images[0] + `: active requests=0, bytes read=15177"
+time="2026-11-19T10:14:55Z" level=info msg="stop pulling image ` + m.K3s.Images[0] + `: active requests=0, bytes read=15177"
+`
+	if got := pulledAirgap(log, m); !slices.Equal(got, []string{m.K3s.Images[0]}) {
+		t.Errorf("got %q", got)
+	}
+	if got := pulledAirgap("", m); got != nil {
+		t.Errorf("no pull: got %q", got)
+	}
+}
+
 func TestSetDependencies(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "Chart.yaml")
 	write := func(content string) {
