@@ -122,7 +122,7 @@ cloudnative-pg:
 
 # The sidecar is the -dev build: barman-cloud-restore extracts a backup with
 # the tar program, which only that build has. The plain build restores
-# nothing.
+# nothing. The -dev build also has a shell and a package manager.
 plugin-barman-cloud:
   image:
     registry: ghcr.io
