@@ -132,6 +132,16 @@ bash e2e/inotify.sh
 
 The script raises the limit to 1024 with `sudo sysctl` until the next reboot. To keep it, put `fs.inotify.max_user_instances = 1024` into a file in `/etc/sysctl.d/`. GitHub's Ubuntu runners already have enough.
 
+## Load br_netfilter
+
+The k3s nodes need the kernel module `br_netfilter`, and k3s cannot load it from inside a container. A run stops with a message when the host's kernel has neither loaded it nor built it in. It never loads it itself.
+
+```bash
+sudo modprobe br_netfilter
+```
+
+Without it, the kernel loads the module itself for the first iptables rule with a `physdev` match, while that rule holds the node's nf_tables lock. In one run that load never ended: the `iptables-restore` waited in the kernel and kube-proxy behind it, the kubelet waited for the kernel's network lock, and the node never turned Ready. A likely explanation, which that run's kernel log does not prove: loading the module takes the kernel's network lock, while another task held that lock and waited for the nf_tables lock. The module stays loaded until the next reboot; to keep it, put `br_netfilter` into a file in `/etc/modules-load.d/`. [`e2e.yml`](../.github/workflows/e2e.yml) loads it in each job.
+
 ## Read the results
 
 Each run writes a new directory `results/<scenario>-<time>/`, time in UTC:
@@ -179,7 +189,7 @@ In any other CI, run one job per scenario with a matrix variable and this one li
 ./e2e.sh "$SCENARIO" "$VARIANT" "$MANIFEST"
 ```
 
-The job needs docker that can run privileged containers, Go 1.27 and the inotify limit. Keep `results/` as the job's artifact. An unset or empty `$SCENARIO` exits 2, so the job fails rather than pass without running anything.
+The job needs docker that can run privileged containers, Go 1.27, the inotify limit and [br_netfilter](#load-br_netfilter). Keep `results/` as the job's artifact. An unset or empty `$SCENARIO` exits 2, so the job fails rather than pass without running anything.
 
 ## What a run does
 
@@ -193,8 +203,8 @@ What runs outside k3s in production runs as a container next to the k3s nodes, n
 | The CNPG cluster `pg` | `otel`, `prometheus`, `alertmanager`, `grafana` `.example.test`: the [monitoring](monitoring.md) |
 | The OTel collectors | `orders-app.test`: the client, reading and writing through [pgfallback](https://github.com/djosh34/pgfallback), or GORM in a variant run |
 
-1. Checks the inotify limit and starts its own dockerd. Checks that the runner's disk has room, then makes each node's [data filesystem](#each-nodes-data-filesystem).
-2. Builds the `client` image, then creates the outside containers, copies their files in with `docker cp`, and starts them. The company CA gets a new root on every run.
+1. Checks the inotify limit and br_netfilter, and starts its own dockerd. Checks that the runner's disk has room, then makes each node's [data filesystem](#each-nodes-data-filesystem).
+2. Builds the `client` image, then creates the outside containers, copies their files in with `docker cp`, and starts them. The inner dockerd tries `mirror.gcr.io`, Google's cache of Docker Hub, first for every Docker Hub image it pulls, the outside containers' and the k3s nodes'. Docker Hub limits pulls without an account, and many CI runs at once reach that limit. Each of these images is pinned by digest, and dockerd pulls from Docker Hub when the cache does not have one. The company CA gets a new root on every run.
 3. Downloads the manifest's k3s airgap tarball of the runner's architecture and checks its sha256. Starts three k3s servers with embedded etcd, `k3s-1.example.test` to `k3s-3.example.test`, on the manifest's k3s image, with [`samples/k3s/`](../samples/k3s) or the variant's `k3s/`. Each node has the tarball in `/var/lib/rancher/k3s/agent/images/` before k3s starts, so k3s imports its own images from it. Each node runs [`e2e/node-init.sh`](../e2e/node-init.sh), which restarts k3s when it exits, so the pods outlive k3s as they do under systemd. It keeps k3s's process ID in `/run/k3s.pid`, for a scenario that restarts k3s.
 4. Applies the settings' `k3s/patches.yaml`, such as one CoreDNS pod per node, and waits for each patched object and for Traefik.
 5. Makes the Secrets only the run knows, then installs the releases of [`samples/charts/releases.yaml`](../samples/charts/releases.yaml), or of the variant's, in order, each with the manifest as its first values file. Before each, it writes the manifest's version and repository of each upstream chart into the dependencies of its copy of the chart, and `helm dependency build` downloads them.

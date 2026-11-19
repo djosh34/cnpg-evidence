@@ -15,6 +15,14 @@ import (
 // volume /var/lib/docker, which goes with the container.
 const dockerLog = "/var/log/dockerd.log"
 
+// dockerHubMirror is Google's public cache of Docker Hub. The inner dockerd
+// tries it first for every Docker Hub image it pulls, the outside
+// containers' and the k3s nodes', and Docker Hub when it does not have one.
+// Docker Hub limits pulls without an account by address, and many runs at
+// once on CI runners reach that limit. Each of these images is pinned by
+// digest, so the mirror cannot change what runs.
+const dockerHubMirror = "https://mirror.gcr.io"
+
 // startDocker starts the inner dockerd through the dind script of the
 // docker image, which first sets up the cgroups for nested containers. It
 // returns once docker answers.
@@ -24,7 +32,7 @@ func startDocker(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	dockerd := exec.Command("dind", "dockerd", "--host=unix:///var/run/docker.sock")
+	dockerd := exec.Command("dind", "dockerd", "--host=unix:///var/run/docker.sock", "--registry-mirror="+dockerHubMirror)
 	dockerd.Stdout, dockerd.Stderr = log, log
 	if err := dockerd.Start(); err != nil {
 		return fmt.Errorf("starting dockerd: %w", err)

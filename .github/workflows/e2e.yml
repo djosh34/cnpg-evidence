@@ -127,6 +127,10 @@ jobs:
         with:
           go-version-file: e2e/go.mod
           cache-dependency-path: e2e/go.sum
+      # The k3s nodes need br_netfilter and cannot load it themselves
+      # (docs/e2e.md).
+      - name: Load br_netfilter
+        run: sudo modprobe br_netfilter
       # A failed scenario leaves the job green; the verdict job decides.
       - name: Scenario
         id: scenario

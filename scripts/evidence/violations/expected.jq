@@ -112,12 +112,13 @@ def controllers:
       "generic-garbage-collector", "job-controller", "legacy-service-account-token-cleaner",
       "local-path-provisioner-service-account", "namespace-controller", "persistent-volume-binder",
       "replicaset-controller", "replication-controller", "resourcequota-controller", "root-ca-cert-publisher",
-      "statefulset-controller"]
+      "statefulset-controller", "storage-version-migrator-controller"]
      | map("system:serviceaccount:kube-system:\(.)"));
 
-# k3s installs Traefik with a Helm job per HelmChart, whose ServiceAccount
-# k3s binds to cluster-admin.
-def helm_install_jobs: ["helm-traefik", "helm-traefik-crd"] | map("system:serviceaccount:kube-system:\(.)");
+# k3s installs Traefik, and from v1.37 the Gateway API CRDs, with a Helm job
+# per HelmChart, whose ServiceAccount k3s binds to cluster-admin.
+def helm_install_jobs:
+  ["helm-traefik", "helm-traefik-crd", "helm-gateway-api-crd"] | map("system:serviceaccount:kube-system:\(.)");
 
 # The subjects that may hold the rights of the kubernetes section:
 # system:masters, the operator, the plugin, the instances, the API server,

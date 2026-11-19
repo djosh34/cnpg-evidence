@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -77,6 +78,10 @@ func main() {
 
 func run(scenario string) int {
 	if err := checkInotify(); err != nil {
+		say(os.Stderr, "e2e: %v\n", err)
+		return 2
+	}
+	if err := checkBrNetfilter(); err != nil {
 		say(os.Stderr, "e2e: %v\n", err)
 		return 2
 	}
@@ -148,6 +153,18 @@ func checkInotify() error {
 			limit, inotifyNeeded, inotifyNeeded)
 	}
 	return nil
+}
+
+// checkBrNetfilter checks that the host's kernel has br_netfilter, built in
+// or loaded, so that no iptables rule of a node makes the kernel load it
+// while the cluster starts (docs/e2e.md).
+func checkBrNetfilter() error {
+	_, err := os.Stat("/proc/sys/net/bridge/bridge-nf-call-iptables")
+	if errors.Is(err, fs.ErrNotExist) {
+		return errors.New("the host's kernel has not loaded br_netfilter, which the k3s nodes need. " +
+			"Load it on the host with: sudo modprobe br_netfilter")
+	}
+	return err
 }
 
 var errNoScenario = errors.New("no scenario has that tag")

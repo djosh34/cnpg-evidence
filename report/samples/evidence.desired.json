@@ -153,8 +153,10 @@
         "system:serviceaccount:kube-system:resourcequota-controller",
         "system:serviceaccount:kube-system:root-ca-cert-publisher",
         "system:serviceaccount:kube-system:statefulset-controller",
+        "system:serviceaccount:kube-system:storage-version-migrator-controller",
         "system:serviceaccount:kube-system:helm-traefik",
         "system:serviceaccount:kube-system:helm-traefik-crd",
+        "system:serviceaccount:kube-system:helm-gateway-api-crd",
         "system:serviceaccount:kube-system:traefik"
       ]
     },
@@ -179,8 +181,10 @@
         "system:serviceaccount:kube-system:resourcequota-controller",
         "system:serviceaccount:kube-system:root-ca-cert-publisher",
         "system:serviceaccount:kube-system:statefulset-controller",
+        "system:serviceaccount:kube-system:storage-version-migrator-controller",
         "system:serviceaccount:kube-system:helm-traefik",
-        "system:serviceaccount:kube-system:helm-traefik-crd"
+        "system:serviceaccount:kube-system:helm-traefik-crd",
+        "system:serviceaccount:kube-system:helm-gateway-api-crd"
       ]
     },
     "write_routes": {
@@ -209,8 +213,10 @@
         "system:serviceaccount:kube-system:resourcequota-controller",
         "system:serviceaccount:kube-system:root-ca-cert-publisher",
         "system:serviceaccount:kube-system:statefulset-controller",
+        "system:serviceaccount:kube-system:storage-version-migrator-controller",
         "system:serviceaccount:kube-system:helm-traefik",
-        "system:serviceaccount:kube-system:helm-traefik-crd"
+        "system:serviceaccount:kube-system:helm-traefik-crd",
+        "system:serviceaccount:kube-system:helm-gateway-api-crd"
       ]
     },
     "run_pods": {
@@ -239,8 +245,10 @@
         "system:serviceaccount:kube-system:resourcequota-controller",
         "system:serviceaccount:kube-system:root-ca-cert-publisher",
         "system:serviceaccount:kube-system:statefulset-controller",
+        "system:serviceaccount:kube-system:storage-version-migrator-controller",
         "system:serviceaccount:kube-system:helm-traefik",
-        "system:serviceaccount:kube-system:helm-traefik-crd"
+        "system:serviceaccount:kube-system:helm-traefik-crd",
+        "system:serviceaccount:kube-system:helm-gateway-api-crd"
       ]
     },
     "become_cluster_admin": {
@@ -269,8 +277,10 @@
         "system:serviceaccount:kube-system:resourcequota-controller",
         "system:serviceaccount:kube-system:root-ca-cert-publisher",
         "system:serviceaccount:kube-system:statefulset-controller",
+        "system:serviceaccount:kube-system:storage-version-migrator-controller",
         "system:serviceaccount:kube-system:helm-traefik",
-        "system:serviceaccount:kube-system:helm-traefik-crd"
+        "system:serviceaccount:kube-system:helm-traefik-crd",
+        "system:serviceaccount:kube-system:helm-gateway-api-crd"
       ]
     },
     "operator_reads_secrets_in": {

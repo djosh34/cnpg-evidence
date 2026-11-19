@@ -8,7 +8,7 @@ Sample charts for a CloudNativePG (CNPG) cluster that accepts only certificate l
 ./e2e.sh switchover
 ```
 
-- **Needs** docker, bash and Go 1.27, 20 GiB free on docker's disk, and the host's `fs.inotify.max_user_instances` at 1024 or more: `bash e2e/inotify.sh` raises it.
+- **Needs** docker, bash and Go 1.27, 20 GiB free on docker's disk, the host's `fs.inotify.max_user_instances` at 1024 or more, and the kernel module `br_netfilter` on the host. `bash e2e/inotify.sh` raises the limit, and `sudo modprobe br_netfilter` loads the module.
 - **Results** go to `results/<scenario>-<time>/`. Exit 0 means the scenario passed.
 
 `./e2e.sh` with no argument lists the scenarios. A run builds a three-node k3s cluster from `samples/`, or from a variant of `variants/`, inside one container and takes 15 to 40 minutes; [docs/e2e.md](docs/e2e.md) says what it does and how to read its results.
@@ -18,6 +18,7 @@ Sample charts for a CloudNativePG (CNPG) cluster that accepts only certificate l
 | Action | Doc |
 |---|---|
 | Raise the host's inotify limit | [e2e.md](docs/e2e.md#raise-the-inotify-limit) |
+| Load br_netfilter on the host | [e2e.md](docs/e2e.md#load-br_netfilter) |
 | List the scenarios and run one | [e2e.md](docs/e2e.md#run-a-scenario) |
 | Run scenarios in CI | [e2e.md](docs/e2e.md#run-scenarios-in-ci) |
 | Read a run's results | [e2e.md](docs/e2e.md#read-the-results) |
