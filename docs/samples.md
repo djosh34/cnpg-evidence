@@ -98,9 +98,9 @@ Compared with each project's defaults and examples. The rule numbers are those o
 | `--read-timeout=5`, `AWS_MAX_ATTEMPTS=1` | 60 s, 5 attempts | Failover, switchover and a starting replica wait for the store. A store that never answers then costs about 5 s per call instead of about 5 minutes. 2 s failed against a working store 1 s away. |
 | Credentials for this one bucket, bucket encrypted at rest | not said | The bucket holds a full copy of every database. |
 | **Cluster** | | |
-| Hummingbird `postgresql`, pinned by digest | CNPG's image | Minimal, pulls without a login. The scripts run only `psql` in it. |
-| `postgresUID`, `postgresGID` 999 | 26 | The ids the image names `postgres`; with 26, CNPG's pg_ident line names `postgres_fedora`. |
-| `hostUsers: false` through `cnpg.io/podPatch` | host's uids | A host user with uid 999 is nobody in the pod. Rule 5. |
+| A hardened PostgreSQL image, pinned by digest: the mirror's `postgres` in `v1.37-hi.yaml`, Hummingbird `postgresql` in the older manifests | CNPG's image | Minimal, pulls without a login. The scripts run only `psql` in it. |
+| `postgresUID`, `postgresGID` 999, or the manifest's `postgresql.postgresUID` and `postgresGID` | 26 | The ids the image names `postgres`: 999 in the image of `v1.33.yaml` to `v1.37.yaml`, 70 in the mirror's `postgres` of `v1.37-hi.yaml`. With ids the image doesn't name, CNPG's pg_ident line names another user. |
+| `hostUsers: false` through `cnpg.io/podPatch` | host's uids | A host user with the uid of `postgres` is nobody in the pod. Rule 5. |
 | `storageSize: 50Gi`, `walSegmentSize: 1`, `walKeepSize: 30GB`, no replication slots | 1Gi, 16 MB, 512MB, slots | See [WAL and the object store](#wal-and-the-object-store). |
 | Required anti-affinity between instances | preferred | A commit's two copies never share a node, and each node's read port has one instance. |
 | `synchronous: {method: any, number: 1, dataDurability: required}`, `synchronous_commit: remote_apply`, `failoverQuorum: true` | asynchronous | See [Writes, reads and failover](#writes-reads-and-failover). |
@@ -258,14 +258,17 @@ In this order:
 
 The values charts replace the upstream RBAC. A rule they lack shows as `forbidden` in the operator or plugin log. Before an upgrade, render the upstream RBAC of the version in the manifest and of the new one, and compare:
 
+The charts are those of `versions/latest.yaml`, OCI charts of the mirror. For a manifest with the upstream charts, use `cloudnative-pg --repo https://cloudnative-pg.github.io/charts` and `plugin-barman-cloud --repo https://cloudnative-pg.github.io/charts` instead.
+
 ```bash
-repo=https://cloudnative-pg.github.io/charts
+cnpg=$(yq '.charts.cloudnative-pg | .repository + "/" + .name' versions/latest.yaml)
+barman=$(yq '.charts.plugin-barman-cloud | .repository + "/" + .name' versions/latest.yaml)
 cnpg_rbac() {  # <chart version>
-  helm template cnpg cloudnative-pg --repo "$repo" --version "$1" -n cnpg-system \
+  helm template cnpg "$cnpg" --version "$1" -n cnpg-system \
     --set config.clusterWide=false --show-only templates/rbac.yaml
 }
 barman_rbac() {  # <chart version>
-  helm template barman-cloud plugin-barman-cloud --repo "$repo" --version "$1" -n cnpg-system \
+  helm template barman-cloud "$barman" --version "$1" -n cnpg-system \
     --show-only templates/rbac.yaml --show-only templates/additional-rbac/leader_election.yaml
 }
 cnpg_rbac "$(yq '.charts.cloudnative-pg.version' versions/latest.yaml)" > cnpg-rbac.yaml
