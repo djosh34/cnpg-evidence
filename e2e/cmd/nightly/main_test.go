@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -76,7 +77,7 @@ func TestChoose(t *testing.T) {
 // apply sets every image of the mirror, the charts and kubectl-cnpg, and
 // leaves rolloutFrom and k3s as they are.
 func TestApply(t *testing.T) {
-	data, err := os.ReadFile("../../../versions/v1.37-hi.yaml")
+	data, err := os.ReadFile("../../../versions/latest.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,5 +142,61 @@ func TestApply(t *testing.T) {
 	delete(picks, "cloudnative-pg")
 	if err := apply(doc.Content[0], picks, sums); err == nil || !strings.Contains(err.Error(), "cloudnative-pg") {
 		t.Errorf("an image on no line: %v", err)
+	}
+}
+
+// setK3s replaces k3s, kubectl and the rotation script of an older pin
+// with those of the newest release, and leaves the rest as it is.
+func TestSetK3s(t *testing.T) {
+	data, err := os.ReadFile("../../../versions/latest.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
+	k3s := versions.K3s{
+		Version: "v1.99.1+k3s2",
+		Image:   "rancher/k3s:v1.99.1-k3s2@sha256:" + strings.Repeat("a", 64),
+		Airgap: map[string]versions.Download{
+			"amd64": {URL: "https://example.com/amd64.tar.zst", SHA256: strings.Repeat("b", 64)},
+			"arm64": {URL: "https://example.com/arm64.tar.zst", SHA256: strings.Repeat("c", 64)},
+		},
+		Images: []string{"docker.io/rancher/mirrored-pause:9.9"},
+	}
+	kubectl := versions.Tool{Version: "v1.99.1", SHA256: map[string]string{"amd64": strings.Repeat("d", 64), "arm64": strings.Repeat("e", 64)}}
+	rotate := versions.Script{URL: "https://example.com/rotate-default-ca-certs.sh", SHA256: strings.Repeat("f", 64)}
+	if err := setK3s(doc.Content[0], k3s, kubectl, rotate); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := yaml.NewEncoder(&out).Encode(&doc); err != nil {
+		t.Fatal(err)
+	}
+	m, err := versions.Parse(out.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	old, err := versions.Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(m.K3s, k3s) {
+		t.Errorf("k3s: %+v", m.K3s)
+	}
+	if !reflect.DeepEqual(m.Tools.Kubectl, kubectl) || m.Tools.RotateCA != rotate {
+		t.Errorf("tools: %+v", m.Tools)
+	}
+	if !reflect.DeepEqual(m.Tools.KubectlCNPG, old.Tools.KubectlCNPG) || !reflect.DeepEqual(m.Charts, old.Charts) || m.PostgreSQL != old.PostgreSQL {
+		t.Error("kubectl-cnpg, the charts or postgresql changed")
+	}
+	if !strings.Contains(out.String(), "# The k3s release of the nodes.") {
+		t.Error("the comment on k3s is gone")
+	}
+
+	// A manifest without tools is an error.
+	if err := setK3s(&yaml.Node{Kind: yaml.MappingNode}, k3s, kubectl, rotate); err == nil || !strings.Contains(err.Error(), "tools.kubectl") {
+		t.Errorf("no tools: %v", err)
 	}
 }

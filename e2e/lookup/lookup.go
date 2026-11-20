@@ -1,6 +1,7 @@
 // Package lookup finds what the commands of e2e/cmd need on the network:
 // files, the digests and tags of images, the appVersion of an OCI chart,
-// and the sha256 of kubectl-cnpg. It reads every registry anonymously.
+// the sha256 of kubectl-cnpg, and a k3s release with the tools that match
+// it. It reads every registry anonymously.
 package lookup
 
 import (
