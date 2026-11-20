@@ -1,8 +1,10 @@
 name: e2e
 
-# Runs on demand: the scenarios of samples/features, each in its own job
-# with ./e2e.sh, on the settings of samples/ or of the variant given, with
-# the versions of the manifest given. By default every scenario on amd64;
+# Runs on demand, or from nightly.yml: the scenarios of samples/features,
+# each in its own job with ./e2e.sh, on the settings of samples/ or of the
+# variant given, with the versions of the manifest given. nightly.yml also
+# gives an artifact of its run with the manifest, which each job puts into
+# versions/ first. By default every scenario on amd64;
 # scenarios picks some by their tags, and arm64 adds the same jobs on arm64.
 # Each job uploads the run's files and its outcome, also when the scenario
 # failed, and stays green: the verdict job at the end compares every
@@ -29,6 +31,24 @@ on:
         description: Also run on arm64
         type: boolean
         default: false
+  workflow_call:
+    inputs:
+      variant:
+        type: string
+        default: ""
+      scenarios:
+        type: string
+        default: ""
+      manifest:
+        type: string
+        default: latest.yaml
+      arm64:
+        type: boolean
+        default: false
+      manifest-artifact:
+        description: An artifact of the calling run with the manifest file, put into versions/
+        type: string
+        default: ""
 
 run-name: e2e of ${{ inputs.variant || 'the samples' }} with ${{ inputs.manifest }}${{ inputs.scenarios && format(' ({0})', inputs.scenarios) || '' }}${{ inputs.arm64 && ', with arm64' || '' }}
 
@@ -131,6 +151,11 @@ jobs:
       # (docs/e2e.md).
       - name: Load br_netfilter
         run: sudo modprobe br_netfilter
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: ${{ inputs.manifest-artifact != '' }}
+        with:
+          name: ${{ inputs.manifest-artifact }}
+          path: versions
       # A failed scenario leaves the job green; the verdict job decides.
       - name: Scenario
         id: scenario
@@ -155,7 +180,8 @@ jobs:
           if-no-files-found: error
 
   # The run's result: whether each picked scenario's result matches the
-  # variant's gaps.md (e2e/cmd/verdict).
+  # variant's gaps.md (e2e/cmd/verdict). The artifact verdict holds each
+  # result, the verdict and the images the runs saw on the nodes, as YAML.
   verdict:
     name: Verdict
     needs: [plan, scenario]
@@ -180,4 +206,10 @@ jobs:
         run: |
           set -euo pipefail
           go -C e2e run ./cmd/verdict -variant "$VARIANT" -scenarios "$SCENARIOS" -arches "$ARCHES" \
-            -results ../artifacts | tee -a "$GITHUB_STEP_SUMMARY"
+            -results ../artifacts -record ../verdict.yaml | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: verdict
+          path: verdict.yaml
+          if-no-files-found: error
