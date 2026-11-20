@@ -14,27 +14,22 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"cmp"
 	"context"
 	"crypto/sha256"
 	_ "embed"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
-	"regexp"
 	"strconv"
 	"strings"
 	"text/template"
 	"time"
 
+	"github.com/djosh34/cnpg-evidence/e2e/lookup"
 	"github.com/djosh34/cnpg-evidence/e2e/versions"
 	"go.yaml.in/yaml/v3"
 )
@@ -176,7 +171,7 @@ func generate(ctx context.Context, in inputs) ([]byte, error) {
 			return nil, fmt.Errorf("the cert-manager chart has no repository or name in %s", strings.Join(path, "."))
 		}
 		img := image{Repository: repo, Tag: cmp.Or(str(cm, append(path, "tag")...), appVersions["cert-manager"])}
-		if img.Digest, err = digest(ctx, repo+":"+img.Tag); err != nil {
+		if img.Digest, err = lookup.Digest(ctx, repo+":"+img.Tag); err != nil {
 			return nil, err
 		}
 		m.CertManager = append(m.CertManager, certManagerImage{key, img})
@@ -200,7 +195,7 @@ func generate(ctx context.Context, in inputs) ([]byte, error) {
 		if img.Repository == "" || img.Tag == "" {
 			return nil, fmt.Errorf("no repository or tag for %q", ref)
 		}
-		if img.Digest, err = digest(ctx, ref); err != nil {
+		if img.Digest, err = lookup.Digest(ctx, ref); err != nil {
 			return nil, err
 		}
 	}
@@ -282,17 +277,17 @@ func k3s(ctx context.Context, release string) (versions.K3s, error) {
 	}
 	for _, arch := range versions.Architectures {
 		file := "k3s-airgap-images-" + arch + ".tar.zst"
-		sums, err := get(ctx, base+"sha256sum-"+arch+".txt")
+		sums, err := lookup.Get(ctx, base+"sha256sum-"+arch+".txt")
 		if err != nil {
 			return k, err
 		}
-		sum, err := sumOf(sums, file)
+		sum, err := lookup.SumOf(sums, file)
 		if err != nil {
 			return k, fmt.Errorf("sha256sum-%s.txt of k3s %s: %w", arch, release, err)
 		}
 		k.Airgap[arch] = versions.Download{URL: base + file, SHA256: sum}
 	}
-	list, err := get(ctx, base+"k3s-images.txt")
+	list, err := lookup.Get(ctx, base+"k3s-images.txt")
 	if err != nil {
 		return k, err
 	}
@@ -306,25 +301,21 @@ func tools(ctx context.Context, k3sRelease, cnpgVersion string) (versions.Tools,
 	kube, _, _ := strings.Cut(k3sRelease, "+")
 	t := versions.Tools{
 		Kubectl:     versions.Tool{Version: kube, SHA256: map[string]string{}},
-		KubectlCNPG: versions.Tool{Version: cnpgVersion, SHA256: map[string]string{}},
+		KubectlCNPG: versions.Tool{Version: cnpgVersion},
 	}
-	cnpgSums, err := get(ctx, fmt.Sprintf("https://github.com/cloudnative-pg/cloudnative-pg/releases/download/v%s/cnpg-%s-checksums.txt", cnpgVersion, cnpgVersion))
-	if err != nil {
+	var err error
+	if t.KubectlCNPG.SHA256, err = lookup.KubectlCNPG(ctx, cnpgVersion); err != nil {
 		return t, err
 	}
 	for _, arch := range versions.Architectures {
-		sum, err := get(ctx, "https://dl.k8s.io/release/"+kube+"/bin/linux/"+arch+"/kubectl.sha256")
+		sum, err := lookup.Get(ctx, "https://dl.k8s.io/release/"+kube+"/bin/linux/"+arch+"/kubectl.sha256")
 		if err != nil {
 			return t, err
 		}
 		t.Kubectl.SHA256[arch] = strings.TrimSpace(string(sum))
-		cnpgArch := map[string]string{"amd64": "x86_64", "arm64": "arm64"}[arch]
-		if t.KubectlCNPG.SHA256[arch], err = sumOf(cnpgSums, "kubectl-cnpg_"+cnpgVersion+"_linux_"+cnpgArch+".tar.gz"); err != nil {
-			return t, fmt.Errorf("the checksums of kubectl-cnpg %s: %w", cnpgVersion, err)
-		}
 	}
 	t.RotateCA.URL = "https://raw.githubusercontent.com/k3s-io/k3s/" + strings.ReplaceAll(k3sRelease, "+", "%2B") + "/contrib/util/rotate-default-ca-certs.sh"
-	script, err := get(ctx, t.RotateCA.URL)
+	script, err := lookup.Get(ctx, t.RotateCA.URL)
 	if err != nil {
 		return t, err
 	}
@@ -332,147 +323,11 @@ func tools(ctx context.Context, k3sRelease, cnpgVersion string) (versions.Tools,
 	return t, nil
 }
 
-// sumOf is the sha256 of file in a sha256sum list.
-func sumOf(sums []byte, file string) (string, error) {
-	lines := bufio.NewScanner(bytes.NewReader(sums))
-	for lines.Scan() {
-		f := strings.Fields(lines.Text())
-		if len(f) == 2 && strings.TrimPrefix(f[1], "*") == file {
-			return f[0], nil
-		}
-	}
-	if err := lines.Err(); err != nil {
-		return "", err
-	}
-	return "", fmt.Errorf("no sha256 of %s", file)
-}
-
 // pinned is an image reference by tag with its digest added.
 func pinned(ctx context.Context, ref string) (string, error) {
 	if strings.Contains(ref, "@") {
 		return "", fmt.Errorf("%s: give the image by tag; the digest is looked up", ref)
 	}
-	d, err := digest(ctx, ref)
+	d, err := lookup.Digest(ctx, ref)
 	return ref + "@" + d, err
-}
-
-var client = &http.Client{Timeout: 5 * time.Minute}
-
-func get(ctx context.Context, address string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	body, err := io.ReadAll(resp.Body)
-	if err := errors.Join(err, resp.Body.Close()); err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GET %s: %s", address, resp.Status)
-	}
-	return body, nil
-}
-
-// The kinds of manifest a registry may answer with: an index, or a single
-// manifest when the image has no index.
-var manifestKinds = strings.Join([]string{
-	"application/vnd.oci.image.index.v1+json",
-	"application/vnd.docker.distribution.manifest.list.v2+json",
-	"application/vnd.oci.image.manifest.v1+json",
-	"application/vnd.docker.distribution.manifest.v2+json",
-}, ", ")
-
-var sha256Digest = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
-
-// digest is the digest that a pull of the image by tag resolves to, the
-// digest of its index, and which containerd lists in repoDigests. It asks
-// the registry, with an anonymous token when the registry wants one.
-func digest(ctx context.Context, ref string) (string, error) {
-	repo := versions.Repository(ref)
-	tag := strings.TrimPrefix(versions.Reference(ref), repo+":")
-	if tag == repo {
-		return "", fmt.Errorf("%s has no tag", ref)
-	}
-	host, path, _ := strings.Cut(repo, "/")
-	if host == "docker.io" {
-		host = "registry-1.docker.io"
-	}
-	address := "https://" + host + "/v2/" + path + "/manifests/" + tag
-	token := ""
-	for range 2 {
-		req, err := http.NewRequestWithContext(ctx, http.MethodHead, address, nil)
-		if err != nil {
-			return "", err
-		}
-		req.Header.Set("Accept", manifestKinds)
-		if token != "" {
-			req.Header.Set("Authorization", "Bearer "+token)
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			return "", err
-		}
-		if err := resp.Body.Close(); err != nil {
-			return "", err
-		}
-		switch {
-		case resp.StatusCode == http.StatusUnauthorized && token == "":
-			if token, err = anonymousToken(ctx, resp.Header.Get("WWW-Authenticate"), path); err != nil {
-				return "", fmt.Errorf("%s: %w", ref, err)
-			}
-			continue
-		case resp.StatusCode != http.StatusOK:
-			return "", fmt.Errorf("HEAD %s: %s", address, resp.Status)
-		}
-		d := resp.Header.Get("Docker-Content-Digest")
-		if !sha256Digest.MatchString(d) {
-			return "", fmt.Errorf("%s: the registry gave the digest %q", ref, d)
-		}
-		return d, nil
-	}
-	return "", fmt.Errorf("%s: the registry refused the token", ref)
-}
-
-var challengeParam = regexp.MustCompile(`(\w+)="([^"]*)"`)
-
-// anonymousToken gets a pull token as a WWW-Authenticate Bearer challenge
-// says.
-func anonymousToken(ctx context.Context, challenge, path string) (string, error) {
-	if !strings.HasPrefix(challenge, "Bearer ") {
-		return "", fmt.Errorf("no Bearer challenge: %q", challenge)
-	}
-	params := map[string]string{"scope": "repository:" + path + ":pull"}
-	for _, p := range challengeParam.FindAllStringSubmatch(challenge, -1) {
-		params[p[1]] = p[2]
-	}
-	realm := params["realm"]
-	if realm == "" {
-		return "", fmt.Errorf("no realm in %q", challenge)
-	}
-	q := url.Values{"scope": {params["scope"]}}
-	if s := params["service"]; s != "" {
-		q.Set("service", s)
-	}
-	body, err := get(ctx, realm+"?"+q.Encode())
-	if err != nil {
-		return "", err
-	}
-	var answer struct {
-		Token       string `json:"token"`
-		AccessToken string `json:"access_token"`
-	}
-	if err := json.Unmarshal(body, &answer); err != nil {
-		return "", fmt.Errorf("the token from %s: %w", realm, err)
-	}
-	if answer.Token != "" {
-		return answer.Token, nil
-	}
-	if answer.AccessToken != "" {
-		return answer.AccessToken, nil
-	}
-	return "", fmt.Errorf("no token from %s", realm)
 }
