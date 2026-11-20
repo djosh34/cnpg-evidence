@@ -87,11 +87,10 @@ func fail(code int, why string) {
 // pick is the version a line takes: the image tag, the digest of each
 // image at that tag, and the version of its chart.
 type pick struct {
-	tag      string
-	version  string            // the tag without its suffix, as appVersion gives it
-	digests  map[string]string // by image
-	chartKey string            // under charts, "" for none
-	chart    string            // the chart's version
+	tag     string
+	version string            // the tag without its suffix, as appVersion gives it
+	digests map[string]string // by image
+	chart   string            // the chart's version
 }
 
 func generate(ctx context.Context, from string) ([]byte, error) {
@@ -240,7 +239,7 @@ func choose(l line, tags map[string][]string, apps map[string]string) (pick, err
 		return pick{}, fmt.Errorf("the mirror has no version on the line %s of %s", l.tag, what)
 	}
 	v := slices.MaxFunc(common, compareVersions)
-	return pick{tag: v + suffix, version: v, chartKey: l.chart, chart: charts[v]}, nil
+	return pick{tag: v + suffix, version: v, chart: charts[v]}, nil
 }
 
 // compareVersions compares two versions by each dotted number, so 0.10.0
@@ -305,15 +304,17 @@ func apply(root *yaml.Node, picks map[string]pick, cnpgSums map[string]string) e
 		seen["postgres"] = true
 	}
 	for _, image := range slices.Sorted(maps.Keys(picks)) {
-		p := picks[image]
 		if !seen[image] {
 			errs = append(errs, fmt.Errorf("the manifest has no image %s%s", mirror, image))
 		}
-		if p.chartKey == "" {
+	}
+	for _, l := range lines {
+		p := picks[l.images[0]]
+		if l.chart == "" {
 			continue
 		}
-		if version := lookupKey(root, "charts", p.chartKey, "version"); version == nil {
-			errs = append(errs, fmt.Errorf("no charts.%s.version", p.chartKey))
+		if version := lookupKey(root, "charts", l.chart, "version"); version == nil {
+			errs = append(errs, fmt.Errorf("no charts.%s.version", l.chart))
 		} else {
 			setString(version, p.chart)
 		}

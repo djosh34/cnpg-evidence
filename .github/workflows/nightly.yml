@@ -55,8 +55,8 @@ jobs:
           yq --version
           # Each $(...) is assigned on its own line, so a failed command
           # stops the run.
-          last=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,createdAt \
-            --jq '[.[] | select(.tagName | startswith("nightly-"))] | sort_by(.createdAt) | last | .tagName // ""')
+          last=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft,publishedAt \
+            --jq '[.[] | select((.tagName | startswith("nightly-")) and (.isDraft | not))] | sort_by(.publishedAt) | last | .tagName // ""')
           test=true
           if [[ $EVENT == schedule && -z $last ]]; then
             echo "No nightly release yet: the first comes from a run started by hand." | tee -a "$GITHUB_STEP_SUMMARY"

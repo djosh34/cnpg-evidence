@@ -41,7 +41,7 @@ func TestChoose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.tag != "1.30.2" || p.version != "1.30.2" || p.chart != "0.29.3" || p.chartKey != "chart" {
+	if p.tag != "1.30.2" || p.version != "1.30.2" || p.chart != "0.29.3" {
 		t.Errorf("got %+v, want 1.30.2 with chart 0.29.3", p)
 	}
 
@@ -86,7 +86,7 @@ func TestApply(t *testing.T) {
 	digest := "sha256:" + strings.Repeat("a", 64)
 	picks := map[string]pick{}
 	for _, l := range lines {
-		p := pick{tag: "9.9.9", version: "9.9.9", digests: map[string]string{}, chartKey: l.chart, chart: "8.8.8"}
+		p := pick{tag: "9.9.9", version: "9.9.9", digests: map[string]string{}, chart: "8.8.8"}
 		for _, image := range l.images {
 			p.digests[image] = digest
 			picks[image] = p
