@@ -9,7 +9,7 @@ postgresql:
 
 cluster:
   # The uid and gid the image names postgres: 999 in the image of
-  # v1.33.yaml to v1.37.yaml, 70 in that of v1.37-hi.yaml, whose
+  # v1.33.yaml to v1.37.yaml, 70 in that of latest.yaml, whose
   # postgresql.postgresUID and postgresGID the e2e run sets. CNPG writes
   # the name of its uid into pg_ident, so with another uid the compliance
   # query and evidence.sh find wrong pg_ident lines. Set them when the

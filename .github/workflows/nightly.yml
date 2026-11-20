@@ -1,8 +1,8 @@
 name: nightly
 
 # Each night, after the mirror's update at 00:15 UTC, and on demand: makes
-# the manifest of the mirror's newest images from versions/v1.37-hi.yaml
-# (e2e/cmd/nightly), runs every scenario of first-list on amd64 on it
+# the manifest of the mirror's newest images and the newest k3s release
+# from versions/latest.yaml (e2e/cmd/nightly), runs every scenario of first-list on amd64 on it
 # (e2e.yml), and publishes the manifest with each result, the verdict and
 # the images found on the nodes as nightly.yaml of a release
 # nightly-<date>-<time>, which becomes Latest, also when the run is red. A
@@ -41,7 +41,7 @@ jobs:
         id: make
         run: |
           set -euo pipefail
-          go -C e2e run ./cmd/nightly -from ../versions/v1.37-hi.yaml >nightly.yaml
+          go -C e2e run ./cmd/nightly -from ../versions/latest.yaml >nightly.yaml
           cat nightly.yaml
           tag=nightly-$(date -u +%Y-%m-%d-%H%M)
           echo "tag=$tag" >>"$GITHUB_OUTPUT"

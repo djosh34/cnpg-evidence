@@ -30,9 +30,9 @@ Then run the scenarios that touch the change, with `./e2e.sh <scenario>` or all 
 
 The samples assume k3s with flannel, servicelb, local-path and the network policy controller, hosts with SELinux, and CNPG with the barman-cloud plugin. Pods with `hostUsers: false` need a kernel with idmapped mounts on tmpfs.
 
-The commands below install the versions and images of `versions/latest.yaml`. A values chart names its upstream chart without a version, so `wrapper` copies it to `build/`, writes the manifest's version and repository into the copy, and downloads the upstream chart there. When the manifest gives the chart a `name` and `alias`, as `v1.37-hi.yaml` does for the mirror's charts, it writes those too; a dependency with an alias of its own keeps it. It needs [yq](https://github.com/mikefarah/yq) v4.
+The commands below install the versions and images of `versions/latest.yaml`. A values chart names its upstream chart without a version, so `wrapper` copies it to `build/`, writes the manifest's version and repository into the copy, and downloads the upstream chart there. When the manifest gives the chart a `name` and `alias`, as `latest.yaml` does for the mirror's charts, it writes those too; a dependency with an alias of its own keeps it. It needs [yq](https://github.com/mikefarah/yq) v4.
 
-`latest.yaml` is `v1.37-hi.yaml`, whose `postgres` image has the ids 70. A cluster created with the ids 999 of the older manifests keeps them, as CNPG refuses a change of either id: install it with `manifest=versions/v1.37.yaml` instead, unless you move it to a new cluster.
+The `postgres` image of `latest.yaml` has the ids 70. A cluster created with the ids 999 of the older manifests keeps them, as CNPG refuses a change of either id: install it with `manifest=versions/v1.37.yaml` instead, unless you move it to a new cluster.
 
 ```bash
 manifest=versions/latest.yaml
@@ -100,8 +100,8 @@ Compared with each project's defaults and examples. The rule numbers are those o
 | `--read-timeout=5`, `AWS_MAX_ATTEMPTS=1` | 60 s, 5 attempts | Failover, switchover and a starting replica wait for the store. A store that never answers then costs about 5 s per call instead of about 5 minutes. 2 s failed against a working store 1 s away. |
 | Credentials for this one bucket, bucket encrypted at rest | not said | The bucket holds a full copy of every database. |
 | **Cluster** | | |
-| A hardened PostgreSQL image, pinned by digest: the mirror's `postgres` in `v1.37-hi.yaml`, Hummingbird `postgresql` in the older manifests | CNPG's image | Minimal, pulls without a login. The scripts run only `psql` in it. |
-| `postgresUID`, `postgresGID` 999, or the manifest's `postgresql.postgresUID` and `postgresGID` | 26 | The ids the image names `postgres`: 999 in the image of `v1.33.yaml` to `v1.37.yaml`, 70 in the mirror's `postgres` of `v1.37-hi.yaml`. With ids the image doesn't name, CNPG's pg_ident line names another user. |
+| A hardened PostgreSQL image, pinned by digest: the mirror's `postgres` in `latest.yaml`, Hummingbird `postgresql` in the older manifests | CNPG's image | Minimal, pulls without a login. The scripts run only `psql` in it. |
+| `postgresUID`, `postgresGID` 999, or the manifest's `postgresql.postgresUID` and `postgresGID` | 26 | The ids the image names `postgres`: 999 in the image of `v1.33.yaml` to `v1.37.yaml`, 70 in the mirror's `postgres` of `latest.yaml`. With ids the image doesn't name, CNPG's pg_ident line names another user. |
 | `hostUsers: false` through `cnpg.io/podPatch` | host's uids | A host user with the uid of `postgres` is nobody in the pod. Rule 5. |
 | `storageSize: 50Gi`, `walSegmentSize: 1`, `walKeepSize: 30GB`, no replication slots | 1Gi, 16 MB, 512MB, slots | See [WAL and the object store](#wal-and-the-object-store). |
 | Required anti-affinity between instances | preferred | A commit's two copies never share a node, and each node's read port has one instance. |

@@ -35,7 +35,7 @@ var (
 // the manifest, copies the settings and the manifest in and runs the image
 // as one privileged container. The settings are samples/, or
 // samples/features and variants/<variant> with -variant. The manifest is
-// the one file of versions/ that -manifest names, so it may be a symlink.
+// the one file of versions/ that -manifest names.
 // Its last step copies the run's files out to results/. testcontainers
 // removes the container and its volumes when the test ends, and Ryuk does
 // when the test is killed. Without -scenario it skips.
@@ -53,7 +53,6 @@ func TestScenario(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("the manifest %s: k3s %s", manifestPath, m.K3s.Version)
-	// One file, so testcontainers follows a symlink such as latest.yaml.
 	manifestCopy := testcontainers.ContainerFile{HostFilePath: manifestPath, ContainerFilePath: manifestFile, FileMode: 0o644}
 	files := []testcontainers.ContainerFile{
 		{HostFilePath: "../samples", ContainerFilePath: samplesDir, FileMode: 0o755}, manifestCopy,

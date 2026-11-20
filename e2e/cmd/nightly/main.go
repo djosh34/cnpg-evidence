@@ -1,6 +1,6 @@
 // Command nightly writes the manifest of the nightly e2e run to stdout:
 //
-//	go -C e2e run ./cmd/nightly -from ../versions/v1.37-hi.yaml >versions/nightly.yaml
+//	go -C e2e run ./cmd/nightly -from ../versions/latest.yaml >versions/nightly.yaml
 //
 // It is the -from manifest with every image of the mirror
 // ghcr.io/djosh34/hardened-mirror at the newest version the mirror has on
@@ -8,8 +8,10 @@
 // pinned by the digest of its version's tag. An image and its chart move
 // together: they take the newest version that the mirror has as a tag of
 // each image of the line and as the appVersion of a chart version.
-// kubectl-cnpg follows the operator. postgresql.rolloutFrom, k3s and the
-// other tools stay as they are. nightly.yml runs it each night
+// kubectl-cnpg follows the operator. k3s is the release that k3s's latest
+// channel points to, with its image, airgap tarballs and their images,
+// and kubectl and rotate-default-ca-certs.sh of that release.
+// postgresql.rolloutFrom stays as it is. nightly.yml runs it each night
 // (docs/e2e.md).
 package main
 
@@ -59,7 +61,7 @@ var lines = []line{
 const operator = "cloudnative-pg"
 
 func main() {
-	from := flag.String("from", "", "the manifest to start from, such as ../versions/v1.37-hi.yaml")
+	from := flag.String("from", "", "the manifest to start from, such as ../versions/latest.yaml")
 	flag.Parse()
 	if *from == "" || flag.NArg() != 0 {
 		flag.Usage()
@@ -123,8 +125,16 @@ func generate(ctx context.Context, from string) ([]byte, error) {
 	if err := apply(root, picks, sums); err != nil {
 		return nil, err
 	}
+	k3s, tools, err := newestK3s(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := setK3s(root, k3s, tools); err != nil {
+		return nil, err
+	}
 	doc.HeadComment = fmt.Sprintf("The manifest of the nightly e2e run of %s: %s with every\n"+
-		"image of the mirror at its newest version, by e2e/cmd/nightly (docs/e2e.md).",
+		"image of the mirror at its newest version and the newest k3s, by\n"+
+		"e2e/cmd/nightly (docs/e2e.md).",
 		time.Now().UTC().Format(time.DateOnly), from[strings.LastIndex(from, "/")+1:])
 	root.HeadComment = ""
 	var out bytes.Buffer
@@ -337,6 +347,54 @@ func apply(root *yaml.Node, picks map[string]pick, cnpgSums map[string]string) e
 		setString(sum, cnpgSums[arch])
 	}
 	return errors.Join(errs...)
+}
+
+// newestK3s is the k3s release that k3s's latest channel points to, and
+// kubectl and rotate-default-ca-certs.sh of that release in tools.
+func newestK3s(ctx context.Context) (versions.K3s, versions.Tools, error) {
+	var tools versions.Tools
+	release, err := lookup.K3sLatest(ctx)
+	if err != nil {
+		return versions.K3s{}, tools, err
+	}
+	k3s, err := lookup.K3s(ctx, release)
+	if err != nil {
+		return k3s, tools, err
+	}
+	if tools.Kubectl, err = lookup.Kubectl(ctx, release); err != nil {
+		return k3s, tools, err
+	}
+	tools.RotateCA, err = lookup.RotateCA(ctx, release)
+	return k3s, tools, err
+}
+
+// setK3s replaces the manifest's k3s, and kubectl and
+// rotate-default-ca-certs.sh of tools, which have to match k3s.
+func setK3s(root *yaml.Node, k3s versions.K3s, tools versions.Tools) error {
+	return errors.Join(
+		replace(root, k3s, "k3s"),
+		replace(root, tools.Kubectl, "tools", "kubectl"),
+		replace(root, tools.RotateCA, "tools", "rotate-default-ca-certs.sh"),
+	)
+}
+
+// replace sets the value at the path of keys below root to v, and keeps
+// the last key's comments.
+func replace(root *yaml.Node, v any, keys ...string) error {
+	parent, key := lookupKey(root, keys[:len(keys)-1]...), keys[len(keys)-1]
+	if lookupKey(parent, key) == nil {
+		return fmt.Errorf("the manifest has no %s", strings.Join(keys, "."))
+	}
+	var value yaml.Node
+	if err := value.Encode(v); err != nil {
+		return err
+	}
+	for i := 0; i+1 < len(parent.Content); i += 2 {
+		if parent.Content[i].Value == key {
+			parent.Content[i+1] = &value
+		}
+	}
+	return nil
 }
 
 // walk calls f on each map in the tree of node.

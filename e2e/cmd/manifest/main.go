@@ -17,7 +17,6 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	"crypto/sha256"
 	_ "embed"
 	"errors"
 	"flag"
@@ -142,7 +141,7 @@ func generate(ctx context.Context, in inputs) ([]byte, error) {
 		}
 	}
 	var err error
-	if m.K3s, err = k3s(ctx, in.k3s); err != nil {
+	if m.K3s, err = lookup.K3s(ctx, in.k3s); err != nil {
 		return nil, err
 	}
 	if m.Tools, err = tools(ctx, in.k3s, appVersions["cloudnative-pg"]); err != nil {
@@ -264,63 +263,19 @@ func commandError(err error) error {
 	return err
 }
 
-const k3sReleases = "https://github.com/k3s-io/k3s/releases/download/"
-
-// k3s is the k3s image of a release, its airgap tarballs and their images.
-func k3s(ctx context.Context, release string) (versions.K3s, error) {
-	k := versions.K3s{Version: release, Airgap: map[string]versions.Download{}}
-	base := k3sReleases + strings.ReplaceAll(release, "+", "%2B") + "/"
-	ref := "rancher/k3s:" + strings.ReplaceAll(release, "+", "-")
-	var err error
-	if k.Image, err = pinned(ctx, ref); err != nil {
-		return k, err
-	}
-	for _, arch := range versions.Architectures {
-		file := "k3s-airgap-images-" + arch + ".tar.zst"
-		sums, err := lookup.Get(ctx, base+"sha256sum-"+arch+".txt")
-		if err != nil {
-			return k, err
-		}
-		sum, err := lookup.SumOf(sums, file)
-		if err != nil {
-			return k, fmt.Errorf("sha256sum-%s.txt of k3s %s: %w", arch, release, err)
-		}
-		k.Airgap[arch] = versions.Download{URL: base + file, SHA256: sum}
-	}
-	list, err := lookup.Get(ctx, base+"k3s-images.txt")
-	if err != nil {
-		return k, err
-	}
-	k.Images = strings.Fields(string(list))
-	return k, nil
-}
-
-// tools are kubectl of the k3s release's Kubernetes version, kubectl-cnpg
-// of the operator's version and the CA rotation script of the k3s release.
+// tools are kubectl and the CA rotation script of the k3s release, and
+// kubectl-cnpg of the operator's version.
 func tools(ctx context.Context, k3sRelease, cnpgVersion string) (versions.Tools, error) {
-	kube, _, _ := strings.Cut(k3sRelease, "+")
-	t := versions.Tools{
-		Kubectl:     versions.Tool{Version: kube, SHA256: map[string]string{}},
-		KubectlCNPG: versions.Tool{Version: cnpgVersion},
-	}
+	t := versions.Tools{KubectlCNPG: versions.Tool{Version: cnpgVersion}}
 	var err error
 	if t.KubectlCNPG.SHA256, err = lookup.KubectlCNPG(ctx, cnpgVersion); err != nil {
 		return t, err
 	}
-	for _, arch := range versions.Architectures {
-		sum, err := lookup.Get(ctx, "https://dl.k8s.io/release/"+kube+"/bin/linux/"+arch+"/kubectl.sha256")
-		if err != nil {
-			return t, err
-		}
-		t.Kubectl.SHA256[arch] = strings.TrimSpace(string(sum))
-	}
-	t.RotateCA.URL = "https://raw.githubusercontent.com/k3s-io/k3s/" + strings.ReplaceAll(k3sRelease, "+", "%2B") + "/contrib/util/rotate-default-ca-certs.sh"
-	script, err := lookup.Get(ctx, t.RotateCA.URL)
-	if err != nil {
+	if t.Kubectl, err = lookup.Kubectl(ctx, k3sRelease); err != nil {
 		return t, err
 	}
-	t.RotateCA.SHA256 = fmt.Sprintf("%x", sha256.Sum256(script))
-	return t, nil
+	t.RotateCA, err = lookup.RotateCA(ctx, k3sRelease)
+	return t, err
 }
 
 // pinned is an image reference by tag with its digest added.
