@@ -101,7 +101,8 @@ jobs:
           name: nightly-manifest
           path: manifest
       # The verdict job uploads it also when the run is red; without it,
-      # every scenario the run picked is "no result".
+      # every scenario the run picked is "no result", or one row "every
+      # scenario" when e2e.yml picked none.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         continue-on-error: true
         with:
@@ -118,7 +119,8 @@ jobs:
           yq --version
           if [[ ! -f verdict/verdict.yaml ]]; then
             mkdir -p verdict
-            jq -n --argjson picked "$SCENARIOS" '{verdict: "red", images: [], results: [$picked[] |
+            picked=${SCENARIOS:-'["every scenario"]'}
+            jq -n --argjson picked "$picked" '{verdict: "red", images: [], results: [$picked[] |
               {scenario: ., arch: "X64", result: "no result: the verdict job wrote no verdict.yaml", expected: "", verdict: "no result"}]}' |
               yq -p json -o yaml >verdict/verdict.yaml
           fi

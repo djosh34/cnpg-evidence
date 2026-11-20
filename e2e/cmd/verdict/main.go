@@ -126,8 +126,8 @@ func (r record) write(file string) error {
 }
 
 // readImages reads the images.txt of a scenario's run in its artifact, one
-// image per line, which the run writes once it has checked the images on
-// the nodes. A run that never checked them has none.
+// image per line: those the run's checks saw and those on the nodes at its
+// end. A run that never started a node has none.
 func readImages(dir, scenario string) ([]string, error) {
 	files, err := filepath.Glob(filepath.Join(dir, scenario+"-*", "images.txt"))
 	if err != nil {
