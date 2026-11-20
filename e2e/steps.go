@@ -73,7 +73,7 @@ type scenario struct {
 	w       *world
 	results *results
 	fault   error    // tearDown could not keep the run's files
-	images  []string // the images the image checks saw on the nodes, for images.txt
+	images  []string // the images the image checks saw on the nodes, for images.txt with those at the end
 
 	kind  messages.PickleStepType // Given, When or Then of the line running
 	roles map[string]string       // the instances by role: the primary, replica 1, ...

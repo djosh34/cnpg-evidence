@@ -42,6 +42,7 @@ func TestImages(t *testing.T) {
 			"comment": "not an image",
 		},
 		"charts": map[string]any{"c": map[string]any{"repository": "https://charts.example", "version": "1.0.0"}},
+		"run":    map[string]any{"images": []any{"registry.example/found@" + digest}},
 	}, "")
 	slices.Sort(w.pinned)
 	if want := []string{"chart.byTag"}; !slices.Equal(w.unpinned, want) {

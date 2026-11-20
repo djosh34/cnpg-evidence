@@ -28,14 +28,9 @@ func nodeImagesPinned(ctx context.Context) (seen []string, _ error) {
 	var errs []error
 	for i := range nodeCount {
 		node := nodeName(i)
-		out, err := command(ctx, "docker", "exec", node, "crictl", "images", "-o", "json")
+		images, err := listImages(ctx, node)
 		if err != nil {
 			errs = append(errs, err)
-			continue
-		}
-		images, err := parseImages(out)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("the images of %s: %w", node, err))
 			continue
 		}
 		for _, image := range images {
@@ -60,6 +55,40 @@ func nodeImagesPinned(ctx context.Context) (seen []string, _ error) {
 		}
 	}
 	return seen, errors.Join(errs...)
+}
+
+// listImages lists the images on a node with crictl.
+func listImages(ctx context.Context, node string) ([]nodeImage, error) {
+	out, err := command(ctx, "docker", "exec", node, "crictl", "images", "-o", "json")
+	if err != nil {
+		return nil, err
+	}
+	images, err := parseImages(out)
+	if err != nil {
+		return nil, fmt.Errorf("the images of %s: %w", node, err)
+	}
+	return images, nil
+}
+
+// imagesAtEnd are the tags and digests of the images on every node at the
+// end of a run, also when the run stopped before it checked them. A node
+// that never started has none. For a node it cannot list, it gives
+// "unknown: " and why, so a missing list never reads as a clean one.
+func imagesAtEnd(ctx context.Context) []string {
+	var seen []string
+	for i := range nodeCount {
+		node := nodeName(i)
+		images, err := listImages(ctx, node)
+		switch {
+		case err != nil && strings.Contains(err.Error(), "No such container"):
+		case err != nil:
+			seen = append(seen, "unknown: "+strings.ReplaceAll(err.Error(), "\n", " "))
+		}
+		for _, image := range images {
+			seen = append(seen, image.refs()...)
+		}
+	}
+	return seen
 }
 
 // containerdPulls prints the lines of containerd's log on a node about

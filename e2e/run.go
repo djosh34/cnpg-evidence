@@ -129,6 +129,7 @@ func (s *scenario) tearDown(sn *godog.Scenario, err error) error {
 	if err != nil || fault != nil {
 		say(os.Stdout, "\n%s", state)
 	}
+	s.images = append(s.images, imagesAtEnd(s.ctx)...)
 	if len(s.images) > 0 {
 		slices.Sort(s.images)
 		fault = errors.Join(fault, s.results.write("images.txt", strings.Join(slices.Compact(s.images), "\n")+"\n"))

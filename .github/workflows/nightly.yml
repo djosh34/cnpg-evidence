@@ -6,9 +6,10 @@ name: nightly
 # (e2e.yml), and publishes the manifest with each result, the verdict and
 # the images found on the nodes as nightly.yaml of a release
 # nightly-<date>-<time>, which becomes Latest, also when the run is red. A
-# scheduled run stops after the manifest when the last nightly release
-# tested the same one with a result for every scenario; a run started by
-# hand always tests and publishes. docs/e2e.md says more.
+# scheduled run stops after the manifest until a run started by hand has
+# made the first nightly release, and when the last nightly release tested
+# the same manifest with a result for every scenario; a run started by hand
+# always tests and publishes. docs/e2e.md says more.
 on:
   schedule:
     - cron: "30 1 * * *" # 01:30 UTC
@@ -57,7 +58,10 @@ jobs:
           last=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,createdAt \
             --jq '[.[] | select(.tagName | startswith("nightly-"))] | sort_by(.createdAt) | last | .tagName // ""')
           test=true
-          if [[ $EVENT == schedule && -n $last ]]; then
+          if [[ $EVENT == schedule && -z $last ]]; then
+            echo "No nightly release yet: the first comes from a run started by hand." | tee -a "$GITHUB_STEP_SUMMARY"
+            test=false
+          elif [[ $EVENT == schedule ]]; then
             gh release download "$last" --repo "$GITHUB_REPOSITORY" --pattern nightly.yaml --dir last
             tested=$(yq -o json 'del(.run)' last/nightly.yaml)
             now=$(yq -o json . nightly.yaml)
@@ -96,7 +100,10 @@ jobs:
         with:
           name: nightly-manifest
           path: manifest
+      # The verdict job uploads it also when the run is red; without it,
+      # every scenario the run picked is "no result".
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
         with:
           name: verdict
           path: verdict
@@ -105,9 +112,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.manifest.outputs.tag }}
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SCENARIOS: ${{ needs.e2e.outputs.scenarios }}
         run: |
           set -euo pipefail
           yq --version
+          if [[ ! -f verdict/verdict.yaml ]]; then
+            mkdir -p verdict
+            jq -n --argjson picked "$SCENARIOS" '{verdict: "red", images: [], results: [$picked[] |
+              {scenario: ., arch: "X64", result: "no result: the verdict job wrote no verdict.yaml", expected: "", verdict: "no result"}]}' |
+              yq -p json -o yaml >verdict/verdict.yaml
+          fi
           mkdir release
           {
             cat manifest/nightly.yaml

@@ -49,6 +49,10 @@ on:
         description: An artifact of the calling run with the manifest file, put into versions/
         type: string
         default: ""
+    outputs:
+      scenarios:
+        description: The scenarios the run picked, as a JSON list
+        value: ${{ jobs.plan.outputs.scenarios }}
 
 run-name: e2e of ${{ inputs.variant || 'the samples' }} with ${{ inputs.manifest }}${{ inputs.scenarios && format(' ({0})', inputs.scenarios) || '' }}${{ inputs.arm64 && ', with arm64' || '' }}
 

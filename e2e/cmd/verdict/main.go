@@ -139,7 +139,11 @@ func readImages(dir, scenario string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		images = append(images, strings.Fields(string(data))...)
+		for _, line := range strings.Split(string(data), "\n") {
+			if line = strings.TrimSpace(line); line != "" {
+				images = append(images, line)
+			}
+		}
 	}
 	return images, nil
 }
