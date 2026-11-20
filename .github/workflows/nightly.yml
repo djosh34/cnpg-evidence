@@ -55,7 +55,7 @@ jobs:
           yq --version
           # Each $(...) is assigned on its own line, so a failed command
           # stops the run.
-          last=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft,publishedAt \
+          last=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName,isDraft,publishedAt \
             --jq '[.[] | select((.tagName | startswith("nightly-")) and (.isDraft | not))] | sort_by(.publishedAt) | last | .tagName // ""')
           test=true
           if [[ $EVENT == schedule && -z $last ]]; then
@@ -120,7 +120,7 @@ jobs:
           if [[ ! -f verdict/verdict.yaml ]]; then
             mkdir -p verdict
             picked=${SCENARIOS:-'["every scenario"]'}
-            jq -n --argjson picked "$picked" '{verdict: "red", images: [], results: [$picked[] |
+            jq -n --argjson picked "$picked" '{verdict: "red", images: ["unknown: the verdict job wrote no verdict.yaml"], results: [$picked[] |
               {scenario: ., arch: "X64", result: "no result: the verdict job wrote no verdict.yaml", expected: "", verdict: "no result"}]}' |
               yq -p json -o yaml >verdict/verdict.yaml
           fi
