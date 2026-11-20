@@ -35,8 +35,9 @@ func TestChoose(t *testing.T) {
 		"op":     {"1", "1.30", "1.30.2", "1.30.2-debian13", "1.31.0", "1.29.9", "2.0.0", "1.30.2-dev"},
 		"helper": {"1", "1.30.2", "1.31.0", "1.29.9"},
 	}
-	// 1.31.0 has no chart yet; 0.29.3 is a newer chart of 1.30.2.
-	apps := map[string]string{"0.29.2": "1.30.2", "0.29.3": "v1.30.2", "0.28.0": "1.29.9"}
+	// 1.31.0 has no chart yet; 0.29.3 is a newer chart of 1.30.2, and
+	// 0.29.4-rc.1 a prerelease.
+	apps := map[string]string{"0.29.2": "1.30.2", "0.29.3": "v1.30.2", "0.29.4-rc.1": "1.30.2", "0.28.0": "1.29.9"}
 	p, err := choose(cnpg, tags, apps)
 	if err != nil {
 		t.Fatal(err)

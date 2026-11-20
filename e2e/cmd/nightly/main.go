@@ -224,6 +224,9 @@ func choose(l line, tags map[string][]string, apps map[string]string) (pick, err
 	charts := map[string]string{} // the newest chart version of each appVersion
 	if l.chart != "" {
 		for chart, app := range apps {
+			if strings.Contains(chart, "-") {
+				continue // a prerelease, such as 0.30.0-rc.1
+			}
 			app = strings.TrimPrefix(app, "v")
 			if old, ok := charts[app]; !ok || compareVersions(chart, old) > 0 {
 				charts[app] = chart
