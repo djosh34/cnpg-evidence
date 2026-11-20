@@ -235,7 +235,8 @@ func (c chartImage) pinnedIn(manifest any) bool {
 // images walks the manifest for its images: those it pins, the paths of
 // the image blocks without a digest, and of those with a digest both in
 // digest and in tag, of which a chart reads only one. charts holds chart
-// repositories, not images.
+// repositories, not images. run is the block a nightly release adds
+// (docs/e2e.md): what a run found, never an image to allow.
 type images struct {
 	pinned, unpinned, twoDigests []string
 }
@@ -276,7 +277,7 @@ func (w *images) visit(node any, path string) {
 		}
 		for k, v := range n {
 			// A tag with a digest belongs to the block above.
-			if k == "tag" || (path == "" && k == "charts") {
+			if k == "tag" || (path == "" && (k == "charts" || k == "run")) {
 				continue
 			}
 			w.visit(v, strings.TrimPrefix(path+"."+k, "."))

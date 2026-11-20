@@ -3,7 +3,10 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
+
+	"go.yaml.in/yaml/v3"
 )
 
 func TestReadGaps(t *testing.T) {
@@ -112,5 +115,47 @@ func TestArtifactDir(t *testing.T) {
 	}
 	if got := artifactDir(results, "s-X64", true); got != filepath.Join(results, "s-X64") {
 		t.Errorf("the only artifact, in its directory: %s", got)
+	}
+}
+
+// The record holds every row and the images of every run once, sorted.
+func TestRecord(t *testing.T) {
+	dir := t.TempDir()
+	for file, content := range map[string]string{
+		"a-X64/a-1/images.txt": "ghcr.io/m/b@sha256:2\ndocker.io/rancher/pause:3\n",
+		"b-X64/b-1/images.txt": "ghcr.io/m/b@sha256:2\nghcr.io/m/a@sha256:1\n",
+	} {
+		file = filepath.Join(dir, file)
+		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(file, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rec := record{Verdict: "red"}
+	for _, s := range []string{"a", "b", "c"} {
+		images, err := readImages(filepath.Join(dir, s+"-X64"), s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rec.Images = append(rec.Images, images...)
+		rec.Results = append(rec.Results, row{s, "X64", "passed", "passes", "as expected"})
+	}
+	file := filepath.Join(dir, "record.yaml")
+	if err := rec.write(file); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got record
+	if err := yaml.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"docker.io/rancher/pause:3", "ghcr.io/m/a@sha256:1", "ghcr.io/m/b@sha256:2"}
+	if got.Verdict != "red" || len(got.Results) != 3 || got.Results[2].Scenario != "c" || !slices.Equal(got.Images, want) {
+		t.Errorf("got %+v", got)
 	}
 }

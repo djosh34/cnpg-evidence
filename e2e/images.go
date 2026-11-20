@@ -22,20 +22,19 @@ import (
 // import after a pull of the same tag would still carry that label, it also
 // fails when containerd's log shows a pull of an airgap image. It runs once
 // the cluster is up, before the scenario, and as the last line of
-// always.feature.
-func nodeImagesPinned(ctx context.Context) error {
+// always.feature. seen are the tags and digests of every image it listed,
+// or its ID for an image with neither.
+func nodeImagesPinned(ctx context.Context) (seen []string, _ error) {
 	var errs []error
 	for i := range nodeCount {
 		node := nodeName(i)
-		out, err := command(ctx, "docker", "exec", node, "crictl", "images", "-o", "json")
+		images, err := listImages(ctx, node)
 		if err != nil {
 			errs = append(errs, err)
 			continue
 		}
-		images, err := parseImages(out)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("the images of %s: %w", node, err))
-			continue
+		for _, image := range images {
+			seen = append(seen, image.refs()...)
 		}
 		refs, err := command(ctx, "docker", "exec", node,
 			"ctr", "-n", "k8s.io", "images", "ls", "-q", `labels."io.cattle.k3s.pinned"==pinned`)
@@ -55,7 +54,41 @@ func nodeImagesPinned(ctx context.Context) error {
 			errs = append(errs, fmt.Errorf("%s pulled the airgap image %s from a registry", node, ref))
 		}
 	}
-	return errors.Join(errs...)
+	return seen, errors.Join(errs...)
+}
+
+// listImages lists the images on a node with crictl.
+func listImages(ctx context.Context, node string) ([]nodeImage, error) {
+	out, err := command(ctx, "docker", "exec", node, "crictl", "images", "-o", "json")
+	if err != nil {
+		return nil, err
+	}
+	images, err := parseImages(out)
+	if err != nil {
+		return nil, fmt.Errorf("the images of %s: %w", node, err)
+	}
+	return images, nil
+}
+
+// imagesAtEnd are the tags and digests of the images on every node at the
+// end of a run, also when the run stopped before it checked them. A node
+// that never started has none. For a node it cannot list, it gives
+// "unknown: " and why, so a missing list never reads as a clean one.
+func imagesAtEnd(ctx context.Context) []string {
+	var seen []string
+	for i := range nodeCount {
+		node := nodeName(i)
+		images, err := listImages(ctx, node)
+		switch {
+		case err != nil && strings.Contains(err.Error(), "No such container"):
+		case err != nil:
+			seen = append(seen, "unknown: "+strings.ReplaceAll(err.Error(), "\n", " "))
+		}
+		for _, image := range images {
+			seen = append(seen, image.refs()...)
+		}
+	}
+	return seen
 }
 
 // containerdPulls prints the lines of containerd's log on a node about
@@ -94,6 +127,15 @@ type nodeImage struct {
 	RepoDigests []string `json:"repoDigests"`
 }
 
+// refs are an image's tags and digests, or its ID when it has neither.
+func (i nodeImage) refs() []string {
+	refs := append(append([]string{}, i.RepoTags...), i.RepoDigests...)
+	if len(refs) == 0 {
+		return []string{i.ID}
+	}
+	return refs
+}
+
 func parseImages(out string) ([]nodeImage, error) {
 	var list struct {
 		Images []nodeImage `json:"images"`
@@ -122,13 +164,15 @@ func notInManifest(images []nodeImage, imported []string, m *versions.Manifest) 
 				return slices.Contains(m.Pinned(), versions.Repository(name)+"@"+digest)
 			})
 		if !known {
-			other = append(other, strings.Join(append(append([]string{}, image.RepoTags...), image.RepoDigests...), " ")+" ("+image.ID+")")
+			other = append(other, strings.Join(image.refs(), " ")+" ("+image.ID+")")
 		}
 	}
 	return other
 }
 
 // imagesPinned: every image on the nodes is one the manifest names.
-func imagesPinned(ctx context.Context, _ *scenario, _ args) error {
-	return nodeImagesPinned(ctx)
+func imagesPinned(ctx context.Context, s *scenario, _ args) error {
+	seen, err := nodeImagesPinned(ctx)
+	s.images = append(s.images, seen...)
+	return err
 }

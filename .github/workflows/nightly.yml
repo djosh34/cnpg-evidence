@@ -1,0 +1,143 @@
+name: nightly
+
+# Each night, after the mirror's update at 00:15 UTC, and on demand: makes
+# the manifest of the mirror's newest images from versions/v1.37-hi.yaml
+# (e2e/cmd/nightly), runs every scenario of first-list on amd64 on it
+# (e2e.yml), and publishes the manifest with each result, the verdict and
+# the images found on the nodes as nightly.yaml of a release
+# nightly-<date>-<time>, which becomes Latest, also when the run is red. A
+# scheduled run stops after the manifest until a run started by hand has
+# made the first nightly release, and when the last nightly release tested
+# the same manifest with a result for every scenario; a run started by hand
+# always tests and publishes. docs/e2e.md says more.
+on:
+  schedule:
+    - cron: "30 1 * * *" # 01:30 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  manifest:
+    name: The night's manifest
+    runs-on: ubuntu-24.04
+    outputs:
+      test: ${{ steps.last.outputs.test }}
+      tag: ${{ steps.make.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: e2e/go.mod
+          cache-dependency-path: e2e/go.sum
+      - name: Make the manifest
+        id: make
+        run: |
+          set -euo pipefail
+          go -C e2e run ./cmd/nightly -from ../versions/v1.37-hi.yaml >nightly.yaml
+          cat nightly.yaml
+          tag=nightly-$(date -u +%Y-%m-%d-%H%M)
+          echo "tag=$tag" >>"$GITHUB_OUTPUT"
+      - name: Compare with the last nightly release
+        id: last
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          yq --version
+          # Each $(...) is assigned on its own line, so a failed command
+          # stops the run.
+          last=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName,isDraft,publishedAt \
+            --jq '[.[] | select((.tagName | startswith("nightly-")) and (.isDraft | not))] | sort_by(.publishedAt) | last | .tagName // ""')
+          test=true
+          if [[ $EVENT == schedule && -z $last ]]; then
+            echo "No nightly release yet: the first comes from a run started by hand." | tee -a "$GITHUB_STEP_SUMMARY"
+            test=false
+          elif [[ $EVENT == schedule ]]; then
+            gh release download "$last" --repo "$GITHUB_REPOSITORY" --pattern nightly.yaml --dir last
+            tested=$(yq -o json 'del(.run)' last/nightly.yaml)
+            now=$(yq -o json . nightly.yaml)
+            missing=$(yq '[.run.results[] | select(.verdict == "no result")] | length' last/nightly.yaml)
+            if [[ $tested == "$now" && $missing == 0 ]]; then
+              echo "Nothing changed: $last tested this manifest, with a result for every scenario." | tee -a "$GITHUB_STEP_SUMMARY"
+              test=false
+            fi
+          fi
+          echo "test=$test" >>"$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: nightly-manifest
+          path: nightly.yaml
+          if-no-files-found: error
+
+  e2e:
+    needs: manifest
+    if: needs.manifest.outputs.test == 'true'
+    uses: ./.github/workflows/e2e.yml
+    with:
+      variant: first-list
+      manifest: nightly.yaml
+      manifest-artifact: nightly-manifest
+
+  # Runs also when the verdict is red.
+  release:
+    name: Publish the release
+    needs: [manifest, e2e]
+    if: ${{ !cancelled() && needs.manifest.outputs.test == 'true' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: nightly-manifest
+          path: manifest
+      # The verdict job uploads it also when the run is red; without it,
+      # every scenario the run picked is "no result", or one row "every
+      # scenario" when e2e.yml picked none.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          name: verdict
+          path: verdict
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.manifest.outputs.tag }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SCENARIOS: ${{ needs.e2e.outputs.scenarios }}
+        run: |
+          set -euo pipefail
+          yq --version
+          if [[ ! -f verdict/verdict.yaml ]]; then
+            mkdir -p verdict
+            picked=${SCENARIOS:-'["every scenario"]'}
+            jq -n --argjson picked "$picked" '{verdict: "red", images: ["unknown: the verdict job wrote no verdict.yaml"], results: [$picked[] |
+              {scenario: ., arch: "X64", result: "no result: the verdict job wrote no verdict.yaml", expected: "", verdict: "no result"}]}' |
+              yq -p json -o yaml >verdict/verdict.yaml
+          fi
+          mkdir release
+          {
+            cat manifest/nightly.yaml
+            echo
+            echo "# The e2e run of first-list on amd64 with this manifest: each scenario's"
+            echo "# result, the verdict, green when every result matches"
+            echo "# variants/first-list/gaps.md, and every image the runs saw on the nodes."
+            echo "run:"
+            echo "  url: $RUN"
+            echo "  commit: $GITHUB_SHA"
+            sed 's/^/  /' verdict/verdict.yaml
+          } >release/nightly.yaml
+          verdict=$(yq .run.verdict release/nightly.yaml)
+          notes="The mirror's newest images, tested by every scenario of first-list on amd64 in [this run]($RUN): **$verdict**.
+          \`nightly.yaml\` is the manifest, with each scenario's result, the verdict and the images found on the nodes under \`run\`."
+          gh release create "$TAG" release/nightly.yaml --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --latest \
+            --title "Nightly ${TAG#nightly-}: $verdict" --notes "$notes"

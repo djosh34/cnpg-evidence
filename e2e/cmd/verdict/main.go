@@ -12,6 +12,10 @@
 // Each result is the artifact <scenario>-<arch> of the run: the outcome of
 // its Scenario step in outcome, the runner's exit code in exit-code, and
 // the run's files. A run's only artifact may be in -results itself.
+//
+// With -record, it also writes each result, the verdict and every image the
+// runs saw on the nodes, from each run's images.txt, to a YAML file, which
+// nightly.yml publishes.
 package main
 
 import (
@@ -24,7 +28,10 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
+
+	"go.yaml.in/yaml/v3"
 )
 
 func main() {
@@ -33,6 +40,7 @@ func main() {
 	arches := flag.String("arches", "X64", "the runners' architectures, comma-separated, as runner.arch names them")
 	results := flag.String("results", "", "the directory with the run's artifacts, one directory each")
 	repo := flag.String("repo", "..", "the checkout, for variants/<variant>/gaps.md")
+	recordFile := flag.String("record", "", "a YAML file to write each result, the verdict and the images to")
 	flag.Parse()
 	var picked []string
 	if err := json.Unmarshal([]byte(*scenarios), &picked); err != nil || len(picked) == 0 || *results == "" || flag.NArg() != 0 {
@@ -49,10 +57,12 @@ func main() {
 	}
 	say(os.Stdout, "| Scenario | Result | gaps.md | Verdict |\n|---|---|---|---|\n")
 	ok := true
+	var rec record
 	archList := strings.Split(*arches, ",")
 	for _, arch := range archList {
 		for _, s := range picked {
-			got := readResult(artifactDir(*results, s+"-"+arch, len(picked)*len(archList) == 1), s)
+			dir := artifactDir(*results, s+"-"+arch, len(picked)*len(archList) == 1)
+			got := readResult(dir, s)
 			match, why := judge(got, gaps[s])
 			ok = ok && match
 			want := "passes"
@@ -60,6 +70,20 @@ func main() {
 				want = "fails on `" + line + "`"
 			}
 			say(os.Stdout, "| %s on %s | %s | %s | %s |\n", s, arch, got, want, why)
+			rec.Results = append(rec.Results, row{s, arch, got.String(), want, why})
+			images, err := readImages(dir, s)
+			if err != nil {
+				say(os.Stderr, "verdict: %v\n", err)
+				os.Exit(2)
+			}
+			rec.Images = append(rec.Images, images...)
+		}
+	}
+	if *recordFile != "" {
+		rec.Verdict = map[bool]string{true: "green", false: "red"}[ok]
+		if err := rec.write(*recordFile); err != nil {
+			say(os.Stderr, "verdict: %v\n", err)
+			os.Exit(2)
 		}
 	}
 	if !ok {
@@ -73,6 +97,55 @@ func say(w io.Writer, format string, args ...any) {
 	if _, err := fmt.Fprintf(w, format, args...); err != nil {
 		os.Exit(2)
 	}
+}
+
+// record is what -record writes.
+type record struct {
+	Verdict string   `yaml:"verdict"` // green when every result matches gaps.md, else red
+	Results []row    `yaml:"results"`
+	Images  []string `yaml:"images"` // every image the runs saw on the nodes, each tag and digest
+}
+
+// row is a row of the table.
+type row struct {
+	Scenario string `yaml:"scenario"`
+	Arch     string `yaml:"arch"`
+	Result   string `yaml:"result"`
+	Expected string `yaml:"expected"` // what gaps.md says
+	Verdict  string `yaml:"verdict"`
+}
+
+func (r record) write(file string) error {
+	slices.Sort(r.Images)
+	r.Images = slices.Compact(r.Images)
+	out, err := yaml.Marshal(r)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(file, out, 0o644)
+}
+
+// readImages reads the images.txt of a scenario's run in its artifact, one
+// image per line: those the run's checks saw and those on the nodes at its
+// end. A run that never started a node has none.
+func readImages(dir, scenario string) ([]string, error) {
+	files, err := filepath.Glob(filepath.Join(dir, scenario+"-*", "images.txt"))
+	if err != nil {
+		return nil, err
+	}
+	var images []string
+	for _, f := range files {
+		data, err := os.ReadFile(f)
+		if err != nil {
+			return nil, err
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			if line = strings.TrimSpace(line); line != "" {
+				images = append(images, line)
+			}
+		}
+	}
+	return images, nil
 }
 
 // readGaps reads the rows of a gaps.md table: each scenario's failed line,

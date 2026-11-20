@@ -120,7 +120,7 @@ go -C e2e run ./cmd/manifest -k3s <k3s release> -cert-manager <version> -cloudna
   -postgresql <image>:<tag> -rollout-from <image>:<tag> >versions/<name>.yaml
 ```
 
-The first lines of each manifest give the command that made it, so running that command again writes the same file, unless a tag has moved since. To change a version, run the command with the new version rather than editing the file. `v1.37-hi.yaml` is written by hand: the command knows only the upstream charts.
+The first lines of each manifest give the command that made it, so running that command again writes the same file, unless a tag has moved since. To change a version, run the command with the new version rather than editing the file. `v1.37-hi.yaml` is written by hand: the command knows only the upstream charts. The [nightly release](#the-nightly-release) makes its own manifest from `v1.37-hi.yaml`.
 
 ## Raise the inotify limit
 
@@ -152,6 +152,7 @@ Each run writes a new directory `results/<scenario>-<time>/`, time in UTC:
 | `timing.md` | One row per line of the scenario and of `always.feature`: its result, how long it took, the time since the event it refers to, and what it measured. It is printed at the end of the log too. |
 | `cucumber.json`, `junit.xml` | The scenario's steps and results. |
 | `always.cucumber.json`, `always.junit.xml` | The same for `always.feature`. |
+| `images.txt` | Every tag and digest of the images on the nodes that the [image checks](#the-version-manifest) saw, and those on the nodes at the end, one per line, also when the run stopped before its checks. `unknown:` and why, for a node whose images could not be listed. |
 | `state.txt` | `docker ps`, the kernel's last messages, the last log lines of every container, the images on each node, the nodes, pods, events and CNPG objects, and the alert history. After a failure it is also printed at the end of the log. |
 | `k3s-1.log` to `k3s-3.log` | Each node's whole log, k3s's and the kubelet's, with docker's timestamps. When a node never turns Ready while the run builds the cluster, its log then has the kernel's stack of each k3s thread that waits in the kernel and the stack of every goroutine of k3s, before k3s starts again. |
 | `disks.md` | Each node's [data filesystem](#each-nodes-data-filesystem): its size, the most it held and when, what it held at the end, and what each volume holds then. Also the runner's free space before the run. |
@@ -163,7 +164,7 @@ Start with `timing.md`: the first row with a failure names the line that failed,
 
 ## Run scenarios in CI
 
-On GitHub, [`e2e.yml`](../.github/workflows/e2e.yml) runs every scenario on an amd64 runner, one job each, in parallel. It runs on demand only. It takes four inputs:
+On GitHub, [`e2e.yml`](../.github/workflows/e2e.yml) runs every scenario on an amd64 runner, one job each, in parallel. It runs on demand, and from the [nightly release](#the-nightly-release), which also gives it the night's manifest as an artifact. It takes four inputs:
 
 - `variant`: a directory of `variants/`; empty for the samples.
 - `scenarios`: scenario tags, comma-separated; empty for every scenario. A tag that no scenario has, or that a variant run leaves out, stops the run before any job.
@@ -181,7 +182,7 @@ gh run download <run id> --name switchover-X64                       # one job's
 
 `gh workflow run` prints the run's URL, which ends in its id. Keep it: several runs on the same branch and commit look alike in `gh run list`. The run's name gives the variant, the manifest and the scenarios.
 
-Each job uploads its `results/` as `<scenario>-<arch>`, where the arch is `X64` or `ARM64`, also when the scenario failed. Besides the run's directory it holds `outcome`, the outcome of the job's Scenario step, `success` or `failure`, and `exit-code`, the e2e container's exit code. A job stays green when its scenario fails. The last job, the verdict, decides the run: for each scenario the run picked, it compares the result with the variant's [`gaps.md`](#a-variants-gaps), none for the samples, and prints a table of them in the run's summary. A scenario `gaps.md` lists must fail on the line its row names and on no other, with exit code 1 and every line of `always.feature` passed; every other must pass; a scenario without a result does not match. The run is green only when every one matches.
+Each job uploads its `results/` as `<scenario>-<arch>`, where the arch is `X64` or `ARM64`, also when the scenario failed. Besides the run's directory it holds `outcome`, the outcome of the job's Scenario step, `success` or `failure`, and `exit-code`, the e2e container's exit code. A job stays green when its scenario fails. The last job, the verdict, decides the run: for each scenario the run picked, it compares the result with the variant's [`gaps.md`](#a-variants-gaps), none for the samples, and prints a table of them in the run's summary. A scenario `gaps.md` lists must fail on the line its row names and on no other, with exit code 1 and every line of `always.feature` passed; every other must pass; a scenario without a result does not match. The run is green only when every one matches. The verdict job also uploads `verdict.yaml`: the verdict, green or red, each row of the table, and every image of the runs' `images.txt`.
 
 In any other CI, run one job per scenario with a matrix variable and this one line, with `$VARIANT` empty for the samples and `$MANIFEST` empty for the default:
 
@@ -190,6 +191,21 @@ In any other CI, run one job per scenario with a matrix variable and this one li
 ```
 
 The job needs docker that can run privileged containers, Go 1.27, the inotify limit and [br_netfilter](#load-br_netfilter). Keep `results/` as the job's artifact. An unset or empty `$SCENARIO` exits 2, so the job fails rather than pass without running anything.
+
+## The nightly release
+
+[`nightly.yml`](../.github/workflows/nightly.yml) tests the newest images of the mirror each night, at 01:30 UTC, after the mirror's own update at 00:15 UTC. `gh workflow run nightly.yml` starts it by hand. It:
+
+1. Makes the night's manifest with [`e2e/cmd/nightly`](../e2e/cmd/nightly/main.go): `v1.37-hi.yaml` with each image of the mirror at the newest version on the mirror's own tag of its line: `postgres` 18, `cloudnative-pg` 1, the five cert-manager images 1, the barman-cloud plugin and its sidecar 0, and the collector `0-contrib`. An image and its chart take the newest version that the mirror has both as a tag of the image and as the appVersion of a chart version, so they always match. Each image is pinned by its digest at that version's tag. kubectl-cnpg follows the operator. The rollout scenario's start image, k3s and the other tools stay as they are in `v1.37-hi.yaml`.
+2. When the run is scheduled, stops there if there is no nightly release yet, as the first comes from a run started by hand, or if the last one tested the same manifest with a result for every scenario. A run started by hand always goes on.
+3. Runs every scenario of `first-list` on amd64 on the manifest through `e2e.yml`. As the night's manifest names only the mirror's images and k3s's own, the [image check](#the-version-manifest) fails a scenario when a node has any other image.
+4. Publishes a release `nightly-<date>-<time>` on the commit it ran, also when the run is red, and marks it Latest. Its asset `nightly.yaml` is the manifest with a `run` block: the run's URL and commit, the verdict, each scenario's result as in the verdict table, and every image found on the nodes. When the verdict job left no `verdict.yaml`, the run is red, every scenario has no result, one row `every scenario` when `e2e.yml` picked none, and the images are `unknown:`. The release file is not a manifest to allow images from: a manifest's `run` block pins nothing.
+
+`https://github.com/djosh34/cnpg-evidence/releases/latest/download/nightly.yaml` is the newest tested manifest. To keep it so, make each code release with `gh release create <tag> --latest=false`.
+
+While a chart lags behind its image, the pair stays on the last version that has a chart. The mirror then no longer refreshes that version's tag, so its digest can miss DHI's rebuilds until the chart arrives.
+
+GitHub turns off the schedule of a public repository's workflow after 60 days without activity in the repository. That holds for the mirror too. `gh workflow enable nightly.yml` turns it on again.
 
 ## What a run does
 
