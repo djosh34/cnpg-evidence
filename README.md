@@ -65,6 +65,6 @@ Each script prints one JSON document on stdout and logs on stderr. Exit 0 means 
 | `versions/` | The manifests: every version of the system under test that a run uses ([e2e.md](docs/e2e.md#the-version-manifest)) |
 | `scripts/` | The evidence scripts and their tests |
 | `report/` | `cnpg-report`: the page that draws the images, its build and tests ([report/README.md](report/README.md)) |
-| `.github/workflows/` | `ci.yml` on every pull request and push to `main`; `e2e.yml`, every scenario on demand; `nightly.yml`, the [nightly release](docs/e2e.md#the-nightly-release) of the mirror's newest images; `release.yml` on a pushed tag |
+| `.github/workflows/` | `ci.yml` on every pull request and push to `main`; `e2e.yml`, every scenario on demand; `nightly.yml`, the [nightly release](docs/e2e.md#the-nightly-release) of the mirror's newest images and the newest k3s; `release.yml` on a pushed tag |
 
 Licence: Apache License 2.0.

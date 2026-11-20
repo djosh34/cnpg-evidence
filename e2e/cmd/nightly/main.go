@@ -125,11 +125,11 @@ func generate(ctx context.Context, from string) ([]byte, error) {
 	if err := apply(root, picks, sums); err != nil {
 		return nil, err
 	}
-	k3s, tools, err := newestK3s(ctx)
+	k3s, kubectl, rotate, err := newestK3s(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err := setK3s(root, k3s, tools); err != nil {
+	if err := setK3s(root, k3s, kubectl, rotate); err != nil {
 		return nil, err
 	}
 	doc.HeadComment = fmt.Sprintf("The manifest of the nightly e2e run of %s: %s with every\n"+
@@ -350,51 +350,42 @@ func apply(root *yaml.Node, picks map[string]pick, cnpgSums map[string]string) e
 }
 
 // newestK3s is the k3s release that k3s's latest channel points to, and
-// kubectl and rotate-default-ca-certs.sh of that release in tools.
-func newestK3s(ctx context.Context) (versions.K3s, versions.Tools, error) {
-	var tools versions.Tools
+// kubectl and rotate-default-ca-certs.sh of that release.
+func newestK3s(ctx context.Context) (versions.K3s, versions.Tool, versions.Script, error) {
 	release, err := lookup.K3sLatest(ctx)
 	if err != nil {
-		return versions.K3s{}, tools, err
+		return versions.K3s{}, versions.Tool{}, versions.Script{}, err
 	}
 	k3s, err := lookup.K3s(ctx, release)
 	if err != nil {
-		return k3s, tools, err
+		return k3s, versions.Tool{}, versions.Script{}, err
 	}
-	if tools.Kubectl, err = lookup.Kubectl(ctx, release); err != nil {
-		return k3s, tools, err
+	kubectl, err := lookup.Kubectl(ctx, release)
+	if err != nil {
+		return k3s, kubectl, versions.Script{}, err
 	}
-	tools.RotateCA, err = lookup.RotateCA(ctx, release)
-	return k3s, tools, err
+	rotate, err := lookup.RotateCA(ctx, release)
+	return k3s, kubectl, rotate, err
 }
 
 // setK3s replaces the manifest's k3s, and kubectl and
 // rotate-default-ca-certs.sh of tools, which have to match k3s.
-func setK3s(root *yaml.Node, k3s versions.K3s, tools versions.Tools) error {
+func setK3s(root *yaml.Node, k3s versions.K3s, kubectl versions.Tool, rotate versions.Script) error {
 	return errors.Join(
 		replace(root, k3s, "k3s"),
-		replace(root, tools.Kubectl, "tools", "kubectl"),
-		replace(root, tools.RotateCA, "tools", "rotate-default-ca-certs.sh"),
+		replace(root, kubectl, "tools", "kubectl"),
+		replace(root, rotate, "tools", "rotate-default-ca-certs.sh"),
 	)
 }
 
-// replace sets the value at the path of keys below root to v, and keeps
-// the last key's comments.
+// replace sets the value at the path of keys below root to v. The comments
+// on the last key stay.
 func replace(root *yaml.Node, v any, keys ...string) error {
-	parent, key := lookupKey(root, keys[:len(keys)-1]...), keys[len(keys)-1]
-	if lookupKey(parent, key) == nil {
+	node := lookupKey(root, keys...)
+	if node == nil {
 		return fmt.Errorf("the manifest has no %s", strings.Join(keys, "."))
 	}
-	var value yaml.Node
-	if err := value.Encode(v); err != nil {
-		return err
-	}
-	for i := 0; i+1 < len(parent.Content); i += 2 {
-		if parent.Content[i].Value == key {
-			parent.Content[i+1] = &value
-		}
-	}
-	return nil
+	return node.Encode(v)
 }
 
 // walk calls f on each map in the tree of node.

@@ -165,11 +165,9 @@ func TestSetK3s(t *testing.T) {
 		},
 		Images: []string{"docker.io/rancher/mirrored-pause:9.9"},
 	}
-	tools := versions.Tools{
-		Kubectl:  versions.Tool{Version: "v1.99.1", SHA256: map[string]string{"amd64": strings.Repeat("d", 64), "arm64": strings.Repeat("e", 64)}},
-		RotateCA: versions.Script{URL: "https://example.com/rotate-default-ca-certs.sh", SHA256: strings.Repeat("f", 64)},
-	}
-	if err := setK3s(doc.Content[0], k3s, tools); err != nil {
+	kubectl := versions.Tool{Version: "v1.99.1", SHA256: map[string]string{"amd64": strings.Repeat("d", 64), "arm64": strings.Repeat("e", 64)}}
+	rotate := versions.Script{URL: "https://example.com/rotate-default-ca-certs.sh", SHA256: strings.Repeat("f", 64)}
+	if err := setK3s(doc.Content[0], k3s, kubectl, rotate); err != nil {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
@@ -187,7 +185,7 @@ func TestSetK3s(t *testing.T) {
 	if !reflect.DeepEqual(m.K3s, k3s) {
 		t.Errorf("k3s: %+v", m.K3s)
 	}
-	if !reflect.DeepEqual(m.Tools.Kubectl, tools.Kubectl) || m.Tools.RotateCA != tools.RotateCA {
+	if !reflect.DeepEqual(m.Tools.Kubectl, kubectl) || m.Tools.RotateCA != rotate {
 		t.Errorf("tools: %+v", m.Tools)
 	}
 	if !reflect.DeepEqual(m.Tools.KubectlCNPG, old.Tools.KubectlCNPG) || !reflect.DeepEqual(m.Charts, old.Charts) || m.PostgreSQL != old.PostgreSQL {
@@ -198,7 +196,7 @@ func TestSetK3s(t *testing.T) {
 	}
 
 	// A manifest without tools is an error.
-	if err := setK3s(&yaml.Node{Kind: yaml.MappingNode}, k3s, tools); err == nil || !strings.Contains(err.Error(), "tools.kubectl") {
+	if err := setK3s(&yaml.Node{Kind: yaml.MappingNode}, k3s, kubectl, rotate); err == nil || !strings.Contains(err.Error(), "tools.kubectl") {
 		t.Errorf("no tools: %v", err)
 	}
 }
