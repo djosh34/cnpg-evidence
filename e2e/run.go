@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -87,7 +88,9 @@ func (s *scenario) setUp(sn *godog.Scenario, name string) error {
 	if s.w, err = newWorld(s.ctx, firstImage); err != nil {
 		return err
 	}
-	if err := nodeImagesPinned(s.ctx); err != nil {
+	seen, err := nodeImagesPinned(s.ctx)
+	s.images = append(s.images, seen...)
+	if err != nil {
 		return err
 	}
 	if s.roles, err = roles(s.ctx); err != nil {
@@ -125,6 +128,10 @@ func (s *scenario) tearDown(sn *godog.Scenario, err error) error {
 	}
 	if err != nil || fault != nil {
 		say(os.Stdout, "\n%s", state)
+	}
+	if len(s.images) > 0 {
+		slices.Sort(s.images)
+		fault = errors.Join(fault, s.results.write("images.txt", strings.Join(slices.Compact(s.images), "\n")+"\n"))
 	}
 	s.fault = errors.Join(fault, s.results.write("timing.md", table), s.results.write("state.txt", state), nodeLogs(s.ctx, s.results))
 	return errors.Join(err, s.fault)
