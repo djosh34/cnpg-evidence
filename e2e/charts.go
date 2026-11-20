@@ -46,7 +46,8 @@ func readReleases(file string) ([]release, error) {
 // chart versions into the copies, and helm dependency build pulls those
 // charts next to them. Each release gets the manifest as its first values
 // file, then its values files from the settings, then values/<release>.yaml
-// when it exists. The cluster's release gets the instance image firstImage.
+// when it exists. The cluster's release gets the instance image firstImage,
+// and the manifest's postgresUID and postgresGID when it has them.
 // It returns the chart and values of the cluster's release.
 func installCharts(ctx context.Context, firstImage string) (chartValues, error) {
 	charts := filepath.Join(workDir, "charts")
@@ -81,6 +82,10 @@ func installCharts(ctx context.Context, firstImage string) (chartValues, error) 
 		case !errors.Is(err, fs.ErrNotExist):
 			return chartValues{}, err
 		}
+		// In values, so pg-restore gets the ids too.
+		if pg := manifest.PostgreSQL; r.Name == clusterRelease && pg.PostgresUID > 0 {
+			values = append(values, "--set", fmt.Sprintf("cluster.postgresUID=%d,cluster.postgresGID=%d", pg.PostgresUID, pg.PostgresGID))
+		}
 		args := append([]string{"upgrade", "--install", r.Name, chart, "--namespace", r.Namespace,
 			"--create-namespace", "--wait", "--timeout", "15m"}, values...)
 		if r.Name == clusterRelease {
@@ -99,8 +104,11 @@ func installCharts(ctx context.Context, firstImage string) (chartValues, error) 
 }
 
 // setDependencies writes the repository and version of each dependency of
-// a chart's Chart.yaml from the manifest's charts. A dependency the
-// manifest has no chart for is an error.
+// a chart's Chart.yaml from the manifest's chart of the dependency's name,
+// and the chart's name and alias when the manifest has them. A dependency
+// with an alias of its own keeps it, such as each collector of a wrapper
+// that has the same chart twice: its values are under that alias. A
+// dependency the manifest has no chart for is an error.
 func setDependencies(file string, charts map[string]versions.Chart) error {
 	data, err := os.ReadFile(file)
 	if err != nil {
@@ -128,6 +136,12 @@ func setDependencies(file string, charts map[string]versions.Chart) error {
 			return fmt.Errorf("%s: the manifest has no chart %q", file, name)
 		}
 		dep["repository"], dep["version"] = c.Repository, c.Version
+		if c.Name != "" {
+			dep["name"] = c.Name
+			if alias, ok := dep["alias"].(string); !ok || alias == "" {
+				dep["alias"] = c.Alias
+			}
+		}
 	}
 	data, err = yaml.Marshal(chart)
 	if err != nil {
@@ -137,7 +151,7 @@ func setDependencies(file string, charts map[string]versions.Chart) error {
 }
 
 // chartValues are the directory of a release's chart in the e2e test's copy,
-// and its --values arguments.
+// and its --values and --set arguments.
 type chartValues struct {
 	chart  string
 	values []string

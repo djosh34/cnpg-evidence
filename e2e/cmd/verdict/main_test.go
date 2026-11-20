@@ -97,3 +97,20 @@ func TestResults(t *testing.T) {
 		}
 	}
 }
+
+// A run's only artifact may be in the results directory itself.
+func TestArtifactDir(t *testing.T) {
+	results := t.TempDir()
+	if got := artifactDir(results, "s-X64", true); got != results {
+		t.Errorf("the only artifact, with no directory: %s", got)
+	}
+	if got := artifactDir(results, "s-X64", false); got != filepath.Join(results, "s-X64") {
+		t.Errorf("one of several artifacts: %s", got)
+	}
+	if err := os.Mkdir(filepath.Join(results, "s-X64"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := artifactDir(results, "s-X64", true); got != filepath.Join(results, "s-X64") {
+		t.Errorf("the only artifact, in its directory: %s", got)
+	}
+}

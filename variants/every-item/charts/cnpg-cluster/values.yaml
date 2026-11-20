@@ -8,7 +8,9 @@ postgresql:
   imageName: ""
 
 cluster:
-  # The uid and gid the image names postgres: 999 in this image. CNPG writes
+  # The uid and gid the image names postgres: 999 in the image of
+  # v1.33.yaml to v1.37.yaml, 70 in that of v1.37-hi.yaml, whose
+  # postgresql.postgresUID and postgresGID the e2e run sets. CNPG writes
   # the name of its uid into pg_ident. Set them when the cluster is created.
   postgresUID: 999
   postgresGID: 999

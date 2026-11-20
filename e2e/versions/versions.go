@@ -64,17 +64,27 @@ type Script struct {
 	SHA256 string `yaml:"sha256"`
 }
 
-// Chart is where Helm pulls an upstream chart from.
+// Chart is where Helm pulls an upstream chart from. Name and Alias are
+// for a chart whose name differs from the wrapper's dependency, such as
+// cert-manager-chart for cert-manager: Name is the chart's own, Alias the
+// key its values are under. Both are empty when the wrapper's dependency
+// already names the chart.
 type Chart struct {
+	Name       string `yaml:"name"`
+	Alias      string `yaml:"alias"`
 	Repository string `yaml:"repository"`
 	Version    string `yaml:"version"`
 }
 
 // PostgreSQL are the instance images. The cnpg-cluster charts read
 // ImageName; RolloutFrom is the image the rollout scenario starts on.
+// PostgresUID and PostgresGID are the ids both images name postgres, which
+// the cluster gets; 0 leaves the cnpg-cluster chart's own.
 type PostgreSQL struct {
 	ImageName   string `yaml:"imageName"`
 	RolloutFrom string `yaml:"rolloutFrom"`
+	PostgresUID int    `yaml:"postgresUID"`
+	PostgresGID int    `yaml:"postgresGID"`
 }
 
 // Architectures are the architectures a manifest covers, as Go and k3s
@@ -153,9 +163,12 @@ func (m *Manifest) check() error {
 	need(len(m.Charts) > 0, "charts")
 	for name, c := range m.Charts {
 		need(c.Repository != "" && exactVersion.MatchString(c.Version), "charts."+name+" with repository and an exact version")
+		need((c.Name == "") == (c.Alias == ""), "charts."+name+" with both name and alias, or neither")
 	}
 	need(strings.Contains(m.PostgreSQL.ImageName, "@sha256:"), "postgresql.imageName with a digest")
 	need(strings.Contains(m.PostgreSQL.RolloutFrom, "@sha256:"), "postgresql.rolloutFrom with a digest")
+	need((m.PostgreSQL.PostgresUID > 0) == (m.PostgreSQL.PostgresGID > 0) && m.PostgreSQL.PostgresUID >= 0 && m.PostgreSQL.PostgresGID >= 0,
+		"postgresql.postgresUID and postgresGID, both above 0, or neither")
 	return errors.Join(errs...)
 }
 

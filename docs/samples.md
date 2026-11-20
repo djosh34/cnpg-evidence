@@ -30,19 +30,22 @@ Then run the scenarios that touch the change, with `./e2e.sh <scenario>` or all 
 
 The samples assume k3s with flannel, servicelb, local-path and the network policy controller, hosts with SELinux, and CNPG with the barman-cloud plugin. Pods with `hostUsers: false` need a kernel with idmapped mounts on tmpfs.
 
-The commands below install the versions and images of `versions/latest.yaml`. A values chart names its upstream chart without a version, so `wrapper` copies it to `build/`, writes the manifest's version and repository into the copy, and downloads the upstream chart there. It needs [yq](https://github.com/mikefarah/yq) v4.
+The commands below install the versions and images of `versions/latest.yaml`. A values chart names its upstream chart without a version, so `wrapper` copies it to `build/`, writes the manifest's version and repository into the copy, and downloads the upstream chart there. When the manifest gives the chart a `name` and `alias`, as `v1.37-hi.yaml` does for the mirror's charts, it writes those too; a dependency with an alias of its own keeps it. It needs [yq](https://github.com/mikefarah/yq) v4.
+
+`latest.yaml` is `v1.37-hi.yaml`, whose `postgres` image has the ids 70. A cluster created with the ids 999 of the older manifests keeps them, as CNPG refuses a change of either id: install it with `manifest=versions/v1.37.yaml` instead, unless you move it to a new cluster.
 
 ```bash
 manifest=versions/latest.yaml
 wrapper() {
   rm -rf "build/$1" && mkdir -p build && cp -r "samples/charts/$1" build/
-  m=$manifest yq -i '.dependencies[] |= (.name as $n | .repository = (load(strenv(m)).charts[$n].repository) | .version = (load(strenv(m)).charts[$n].version))' "build/$1/Chart.yaml"
+  m=$manifest yq -i '.dependencies[] |= (.name as $n | load(strenv(m)).charts[$n] as $c | .repository = $c.repository
+    | .version = $c.version | with(select($c.name != null); .name = $c.name | .alias = (.alias // $c.alias)))' "build/$1/Chart.yaml"
   helm dependency build "build/$1"
 }
 ```
 
 1. Create the namespaces `cnpg-system` and `databases`.
-2. Install cert-manager as the release `cert-manager` in `cert-manager`, then create the issuer named in `charts/cnpg-cluster/values.yaml`. It must allow `client auth`, which CNPG needs on the replication certificate.
+2. Install cert-manager as the release `cert-manager` in `cert-manager`, then create the issuer named in `samples/charts/cnpg-cluster/values.yaml`. It must allow `client auth`, which CNPG needs on the replication certificate.
    ```bash
    wrapper cnpg-cert-manager
    helm upgrade --install cert-manager build/cnpg-cert-manager -n cert-manager --create-namespace --wait -f "$manifest"
@@ -51,7 +54,7 @@ wrapper() {
    ```bash
    kubectl create secret generic client-ca -n databases --from-file=ca.crt=client-ca.pem
    ```
-4. Set `charts/cnpg-cluster/values.yaml`: the issuer, the object store with its credentials Secret (keys `ACCESS_KEY_ID` and `ACCESS_SECRET_KEY`), and `cluster.postgresUID` and `postgresGID`, the ids the image names `postgres`. Set `walSegmentSize` and the ids before the cluster is created.
+4. Set `samples/charts/cnpg-cluster/values.yaml`: the issuer, the object store with its credentials Secret (keys `ACCESS_KEY_ID` and `ACCESS_SECRET_KEY`), and `cluster.postgresUID` and `postgresGID`, the ids the image names `postgres`: those of the manifest's `postgresql.postgresUID` and `postgresGID` when it has them. Set `walSegmentSize` and the ids before the cluster is created.
 5. Install the operator and the plugin. The release names must stay `cnpg` and `barman-cloud`: the RBAC templates and `evidence.sh` use their ServiceAccount names.
    ```bash
    wrapper cnpg-cloudnative-pg
@@ -97,9 +100,9 @@ Compared with each project's defaults and examples. The rule numbers are those o
 | `--read-timeout=5`, `AWS_MAX_ATTEMPTS=1` | 60 s, 5 attempts | Failover, switchover and a starting replica wait for the store. A store that never answers then costs about 5 s per call instead of about 5 minutes. 2 s failed against a working store 1 s away. |
 | Credentials for this one bucket, bucket encrypted at rest | not said | The bucket holds a full copy of every database. |
 | **Cluster** | | |
-| Hummingbird `postgresql`, pinned by digest | CNPG's image | Minimal, pulls without a login. The scripts run only `psql` in it. |
-| `postgresUID`, `postgresGID` 999 | 26 | The ids the image names `postgres`; with 26, CNPG's pg_ident line names `postgres_fedora`. |
-| `hostUsers: false` through `cnpg.io/podPatch` | host's uids | A host user with uid 999 is nobody in the pod. Rule 5. |
+| A hardened PostgreSQL image, pinned by digest: the mirror's `postgres` in `v1.37-hi.yaml`, Hummingbird `postgresql` in the older manifests | CNPG's image | Minimal, pulls without a login. The scripts run only `psql` in it. |
+| `postgresUID`, `postgresGID` 999, or the manifest's `postgresql.postgresUID` and `postgresGID` | 26 | The ids the image names `postgres`: 999 in the image of `v1.33.yaml` to `v1.37.yaml`, 70 in the mirror's `postgres` of `v1.37-hi.yaml`. With ids the image doesn't name, CNPG's pg_ident line names another user. |
+| `hostUsers: false` through `cnpg.io/podPatch` | host's uids | A host user with the uid of `postgres` is nobody in the pod. Rule 5. |
 | `storageSize: 50Gi`, `walSegmentSize: 1`, `walKeepSize: 30GB`, no replication slots | 1Gi, 16 MB, 512MB, slots | See [WAL and the object store](#wal-and-the-object-store). |
 | Required anti-affinity between instances | preferred | A commit's two copies never share a node, and each node's read port has one instance. |
 | `synchronous: {method: any, number: 1, dataDurability: required}`, `synchronous_commit: remote_apply`, `failoverQuorum: true` | asynchronous | See [Writes, reads and failover](#writes-reads-and-failover). |
@@ -237,13 +240,14 @@ kubectl exec -n databases <primary pod> -c postgres -- psql -U postgres \
 
 ```bash
 image=$(kubectl get cluster pg -n databases -o jsonpath='{.spec.imageName}')
+ids=$(kubectl get cluster pg -n databases -o jsonpath='cluster.postgresUID={.spec.postgresUID},cluster.postgresGID={.spec.postgresGID}')
 helm install pg-restore samples/charts/cnpg-cluster -n databases -f samples/desired.yaml \
-  --set-string postgresql.imageName="$image" \
+  --set-string postgresql.imageName="$image" --set "$ids" \
   --set cluster.name=pg-restore --set recovery.enabled=true --set recovery.sourceCluster=pg \
   --set rwLoadBalancer.name=pg-restore-rw-lb --set readLoadBalancer=null
 ```
 
-It runs the image of the cluster `pg`. The new name gives its WAL archive its own folder. CNPG refuses a Service another cluster owns, so the restore gets its own rw LoadBalancer and none for reads; while the old cluster holds 5432, use its `pg-restore-rw` Service inside the cluster. A backup taken before `app` was removed brings `app` back: [remove it](#remove-app-from-a-cluster-bootstrapped-with-the-defaults) again. A backup taken before the chart's grants needs the [compliance grants](#compliance-metric) given again.
+It runs the image of the cluster `pg`, with its ids of `postgres`. The new name gives its WAL archive its own folder. CNPG refuses a Service another cluster owns, so the restore gets its own rw LoadBalancer and none for reads; while the old cluster holds 5432, use its `pg-restore-rw` Service inside the cluster. A backup taken before `app` was removed brings `app` back: [remove it](#remove-app-from-a-cluster-bootstrapped-with-the-defaults) again. A backup taken before the chart's grants needs the [compliance grants](#compliance-metric) given again.
 
 ## Remove app from a cluster bootstrapped with the defaults
 
@@ -255,16 +259,17 @@ In this order:
 
 ## RBAC on chart upgrades
 
-The values charts replace the upstream RBAC. A rule they lack shows as `forbidden` in the operator or plugin log. Before an upgrade, render the upstream RBAC of the version in the manifest and of the new one, and compare:
+The values charts replace the RBAC of the charts they wrap. A rule they lack shows as `forbidden` in the operator or plugin log. Before an upgrade, render the charts' RBAC of the version in the manifest and of the new one. The commands below take the charts of `versions/latest.yaml`, OCI charts of the mirror; for a manifest with the upstream charts, use `cloudnative-pg --repo https://cloudnative-pg.github.io/charts` and `plugin-barman-cloud --repo https://cloudnative-pg.github.io/charts` instead. Then compare:
 
 ```bash
-repo=https://cloudnative-pg.github.io/charts
+cnpg=$(yq '.charts.cloudnative-pg | .repository + "/" + .name' versions/latest.yaml)
+barman=$(yq '.charts.plugin-barman-cloud | .repository + "/" + .name' versions/latest.yaml)
 cnpg_rbac() {  # <chart version>
-  helm template cnpg cloudnative-pg --repo "$repo" --version "$1" -n cnpg-system \
+  helm template cnpg "$cnpg" --version "$1" -n cnpg-system \
     --set config.clusterWide=false --show-only templates/rbac.yaml
 }
 barman_rbac() {  # <chart version>
-  helm template barman-cloud plugin-barman-cloud --repo "$repo" --version "$1" -n cnpg-system \
+  helm template barman-cloud "$barman" --version "$1" -n cnpg-system \
     --show-only templates/rbac.yaml --show-only templates/additional-rbac/leader_election.yaml
 }
 cnpg_rbac "$(yq '.charts.cloudnative-pg.version' versions/latest.yaml)" > cnpg-rbac.yaml

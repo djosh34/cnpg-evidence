@@ -194,6 +194,10 @@ var stateCommands = [][]string{
 	{"kubectl", "get", "events", "-A", "--sort-by=.lastTimestamp"},
 	{"kubectl", "logs", "-n", "cnpg-system", "-l", "app.kubernetes.io/name=cloudnative-pg", "--tail=100", "--prefix"},
 	{"kubectl", "logs", "-n", "otel", "-l", "app.kubernetes.io/instance=otel", "--tail=20", "--prefix"},
+	{"kubectl", "logs", "-n", "cnpg-system", "-l", "app.kubernetes.io/name=plugin-barman-cloud", "--tail=50", "--prefix"},
+	// CNPG's jobs, such as a restore's full-recovery: their pods end and
+	// show only as Error otherwise.
+	{"kubectl", "logs", "-n", namespace, "-l", "cnpg.io/jobRole", "--all-containers", "--tail=50", "--prefix", "--max-log-requests=20"},
 }
 
 func dumpState(ctx context.Context) string {

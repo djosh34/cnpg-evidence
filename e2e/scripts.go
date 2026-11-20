@@ -69,6 +69,21 @@ func desiredValues(ctx context.Context) (string, error) {
 	return helm(ctx, time.Minute, "get", "values", clusterRelease, "--namespace", namespace, "--output", "json")
 }
 
+// postgresIDs are the uid and gid of postgres in the cluster's instances,
+// as its Cluster has them, for the scripts' --postgres-uid and
+// --postgres-gid.
+func postgresIDs(ctx context.Context) (uid, gid string, err error) {
+	out, err := kubectl(ctx, "get", "cluster", clusterName, "-n", namespace, "-o", "jsonpath={.spec.postgresUID} {.spec.postgresGID}")
+	if err != nil {
+		return "", "", err
+	}
+	uid, gid, ok := strings.Cut(strings.TrimSpace(out), " ")
+	if !ok || uid == "" || gid == "" {
+		return "", "", fmt.Errorf("the Cluster %s has no postgresUID and postgresGID: %q", clusterName, out)
+	}
+	return uid, gid, nil
+}
+
 // clientCA writes the CA certificates of the Secret client-ca, which may
 // sign client certificates, to a file, for --ca.
 func clientCA(ctx context.Context) (string, error) {
@@ -101,9 +116,13 @@ func runDesired(ctx context.Context, s *scenario, _ args) error {
 	if err != nil {
 		return err
 	}
+	uid, _, err := postgresIDs(ctx)
+	if err != nil {
+		return err
+	}
 	for source, args := range map[string][]string{
 		"evidence": {"--source", "evidence", "--ca", ca},
-		"prove":    {"--source", "prove"},
+		"prove":    {"--source", "prove", "--postgres-uid", uid},
 	} {
 		r, err := script(ctx, values, "desired/desired.sh", args...)
 		if err == nil && r.code != 0 {
@@ -167,9 +186,14 @@ func evidencePasses(part string) func(context.Context, *scenario, args) error {
 }
 
 // runProve: prove.sh as root on every node, which the e2e test sees through
-// /proc/<pid>/root of the node's container.
+// /proc/<pid>/root of the node's container, with the cluster's ids of
+// postgres.
 func runProve(ctx context.Context, s *scenario, _ args) error {
 	values, err := desiredValues(ctx)
+	if err != nil {
+		return err
+	}
+	uid, gid, err := postgresIDs(ctx)
 	if err != nil {
 		return err
 	}
@@ -179,7 +203,8 @@ func runProve(ctx context.Context, s *scenario, _ args) error {
 		if err != nil {
 			return err
 		}
-		r, err := script(ctx, values, "prove/prove.sh", "--node", node, "--node-root", "/proc/"+pid+"/root")
+		r, err := script(ctx, values, "prove/prove.sh", "--node", node, "--node-root", "/proc/"+pid+"/root",
+			"--postgres-uid", uid, "--postgres-gid", gid)
 		if err != nil {
 			return err
 		}
@@ -254,10 +279,14 @@ func provePasses(_ context.Context, s *scenario, _ args) error {
 }
 
 // runHostCheck: host-check.sh as root on every node, with the static bash
-// and jq of the e2e image. /tmp of a node is a tmpfs, which docker cp does
-// not reach, so the scripts go under /opt.
+// and jq of the e2e image and the cluster's ids of postgres. /tmp of a node
+// is a tmpfs, which docker cp does not reach, so the scripts go under /opt.
 func runHostCheck(ctx context.Context, s *scenario, _ args) error {
 	const dir = "/opt/cnpg-evidence/scripts"
+	uid, gid, err := postgresIDs(ctx)
+	if err != nil {
+		return err
+	}
 	for i := range nodeCount {
 		node := nodeName(i)
 		copies := [][]string{
@@ -272,7 +301,8 @@ func runHostCheck(ctx context.Context, s *scenario, _ args) error {
 				return err
 			}
 		}
-		r, err := runScript(ctx, "", "docker", "exec", node, "bash", dir+"/host-check/host-check.sh", "--node", node)
+		r, err := runScript(ctx, "", "docker", "exec", node, "bash", dir+"/host-check/host-check.sh", "--node", node,
+			"--postgres-uid", uid, "--postgres-gid", gid)
 		if err != nil {
 			return err
 		}

@@ -18,7 +18,7 @@ Neither variant applies these items of the list, because the scenarios cannot:
 
 Both variants keep these settings of the samples, which are neither in the base nor in the list:
 
-- **The samples' image, with its uid and gid 999.** The [uid item](new-cluster.md#the-postgres-uid-and-gid-of-the-image) needs an image whose `postgres` is not CNPG's uid 26; CNPG's own image would not show it.
+- **The manifest's image, with the uid and gid it names `postgres`**: 999 in `v1.33.yaml` to `v1.37.yaml`, 70 in `v1.37-hi.yaml`. The [uid item](new-cluster.md#the-postgres-uid-and-gid-of-the-image) needs an image whose `postgres` is not CNPG's uid 26; CNPG's own image would not show it.
 - **`storageSize: 50Gi`.** CNPG has no default size for the data volume.
 - **A bootstrap with no `app` database**: `database: postgres`, `owner: postgres`, in place of the import, so the cluster starts as after it.
 - **`conntrack-max-per-core=0` for kube-proxy.** kube-proxy cannot set `nf_conntrack_max` in a node that runs in a container. A real node needs nothing.

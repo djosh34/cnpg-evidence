@@ -11,7 +11,7 @@
 // every scenario must pass. A scenario without a result does not match.
 // Each result is the artifact <scenario>-<arch> of the run: the outcome of
 // its Scenario step in outcome, the runner's exit code in exit-code, and
-// the run's files.
+// the run's files. A run's only artifact may be in -results itself.
 package main
 
 import (
@@ -49,9 +49,10 @@ func main() {
 	}
 	say(os.Stdout, "| Scenario | Result | gaps.md | Verdict |\n|---|---|---|---|\n")
 	ok := true
-	for _, arch := range strings.Split(*arches, ",") {
+	archList := strings.Split(*arches, ",")
+	for _, arch := range archList {
 		for _, s := range picked {
-			got := readResult(filepath.Join(*results, s+"-"+arch), s)
+			got := readResult(artifactDir(*results, s+"-"+arch, len(picked)*len(archList) == 1), s)
 			match, why := judge(got, gaps[s])
 			ok = ok && match
 			want := "passes"
@@ -128,6 +129,17 @@ func (r result) String() string {
 		s += ", always.feature did not pass `" + strings.Join(r.alwaysNotPassed, "`, `") + "`"
 	}
 	return s
+}
+
+// artifactDir is the directory of the artifact name in results. When a run
+// has only one artifact, download-artifact puts its files in results
+// itself, with no directory of its name.
+func artifactDir(results, name string, only bool) string {
+	dir := filepath.Join(results, name)
+	if _, err := os.Stat(dir); err != nil && only {
+		return results
+	}
+	return dir
 }
 
 func readResult(dir, scenario string) result {
