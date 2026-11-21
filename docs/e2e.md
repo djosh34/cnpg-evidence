@@ -192,7 +192,7 @@ The job needs docker that can run privileged containers, Go 1.27, the inotify li
 
 ## The nightly release
 
-[`nightly.yml`](../.github/workflows/nightly.yml) tests the newest images of the mirror and the newest k3s release each night, at 01:30 UTC, after the mirror's own update at 00:15 UTC. `gh workflow run nightly.yml` starts it by hand. It:
+[`nightly.yml`](../.github/workflows/nightly.yml) tests the newest images of the mirror and the newest k3s release each night, at 01:30 UTC, after the mirror's own update at 00:15 UTC, and again at 13:30 UTC to catch up. `gh workflow run nightly.yml` starts it by hand. It:
 
 1. Makes the night's manifest with [`e2e/cmd/nightly`](../e2e/cmd/nightly/main.go): `latest.yaml` with each image of the mirror at the newest version on the mirror's own tag of its line: `postgres` 18, `cloudnative-pg` 1, the five cert-manager images 1, the barman-cloud plugin and its sidecar 0, and the collector `0-contrib`. An image and its chart take the newest version that the mirror has both as a tag of the image and as the appVersion of a chart version, so they always match. Each image is pinned by its digest at that version's tag. kubectl-cnpg follows the operator. The nightly also follows k3s: it takes the release that k3s's [`latest` channel](https://update.k3s.io/v1-release/channels/latest) points to, minors included, with its image, airgap tarballs and their images, and that release's kubectl and `rotate-default-ca-certs.sh`, each with its digest or sha256. The rollout scenario's start image stays as it is in `latest.yaml`.
 2. When the run is scheduled, stops there if there is no nightly release yet, as the first comes from a run started by hand, or if the last one tested the same manifest with a result for every scenario. A run started by hand always goes on.
@@ -202,6 +202,8 @@ The job needs docker that can run privileged containers, Go 1.27, the inotify li
 `https://github.com/djosh34/cnpg-evidence/releases/latest/download/nightly.yaml` is the newest tested manifest. To keep it so, make each code release with `gh release create <tag> --latest=false`.
 
 While a chart lags behind its image, the pair stays on the last version that has a chart. The mirror then no longer refreshes that version's tag, so its digest can miss DHI's rebuilds until the chart arrives.
+
+GitHub starts the scheduled runs of this account hours late: in November 2026, other repositories' night crons started 7 to 9 hours after their time, and GitHub may skip a run. So the night's run can start before the mirror's update, or not at all. The 13:30 run then tests what the night missed; when the night already tested it, the 13:30 run stops after the manifest. A skipped mirror update waits for the mirror's next run. No case needs a run by hand.
 
 GitHub turns off the schedule of a public repository's workflow after 60 days without activity in the repository. That holds for the mirror too. `gh workflow enable nightly.yml` turns it on again.
 

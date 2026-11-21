@@ -9,10 +9,14 @@ name: nightly
 # is red. A scheduled run stops after the manifest until a run started by
 # hand has made the first nightly release, and when the last nightly
 # release tested the same manifest with a result for every scenario; a run
-# started by hand always tests and publishes. docs/e2e.md says more.
+# started by hand always tests and publishes. GitHub starts the scheduled
+# runs of this account hours late and may skip one, so the second run
+# catches up a night that ran before the mirror or did not run at all.
+# docs/e2e.md says more.
 on:
   schedule:
     - cron: "30 1 * * *" # 01:30 UTC
+    - cron: "30 13 * * *" # 13:30 UTC, the catch-up
   workflow_dispatch:
 
 permissions:
