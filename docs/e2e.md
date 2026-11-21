@@ -203,7 +203,7 @@ The job needs docker that can run privileged containers, Go 1.27, the inotify li
 
 While a chart lags behind its image, the pair stays on the last version that has a chart. The mirror then no longer refreshes that version's tag, so its digest can miss DHI's rebuilds until the chart arrives.
 
-GitHub starts the scheduled runs of this account hours late: in November 2026, other repositories' night crons started 7 to 9 hours after their time, and GitHub may skip a run. So the night's run can start before the mirror's update, or not at all. The 13:30 run then tests what the night missed; when the night already tested it, the 13:30 run stops after the manifest. A skipped mirror update waits for the mirror's next run. No case needs a run by hand.
+GitHub starts the scheduled runs of this account hours late: in November 2026, other repositories' night crons started 7 to 9 hours after their time, and GitHub may skip a run. So the night's run can start before the mirror's update, or not at all. The 13:30 run is a second chance, not a guarantee: each scheduled run tests the manifest when the last nightly release did not test it with a result for every scenario, and stops after the manifest otherwise. So the first scheduled run after the mirror's update tests it, the same day or a later one. A skipped mirror update waits for the mirror's next run. No case needs a run by hand.
 
 GitHub turns off the schedule of a public repository's workflow after 60 days without activity in the repository. That holds for the mirror too. `gh workflow enable nightly.yml` turns it on again.
 

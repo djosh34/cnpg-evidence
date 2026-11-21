@@ -10,8 +10,8 @@ name: nightly
 # hand has made the first nightly release, and when the last nightly
 # release tested the same manifest with a result for every scenario; a run
 # started by hand always tests and publishes. GitHub starts the scheduled
-# runs of this account hours late and may skip one, so the second run
-# catches up a night that ran before the mirror or did not run at all.
+# runs of this account hours late and may skip one, so the second run is
+# a second chance for a night that ran before the mirror or did not run.
 # docs/e2e.md says more.
 on:
   schedule:
